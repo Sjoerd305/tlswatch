@@ -1,0 +1,20 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}
+<div class="page-head"><div><h1>Settings</h1></div></div>
+<div class="grid-settings">
+  {{template "settings-nav" $p}}
+  <div class="stack">
+    <div><h2 class="h2">About</h2><span class="summary">tlswatch observes the certificates served on your endpoints. MIT licence.</span></div>
+    <section class="card pad">
+      <dl class="kv">
+        <dt>Version</dt><dd class="mono">{{$d.Version}}</dd>
+        <dt>Go</dt><dd class="mono">{{$d.Go}}</dd>
+        <dt>Database</dt><dd class="mono">{{$d.DBPath}} · schema {{$d.Schema}}</dd>
+        <dt>Listening on</dt><dd class="mono">{{$d.Listen}}</dd>
+        <dt>Running since</dt><dd class="mono">{{datetime $p.Loc $d.Started.Unix}}</dd>
+        <dt>Checks</dt><dd class="mono">{{$d.Checks}} since start{{if not $d.LastCheck.IsZero}} · last {{whenTime $p.Loc $p.Now $d.LastCheck.Unix}}{{end}} · backlog {{$d.Backlog}}</dd>
+        <dt>From environment</dt><dd>{{if $d.Env}}{{range $k, $v := $d.Env}}<span class="tag">{{$v}}</span> {{end}}{{else}}<span class="muted">nothing; everything is configured here</span>{{end}}</dd>
+      </dl>
+    </section>
+  </div>
+</div>
+{{end}}

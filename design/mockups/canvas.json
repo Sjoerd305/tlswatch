@@ -1,0 +1,25 @@
+{
+  "v": 3,
+  "createdOnFiles": {"v": 1, "at": "2026-10-14T12:40:00Z"},
+  "title": "tlswatch – design",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "boards": {
+    "Login.dc.html": {"x": 0, "y": 0, "w": 1280, "h": 720, "title": "Sign in", "expand": "fill"},
+    "Main.dc.html": {"x": 1360, "y": 0, "w": 1280, "h": 860, "title": "Overview (home)", "expand": "fill"},
+    "Targets.dc.html": {"x": 2720, "y": 0, "w": 1280, "h": 860, "title": "Targets", "expand": "fill"},
+    "Target.dc.html": {"x": 0, "y": 980, "w": 1280, "h": 1080, "title": "Target detail", "expand": "fill"},
+    "Certificates.dc.html": {"x": 1360, "y": 980, "w": 1280, "h": 860, "title": "Certificates (inventory)", "expand": "fill"},
+    "Findings.dc.html": {"x": 2720, "y": 980, "w": 1280, "h": 860, "title": "Findings + acknowledge", "expand": "fill"},
+    "TargetForm.dc.html": {"x": 0, "y": 2180, "w": 1280, "h": 980, "title": "Add target", "expand": "fill"},
+    "Channels.dc.html": {"x": 1360, "y": 2180, "w": 1280, "h": 820, "title": "Settings · Channels", "expand": "fill"},
+    "Main-Dark.dc.html": {"x": 2720, "y": 2180, "w": 1280, "h": 860, "title": "Overview · dark", "expand": "fill"}
+  },
+  "order": ["Login.dc.html", "Main.dc.html", "Targets.dc.html", "Target.dc.html", "Certificates.dc.html", "Findings.dc.html", "TargetForm.dc.html", "Channels.dc.html", "Main-Dark.dc.html"],
+  "notes": {
+    "row1": {"x": 0, "y": -300, "text": "tlswatch — sign in, overview, targets", "kind": "title1", "maxW": 4000},
+    "row2": {"x": 0, "y": 680, "text": "Target detail, certificates, findings", "kind": "title1", "maxW": 4000},
+    "row3": {"x": 0, "y": 1880, "text": "Add target, settings, dark mode", "kind": "title1", "maxW": 4000}
+  },
+  "designSystems": []
+}

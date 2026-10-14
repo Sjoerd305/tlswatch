@@ -1,0 +1,41 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}
+<div class="page-head">
+  <div><h1>Targets</h1></div>
+  {{- if $p.Can "targets.edit"}}
+  <div class="actions row">
+    {{- if $d.Targets}}<form method="post" action="/targets/check-all" data-api="/api/v1/targets/check-all">{{template "csrf" $p.CSRF}}<input type="hidden" name="next" value="/targets"><button type="submit" class="btn">Check all</button></form>{{end}}
+    <a href="/targets/new" class="btn btn-primary">Add target</a>
+  </div>
+  {{- end}}
+</div>
+{{- if not $d.Targets}}
+<section class="card"><div class="empty center"><span class="h3">No targets yet</span><span>{{if $p.Can "targets.edit"}}<a href="/targets/new">Add one</a>{{else}}Ask an operator to add one{{end}}, or run <span class="mono">tlswatch check host</span> to try an endpoint.</span></div></section>
+{{- else}}
+<form class="row" method="get" action="/targets" role="search">
+  <div class="filter">{{template "search-icon"}}<input class="input" type="search" name="q" value="{{$d.Query}}" placeholder="Filter: name, host, tag, issuer" aria-label="Filter targets" data-filter="#targets"></div>
+  <span class="row gap-sm" data-chip-group="#targets">{{template "chips" $d.Status}}</span>
+  {{- if $d.Tags}}<span class="divider"></span><span class="row gap-sm" data-chip-group="#targets">{{template "chips" $d.Tags}}</span>{{end}}
+  <noscript><button type="submit" class="btn btn-xs">Filter</button></noscript>
+  <span class="spacer small muted">sorted by expiry · <a href="{{$d.GroupHref}}">{{if $d.Group}}ungroup{{else}}group by tag{{end}}</a></span>
+</form>
+<div class="card clip">
+  <table class="tbl cards" id="targets">
+    <thead><tr><th>Status</th><th>Name</th><th>Host</th><th class="num sorted">Days ▲</th><th>Lifetime</th><th>Expires</th><th>Issuer</th><th>TLS</th><th>Tags</th><th>Checked</th><th><span class="sr-only">Actions</span></th></tr></thead>
+    {{- if $d.Group}}
+    {{- range $d.Groups}}
+    <tbody>
+      <tr class="group-head"><th colspan="11">{{if .Tag}}<span class="tag">{{.Tag}}</span>{{else}}no tag{{end}} <span class="muted">{{len .Rows}}</span></th></tr>
+      {{- range .Rows}}{{template "target-row" (frag $p .)}}{{end}}
+    </tbody>
+    {{- end}}
+    {{- else}}
+    <tbody>
+    {{- range $d.Targets}}{{template "target-row" (frag $p .)}}{{end}}
+    </tbody>
+    {{- end}}
+  </table>
+  <div class="empty" data-empty-for="#targets"{{if $d.Shown}} hidden{{end}}>No targets match the filter.</div>
+</div>
+<span class="table-foot">{{if $d.Group}}<span>{{len $d.Targets}} targets in {{len $d.Groups}} groups</span>{{else}}<span data-count-for="#targets" data-count-noun="targets">{{$d.Shown}} of {{len $d.Targets}} targets</span>{{end}} · the lifetime bar shows the share of the certificate's validity already used</span>
+{{- end}}
+{{end}}

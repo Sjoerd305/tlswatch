@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>tlswatch – Sign in</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0}
+:root{--bg:#f5f6f7;--surface:#ffffff;--surface-2:#f0f2f4;--ink:#1a2330;--muted:#5c6b7a;--line:#dde2e7;--input-line:#b9c2cc;--input-bg:#ffffff;--acc:#2f6fd1;--acc-hover:#275bb0;--on-acc:#ffffff;--link:#2f6fd1;--chrome:#1c2430}
+a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 12px;border-radius:5px;font:inherit;font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap;border:1px solid var(--input-line);background:var(--surface);color:var(--ink);width:100%;box-sizing:border-box}
+.btn:hover{text-decoration:none;background:var(--surface-2)}
+.btn-primary{background:var(--acc);color:var(--on-acc);border-color:var(--acc)}
+.input{height:36px;padding:0 10px;border:1px solid var(--input-line);border-radius:5px;background:var(--input-bg);font:inherit;font-size:13px;color:var(--ink);box-sizing:border-box;width:100%}
+.label{font-size:12px;font-weight:600;color:var(--muted)}
+.field{display:flex;flex-direction:column;gap:5px}
+</style>
+</helmet>
+<div style="min-height: 720px; background: var(--bg); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 13px; line-height: 1.45; display: flex; align-items: center; justify-content: center; padding: 40px 16px; box-sizing: border-box">
+  <div style="width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 20px">
+    <div style="display: flex; align-items: center; gap: 10px; justify-content: center">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--acc)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="tlswatch"><path d="M12 2.5 4 5.5v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10v-6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>
+      <span style="font-size: 22px; font-weight: 600; letter-spacing: -0.01em">tlswatch</span>
+    </div>
+    <div style="background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 24px; display: flex; flex-direction: column; gap: 14px">
+      <div class="field"><label class="label" for="email">E-mail</label><input id="email" type="email" class="input" value="s.vandijk@example.nl"></div>
+      <div class="field"><label class="label" for="pw">Password</label><input id="pw" type="password" class="input" value="••••••••••••"></div>
+      <a href="Main.dc.html" class="btn btn-primary">Sign in</a>
+      <div style="display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px"><span style="flex-grow: 1; height: 1px; background: var(--line)"></span>or<span style="flex-grow: 1; height: 1px; background: var(--line)"></span></div>
+      <a href="Main.dc.html" class="btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+        Sign in with Google
+      </a>
+    </div>
+    <p style="margin: 0; text-align: center; font-size: 12px; color: var(--muted)">Accounts are created by an administrator · <span style="font-family: 'IBM Plex Mono', monospace">v0.1.0</span></p>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":720}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

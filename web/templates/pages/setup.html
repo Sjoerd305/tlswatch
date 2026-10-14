@@ -1,0 +1,13 @@
+{{define "content"}}{{$d := .Data}}
+<form class="login-card" method="post" action="/setup">
+  <h1>Welcome to tlswatch</h1>
+  <p class="muted">No accounts exist yet. Create the first administrator; you can invite others afterwards under Settings › Users.</p>
+  {{template "csrf" .CSRF}}
+  {{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
+  <div class="field"><label class="label" for="email">E-mail</label><input id="email" name="email" type="email" class="input" value="{{$d.Email}}" autocomplete="username" required autofocus></div>
+  <div class="field"><label class="label" for="name">Name</label><input id="name" name="name" class="input" value="{{$d.Name}}" autocomplete="name"></div>
+  <div class="field"><label class="label" for="pw">Password</label><input id="pw" name="password" type="password" class="input" autocomplete="new-password" minlength="12" required><span class="help">At least 12 characters, not a known leaked password.</span></div>
+  <div class="field"><label class="label" for="pw2">Repeat password</label><input id="pw2" name="password2" type="password" class="input" autocomplete="new-password" minlength="12" required></div>
+  <button type="submit" class="btn btn-primary">Create administrator and sign in</button>
+</form>
+{{end}}

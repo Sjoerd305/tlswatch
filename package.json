@@ -1,0 +1,13 @@
+{
+  "name": "tlswatch-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test web/test/*.test.mjs",
+    "check-deps": "node scripts/check-deps.mjs"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

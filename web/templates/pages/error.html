@@ -1,0 +1,7 @@
+{{define "content"}}{{$d := .Data}}
+{{- if .User}}
+<section class="card"><div class="empty"><span class="h3">{{$d.Status}} · {{.Title}}</span><span>{{$d.Message}}</span><a href="/">Back to the overview</a></div></section>
+{{- else}}
+<div class="login-card"><h1>{{.Title}}</h1><p>{{$d.Message}}</p><a href="/login" class="btn">Sign in</a></div>
+{{- end}}
+{{end}}

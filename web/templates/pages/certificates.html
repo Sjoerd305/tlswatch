@@ -1,0 +1,60 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}
+<div class="page-head">
+  <div><h1>Certificates</h1><span class="summary">{{$d.Served}} unique {{plural $d.Served "certificate" "certificates"}} served on {{$d.Targets}} {{plural $d.Targets "target" "targets"}} · one row per fingerprint</span></div>
+  <div class="actions row"><a href="/certificates.csv" class="btn">Export CSV</a></div>
+</div>
+{{- if not $d.Items}}
+<section class="card"><div class="empty center"><span class="h3">No certificates seen yet</span><span>Certificates appear here after the first check of a target.</span></div></section>
+{{- else}}
+<form class="row" method="get" action="/certificates" role="search">
+  <div class="filter w300">{{template "search-icon"}}<input class="input" type="search" name="q" value="{{$d.Query}}" placeholder="Filter: subject, SAN, fingerprint, serial" aria-label="Filter certificates" data-filter="#certs"></div>
+  <span class="row gap-sm" data-chip-group="#certs">{{template "chips" $d.Windows}}</span>
+  <span class="divider"></span>
+  <span class="row gap-sm" data-chip-group="#certs">{{template "chips" $d.Issuers}}</span>
+  <span class="divider"></span>
+  <span class="row gap-sm" data-chip-group="#certs">{{template "chips" $d.Keys}}</span>
+  <noscript><button type="submit" class="btn btn-xs">Filter</button></noscript>
+</form>
+<div class="card clip">
+  <table class="tbl cards" id="certs">
+    <thead><tr><th><span class="sr-only">Expand</span></th><th>Subject</th><th>Issuer</th><th class="num sorted">Days ▲</th><th>Lifetime</th><th>Not after</th><th>Key</th><th class="num">Targets</th><th>SHA-256</th><th>First seen</th></tr></thead>
+    <tbody>
+    {{- range $d.Items}}
+      <tr data-expand tabindex="0" aria-expanded="{{if .Open}}true{{else}}false{{end}}" data-search="{{.Search}}" data-window="{{.Window}}" data-issuer="{{.IssuerName}}" data-key="{{.KeyType}}"{{if .Hidden}} hidden{{end}}{{if not .Targets}} class="muted"{{end}}>
+        <td class="expander muted"><a href="?open={{short .Fingerprint}}" class="ink" aria-label="Details">{{if .Open}}▾{{else}}▸{{end}}</a></td>
+        <td data-label="Subject" class="strong">{{.SubjectCN}}{{if .SelfSigned}} <span class="pill off ml">self-signed</span>{{end}}{{if .Stale}} <span class="pill warn ml">stale node</span>{{end}}{{if not .Targets}} <span class="pill off ml">not served</span>{{end}}</td>
+        <td data-label="Issuer">{{.IssuerName}}</td>
+        <td data-label="Days" class="num mono days{{if ne .Status "ok"}} {{.Status}}-t{{end}}">{{.Days}}</td>
+        <td data-label="Lifetime">{{template "bar" (dict "Used" (.LifetimeUsed $p.Now) "Class" .Status)}}</td>
+        <td data-label="Not after" class="mono">{{date $p.Loc .NotAfter}}</td>
+        <td data-label="Key" class="mono small">{{.KeyDesc}}</td>
+        <td data-label="Targets" class="num mono">{{.Targets}}{{if .Stale}}{{range .Served}}{{if not .Current}} <span class="muted">({{.Address}})</span>{{end}}{{end}}{{end}}</td>
+        <td data-label="SHA-256" class="mono small muted">{{short .Fingerprint}}</td>
+        <td data-label="First seen" class="mono muted">{{date $p.Loc .FirstSeen}}</td>
+      </tr>
+      <tr class="detail"{{if not .Open}} hidden{{end}}><td colspan="10">
+        <div class="detail-grid">
+          <span class="k">SHA-256</span><span class="fp-row"><span class="mono small wrap-any">{{.Fingerprint}}</span><button type="button" class="btn btn-xs" data-copy="{{.Fingerprint}}">copy</button><a class="btn btn-xs" href="/certificates/{{.Fingerprint}}/pem?download=1" data-copy-url="/certificates/{{.Fingerprint}}/pem">pem</a></span>
+          <span class="k">Subject</span><span class="wrap-any">{{.Subject}}</span>
+          <span class="k">SANs</span><span class="mono small">{{if .SANs}}{{join .SANs ", "}}{{else}}—{{end}}</span>
+          <span class="k">Serial</span><span class="mono small">{{.Serial}}</span>
+          <span class="k">Signature</span><span>{{.SigAlg}}</span>
+          {{- if .Chain}}<span class="k">Chain</span><span>{{range $i, $l := .Chain}}{{if $i}}{{if ne $l.Role "leaf"}} → {{end}}{{end}}{{if ne $l.Role "leaf"}}{{$l.SubjectCN}} ({{date $p.Loc $l.NotAfter}}){{end}}{{end}}</span>{{end}}
+          <span class="k">Served on</span>
+          {{- if .Served}}
+          <table class="tbl nested"><tbody>
+            {{- range .Served}}
+            <tr><td><a href="/targets/{{.TargetID}}">{{.TargetName}}</a></td><td class="mono">{{.HostPort}}</td><td class="mono muted">{{.Address}}</td><td>{{if .Current}}<span class="st sm {{if eq .Status "ok"}}ok{{else if eq .Status "critical"}}crit{{else}}warn{{end}}">{{if eq .Status "ok"}}healthy{{else}}{{.Status}}{{end}}</span>{{else}}<span class="st sm warn">stale node</span>{{end}}</td><td class="mono muted">{{when $p.Loc $p.Now .CheckedAt}}</td></tr>
+            {{- end}}
+          </tbody></table>
+          {{- else}}<span class="muted">Not served anywhere at the last check. Last seen {{date $p.Loc .LastSeen}}.</span>{{end}}
+        </div>
+      </td></tr>
+    {{- end}}
+    </tbody>
+  </table>
+  <div class="empty" data-empty-for="#certs"{{if $d.Shown}} hidden{{end}}>No certificates match the filter.</div>
+</div>
+<span class="table-foot"><span data-count-for="#certs" data-count-noun="certificates">{{$d.Shown}} of {{$d.Total}} certificates</span> · <a href="?all=1">include certificates no longer served</a></span>
+{{- end}}
+{{end}}

@@ -1,0 +1,34 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}
+<div class="page-head"><div><h1>Settings</h1></div></div>
+<div class="grid-settings">
+  {{template "settings-nav" $p}}
+  <div class="stack">
+    <div><h2 class="h2">CA bundles</h2><span class="summary">Private roots and intermediates for targets that use the "CA bundle" trust mode.</span></div>
+    {{- range $d.Bundles}}
+    <section class="card clip">
+      <div class="sec"><h2>{{.Name}}</h2><span class="meta">{{len .Certs}} {{plural (len .Certs) "certificate" "certificates"}} · used by {{.Targets}} {{plural .Targets "target" "targets"}} · <a href="?edit={{.ID}}">replace</a></span></div>
+      <table class="tbl cards">
+        <thead><tr><th>Subject</th><th>Type</th><th>Key</th><th>Not after</th><th class="num">Days</th><th>SHA-256</th></tr></thead>
+        <tbody>
+        {{- range .Certs}}{{$dl := days $p.Now .NotAfter.Unix}}
+          <tr><td data-label="Subject" class="strong wrap">{{.SubjectCN}}</td><td data-label="Type">{{if .SelfSigned}}root{{else if .IsCA}}intermediate{{else}}leaf{{end}}</td><td data-label="Key" class="mono small">{{.KeyDesc}}</td><td data-label="Not after" class="mono">{{date $p.Loc .NotAfter.Unix}}</td><td data-label="Days" class="num mono days{{if lt $dl 0}} crit-t{{else if lt $dl 90}} warn-t{{end}}">{{$dl}}</td><td data-label="SHA-256" class="mono small muted">{{short .Fingerprint}}</td></tr>
+        {{- end}}
+        </tbody>
+      </table>
+      {{- if not .Targets}}<div class="li"><form method="post" action="/settings/bundles/{{.ID}}/delete">{{template "csrf" $p.CSRF}}<button type="submit" class="btn-link danger">Delete bundle</button></form></div>{{end}}
+    </section>
+    {{- else}}
+    <section class="card"><div class="empty"><span class="h3">No CA bundles</span><span>Upload the root (and intermediates) of an internal PKI to verify its certificates.</span></div></section>
+    {{- end}}
+    <form class="card form" method="post" action="/settings/bundles" enctype="multipart/form-data">
+      {{template "csrf" $p.CSRF}}<input type="hidden" name="id" value="{{$d.Edit}}">
+      <h3 class="h3">{{if $d.Edit}}Replace {{$d.Name}}{{else}}Upload a bundle{{end}}</h3>
+      {{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
+      <div class="field"><label class="label" for="bname">Name</label><input id="bname" name="name" class="input" value="{{$d.Name}}" required placeholder="Example internal CA"></div>
+      <div class="field"><label class="label" for="bfile">PEM file</label><input id="bfile" name="file" type="file" class="input" accept=".pem,.crt,.cer,.txt"></div>
+      <div class="field"><label class="label" for="bpem">or paste PEM</label><textarea id="bpem" name="pem" class="input mono tall" spellcheck="false" placeholder="-----BEGIN CERTIFICATE-----">{{$d.PEM}}</textarea><span class="help">Certificates only; a bundle containing a private key is refused.</span></div>
+      <div class="form-foot"><button type="submit" class="btn btn-primary">{{if $d.Edit}}Replace{{else}}Upload{{end}}</button>{{if $d.Edit}}<a href="/settings/bundles" class="btn">Cancel</a>{{end}}</div>
+    </form>
+  </div>
+</div>
+{{end}}

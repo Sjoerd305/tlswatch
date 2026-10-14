@@ -1,0 +1,14 @@
+{{define "content"}}{{$d := .Data}}
+<form class="login-card" method="post" action="/login">
+  <h1 class="sr-only">Sign in</h1>
+  {{template "csrf" .CSRF}}<input type="hidden" name="next" value="{{$d.Next}}">
+  {{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
+  <div class="field"><label class="label" for="email">E-mail</label><input id="email" name="email" type="email" class="input" value="{{$d.Email}}" autocomplete="username" required autofocus></div>
+  <div class="field"><label class="label" for="pw">Password</label><input id="pw" name="password" type="password" class="input" autocomplete="current-password" required></div>
+  <button type="submit" class="btn btn-primary">Sign in</button>
+  {{- if $d.Google}}
+  <div class="or">or</div>
+  <a href="/auth/google" class="btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Sign in with Google</a>
+  {{- end}}
+</form>
+{{end}}

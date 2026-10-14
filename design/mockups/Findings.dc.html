@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>tlswatch – Findings</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0}
+:root{--bg:#f5f6f7;--surface:#ffffff;--surface-2:#f0f2f4;--ink:#1a2330;--muted:#5c6b7a;--line:#dde2e7;--line-soft:#eaeef1;--input-line:#b9c2cc;--input-bg:#ffffff;--acc:#2f6fd1;--acc-hover:#275bb0;--on-acc:#ffffff;--link:#2f6fd1;--ok:#1f8a4c;--ok-bg:#e3f3ea;--warn:#a86400;--warn-bg:#fdf1dc;--crit:#c62828;--crit-bg:#fde8e8;--off:#6b7785;--off-bg:#e9ecef;--info:#2f6fd1;--info-bg:#e6eefb;--chrome:#1c2430;--chrome-fg:#e8edf2;--chrome-muted:#95a2b1;--chrome-line:#2c3745;--track:#e4e8ec;--overlay:rgba(10,14,20,.5);--shadow:rgba(0,0,0,.25)}
+a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.top{height:48px;background:var(--chrome);color:var(--chrome-fg);display:flex;align-items:center;padding:0 20px;gap:28px}
+.brand{display:flex;align-items:center;gap:9px;color:var(--chrome-fg);font-weight:600;font-size:15px}
+.brand:hover{text-decoration:none}
+.top nav{display:flex;align-items:center;height:48px;gap:4px;flex-grow:1}
+.top nav a{display:inline-flex;align-items:center;gap:6px;height:48px;padding:0 10px;color:var(--chrome-muted);font-size:13px;font-weight:500;border-bottom:2px solid transparent;border-top:2px solid transparent}
+.top nav a.on{color:var(--chrome-fg);border-bottom-color:var(--acc)}
+.top nav a:hover{color:var(--chrome-fg);text-decoration:none}
+.cnt{display:inline-flex;min-width:18px;height:18px;padding:0 5px;border-radius:9px;font-size:11px;font-weight:600;align-items:center;justify-content:center;background:var(--chrome-line);color:var(--chrome-fg)}
+.cnt.crit{background:var(--crit);color:#fff}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:6px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border-radius:5px;font:inherit;font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap;border:1px solid var(--input-line);background:var(--surface);color:var(--ink)}
+.btn:hover{text-decoration:none;background:var(--surface-2)}
+.btn-primary{background:var(--acc);color:var(--on-acc);border-color:var(--acc)}
+.btn-xs{height:26px;padding:0 8px;font-size:12px}
+.input{height:32px;padding:0 10px;border:1px solid var(--input-line);border-radius:5px;background:var(--input-bg);font:inherit;font-size:13px;color:var(--ink);box-sizing:border-box;width:100%}
+.label{font-size:12px;font-weight:600;color:var(--muted)}
+.field{display:flex;flex-direction:column;gap:5px}
+.help{font-size:12px;color:var(--muted)}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--surface-2);white-space:nowrap}
+.tbl td{padding:8px 10px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+.tbl tr:last-child td{border-bottom:0}
+.tbl tr.sel td{background:var(--info-bg)}
+.pill{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:4px;font-size:11px;font-weight:600;letter-spacing:.02em;text-transform:uppercase}
+.pill.ok{background:var(--ok-bg);color:var(--ok)}.pill.warn{background:var(--warn-bg);color:var(--warn)}.pill.crit{background:var(--crit-bg);color:var(--crit)}.pill.off{background:var(--off-bg);color:var(--off)}
+.chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:14px;border:1px solid var(--input-line);background:var(--surface);font-size:12px;font-weight:500;color:var(--ink)}
+.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.chip .x{color:var(--muted);font-size:11px}
+.chip.on .x{color:#c7ced6}
+</style>
+</helmet>
+<div style="min-height: 860px; background: var(--bg); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 13px; line-height: 1.45; display: flex; flex-direction: column">
+  <header class="top">
+    <a href="Main.dc.html" class="brand">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--acc)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="tlswatch"><path d="M12 2.5 4 5.5v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10v-6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>
+      tlswatch
+    </a>
+    <nav aria-label="Main navigation">
+      <a href="Main.dc.html">Overview</a>
+      <a href="Targets.dc.html">Targets <span class="cnt">14</span></a>
+      <a href="Certificates.dc.html">Certificates <span class="cnt">11</span></a>
+      <a href="Findings.dc.html" class="on" aria-current="page">Findings <span class="cnt crit">3</span></a>
+      <a href="Channels.dc.html">Settings</a>
+    </nav>
+    <span style="font-size: 12px; color: var(--chrome-muted)" class="mono">last run 04:17 · next 04:17</span>
+    <a href="Login.dc.html" style="display: inline-flex; align-items: center; gap: 8px; color: var(--chrome-fg); font-size: 13px">Sjoerd <span style="font-size: 11px; color: var(--chrome-muted); border: 1px solid var(--chrome-line); border-radius: 4px; padding: 1px 6px">admin</span></a>
+  </header>
+  <main style="padding: 20px 24px 32px; display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 1400px; margin: 0 auto; box-sizing: border-box">
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap">
+      <div style="display: flex; flex-direction: column; gap: 2px"><h1 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em">Findings</h1><span style="color: var(--muted)">3 open · 1 acknowledged · 27 resolved in the last 180 days</span></div>
+    </div>
+    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+      <button type="button" class="chip on">Open <span class="x">4</span></button>
+      <button type="button" class="chip">Resolved <span class="x">27</span></button>
+      <span style="width: 1px; height: 20px; background: var(--line); margin: 0 4px"></span>
+      <button type="button" class="chip"><span class="pill crit">crit</span><span class="x">1</span></button>
+      <button type="button" class="chip"><span class="pill warn">warn</span><span class="x">3</span></button>
+      <button type="button" class="chip">expiring <span class="x">2</span></button>
+      <button type="button" class="chip">changed <span class="x">1</span></button>
+      <button type="button" class="chip">inconsistent <span class="x">1</span></button>
+    </div>
+    <div style="display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start">
+      <div class="card" style="overflow: hidden">
+        <table class="tbl">
+          <thead><tr><th>Sev</th><th>Finding</th><th>Target</th><th>Since</th><th>Last alert</th><th>Ack</th><th></th></tr></thead>
+          <tbody>
+            <tr class="sel"><td><span class="pill crit">crit</span></td><td><div style="font-weight: 500">Expiring</div><div style="color: var(--muted)">5 days left · 2026-10-19 · manual renewal</div></td><td><a href="Target.dc.html" style="color: var(--ink); font-weight: 500">SIP trunk</a><div class="mono" style="font-size: 12px; color: var(--muted)">sip.contoso.example:5061</div></td><td class="mono" style="white-space: nowrap">7 Oct</td><td style="color: var(--muted); white-space: nowrap">today 04:14<br>mail, Telegram</td><td>—</td><td><button type="button" class="btn btn-xs btn-primary">Acknowledge</button></td></tr>
+            <tr><td><span class="pill warn">warn</span></td><td><div style="font-weight: 500">Expiring</div><div style="color: var(--muted)">22 days left · 2026-11-05 · manual renewal</div></td><td><a href="Target.dc.html" style="color: var(--ink); font-weight: 500">Mail relay</a><div class="mono" style="font-size: 12px; color: var(--muted)">mail.contoso.example:587</div></td><td class="mono" style="white-space: nowrap">13 Oct</td><td style="color: var(--muted); white-space: nowrap">13 Oct 04:15<br>mail</td><td>—</td><td><button type="button" class="btn btn-xs">Acknowledge</button></td></tr>
+            <tr><td><span class="pill warn">warn</span></td><td><div style="font-weight: 500">Certificate changed</div><div style="color: var(--muted)">new leaf b2c3d4e5 from Fabrikam Issuing CA, same SANs, same key type</div></td><td><a href="Target.dc.html" style="color: var(--ink); font-weight: 500">PBX Fabrikam</a><div class="mono" style="font-size: 12px; color: var(--muted)">pbx.fabrikam.example:8089</div></td><td class="mono" style="white-space: nowrap">13 Oct</td><td style="color: var(--muted); white-space: nowrap">13 Oct 04:16<br>mail</td><td>—</td><td><button type="button" class="btn btn-xs">Confirm</button></td></tr>
+            <tr style="color: var(--muted)"><td><span class="pill warn">warn</span></td><td><div style="font-weight: 500">Inconsistent</div><div>192.0.2.12 serves 2c88f1aa (12 d), 2001:db8:c0::12 serves 9b7d3f20 (61 d)</div></td><td><a href="Target.dc.html" style="font-weight: 500">Resident portal</a><div class="mono" style="font-size: 12px">portal.contoso.example:443</div></td><td class="mono" style="white-space: nowrap">11 Oct</td><td style="white-space: nowrap">11 Oct 04:12<br>mail</td><td style="white-space: nowrap"><span class="pill off">Alex</span><div style="font-size: 12px">until 20 Oct</div></td><td><button type="button" class="btn btn-xs">Unack</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <aside class="card" style="padding: 16px; display: flex; flex-direction: column; gap: 14px">
+        <div style="display: flex; align-items: center; gap: 8px"><span class="pill crit">crit</span><h2 style="margin: 0; font-size: 14px; font-weight: 600">Acknowledge: SIP trunk expiring</h2></div>
+        <p style="margin: 0; color: var(--muted)">Reminders stop. Escalation and the recovery notice still go out. Visible to everyone on the finding.</p>
+        <div class="field"><label class="label" for="until">Until</label><input id="until" class="input mono" type="text" value="2026-10-18" style="width: 150px; font-family: 'IBM Plex Mono', monospace"><span class="help">Reminders resume after this date if still open. Leave empty for until resolved.</span></div>
+        <div class="field"><label class="label" for="comment">Comment</label><textarea id="comment" class="input" style="height: auto; min-height: 80px; padding: 8px 10px; resize: vertical">Renewal ordered at Sectigo, ticket #48213. Install planned 17 Oct.</textarea></div>
+        <div style="display: flex; gap: 8px; justify-content: flex-end; padding-top: 10px; border-top: 1px solid var(--line)"><button type="button" class="btn">Cancel</button><button type="button" class="btn btn-primary">Acknowledge</button></div>
+        <div style="padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px">
+          <span class="label">Timeline</span>
+          <div style="display: flex; gap: 10px"><span class="mono" style="color: var(--muted); white-space: nowrap">today 04:14</span><span>reminder sent · Telegram ops</span></div>
+          <div style="display: flex; gap: 10px"><span class="mono" style="color: var(--muted); white-space: nowrap">13 Oct 04:14</span><span>escalated to critical · mail, Telegram</span></div>
+          <div style="display: flex; gap: 10px"><span class="mono" style="color: var(--muted); white-space: nowrap">7 Oct 04:14</span><span>opened as warning · Ops mailbox</span></div>
+        </div>
+      </aside>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

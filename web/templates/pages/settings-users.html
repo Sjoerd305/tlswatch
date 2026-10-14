@@ -1,0 +1,60 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}
+<div class="page-head"><div><h1>Settings</h1></div></div>
+<div class="grid-settings">
+  {{template "settings-nav" $p}}
+  <div class="stack">
+    <div><h2 class="h2">Users</h2><span class="summary">Viewers see everything, operators manage targets and acknowledge findings, admins also manage settings and users.</span></div>
+    <div class="card clip">
+      <table class="tbl cards">
+        <thead><tr><th>Name</th><th>E-mail</th><th>Login</th><th>Role</th><th>Status</th><th>Last sign-in</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody>
+        {{- range $d.Users}}
+          <tr class="{{if and $d.Edit (eq $d.Edit.ID .ID)}}sel{{else if not .Enabled}}muted{{end}}">
+            <td data-label="Name" class="strong">{{.DisplayName}}{{if eq .ID $d.Self}} <span class="muted">you</span>{{end}}</td>
+            <td data-label="E-mail" class="mono small">{{.Email}}</td>
+            <td data-label="Login">{{if eq .Method "google"}}Google{{else}}password{{if not .HasPassword}} <span class="muted">· link pending</span>{{end}}{{end}}</td>
+            <td data-label="Role">{{.Role}}</td>
+            <td data-label="Status">{{if .Enabled}}<span class="st ok">active</span>{{else}}<span class="st off">disabled</span>{{end}}</td>
+            <td data-label="Last sign-in" class="mono muted">{{when $p.Loc $p.Now .LastLogin}}</td>
+            <td data-label=""><a href="?edit={{.ID}}" class="btn btn-xs">Edit</a></td>
+          </tr>
+        {{- end}}
+        </tbody>
+      </table>
+    </div>
+    {{- with $d.Edit}}{{$u := .}}
+    <form class="card form" method="post" action="/settings/users/{{$u.ID}}">
+      {{template "csrf" $p.CSRF}}
+      <h3 class="h3">{{$u.Email}}</h3>
+      <div class="fgrid c3">
+        <div class="field"><label class="label" for="un">Name</label><input id="un" name="name" class="input" value="{{$u.Name}}"></div>
+        <div class="field"><label class="label" for="ur">Role</label><select id="ur" name="role" class="input">{{range roles}}<option value="{{.}}"{{if eq . $u.Role}} selected{{end}}>{{.}}</option>{{end}}</select></div>
+        <div class="field"><label class="label" for="um">Login method</label><select id="um" name="method" class="input"><option value="local"{{if eq $u.Method "local"}} selected{{end}}>password</option><option value="google"{{if eq $u.Method "google"}} selected{{end}}>Google</option></select></div>
+      </div>
+      <label class="check"><input type="checkbox" name="enabled" value="1"{{if $u.Enabled}} checked{{end}}> Enabled; disabling signs the user out everywhere</label>
+      <div class="form-foot">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <a href="/settings/users" class="btn">Cancel</a>
+        {{- if eq $u.Method "local"}}<button type="submit" form="user-link" class="btn cancel">New password link</button>{{end}}
+      </div>
+    </form>
+    {{- if eq $u.Method "local"}}<form id="user-link" method="post" action="/settings/users/{{$u.ID}}/link" hidden>{{template "csrf" $p.CSRF}}</form>{{end}}
+    {{- end}}
+    <form class="card form" method="post" action="/settings/users">
+      {{template "csrf" $p.CSRF}}
+      <h3 class="h3">Invite a user</h3>
+      {{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
+      <div class="fgrid c2">
+        <div class="field"><label class="label" for="ne">E-mail</label><input id="ne" name="email" type="email" class="input" value="{{$d.Form.Email}}" required></div>
+        <div class="field"><label class="label" for="nn">Name</label><input id="nn" name="name" class="input" value="{{$d.Form.Name}}"></div>
+      </div>
+      <div class="fgrid c2">
+        <div class="field"><label class="label" for="nr">Role</label><select id="nr" name="role" class="input">{{range roles}}<option value="{{.}}"{{if eq . $d.Form.Role}} selected{{end}}>{{.}}</option>{{end}}</select></div>
+        <div class="field"><label class="label" for="nm">Login method</label><select id="nm" name="method" class="input"><option value="local"{{if eq $d.Form.Method "local"}} selected{{end}}>password, one-time link valid 7 days</option><option value="google"{{if eq $d.Form.Method "google"}} selected{{end}}>Google{{if not $d.Google}} (not configured yet){{end}}</option></select></div>
+      </div>
+      <span class="help">A password user receives a one-time link to set a password; it is e-mailed through the first SMTP channel when there is one, and always shown here.</span>
+      <div class="form-foot"><button type="submit" class="btn btn-primary">Invite</button></div>
+    </form>
+  </div>
+</div>
+{{end}}

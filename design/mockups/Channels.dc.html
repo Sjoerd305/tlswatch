@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>tlswatch – Settings · Channels</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0}
+:root{--bg:#f5f6f7;--surface:#ffffff;--surface-2:#f0f2f4;--ink:#1a2330;--muted:#5c6b7a;--line:#dde2e7;--line-soft:#eaeef1;--input-line:#b9c2cc;--input-bg:#ffffff;--acc:#2f6fd1;--acc-hover:#275bb0;--on-acc:#ffffff;--link:#2f6fd1;--ok:#1f8a4c;--ok-bg:#e3f3ea;--warn:#a86400;--warn-bg:#fdf1dc;--crit:#c62828;--crit-bg:#fde8e8;--off:#6b7785;--off-bg:#e9ecef;--info:#2f6fd1;--info-bg:#e6eefb;--chrome:#1c2430;--chrome-fg:#e8edf2;--chrome-muted:#95a2b1;--chrome-line:#2c3745;--track:#e4e8ec}
+a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.top{height:48px;background:var(--chrome);color:var(--chrome-fg);display:flex;align-items:center;padding:0 20px;gap:28px}
+.brand{display:flex;align-items:center;gap:9px;color:var(--chrome-fg);font-weight:600;font-size:15px}
+.brand:hover{text-decoration:none}
+.top nav{display:flex;align-items:center;height:48px;gap:4px;flex-grow:1}
+.top nav a{display:inline-flex;align-items:center;gap:6px;height:48px;padding:0 10px;color:var(--chrome-muted);font-size:13px;font-weight:500;border-bottom:2px solid transparent;border-top:2px solid transparent}
+.top nav a.on{color:var(--chrome-fg);border-bottom-color:var(--acc)}
+.top nav a:hover{color:var(--chrome-fg);text-decoration:none}
+.cnt{display:inline-flex;min-width:18px;height:18px;padding:0 5px;border-radius:9px;font-size:11px;font-weight:600;align-items:center;justify-content:center;background:var(--chrome-line);color:var(--chrome-fg)}
+.cnt.crit{background:var(--crit);color:#fff}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:6px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border-radius:5px;font:inherit;font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap;border:1px solid var(--input-line);background:var(--surface);color:var(--ink)}
+.btn:hover{text-decoration:none;background:var(--surface-2)}
+.btn-primary{background:var(--acc);color:var(--on-acc);border-color:var(--acc)}
+.btn-xs{height:26px;padding:0 8px;font-size:12px}
+.input{height:32px;padding:0 10px;border:1px solid var(--input-line);border-radius:5px;background:var(--input-bg);font:inherit;font-size:13px;color:var(--ink);box-sizing:border-box;width:100%}
+.label{font-size:12px;font-weight:600;color:var(--muted)}
+.field{display:flex;flex-direction:column;gap:5px}
+.help{font-size:12px;color:var(--muted)}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--surface-2);white-space:nowrap}
+.tbl td{padding:7px 10px;border-bottom:1px solid var(--line-soft);vertical-align:middle;white-space:nowrap}
+.tbl tr:last-child td{border-bottom:0}
+.tbl tr.sel td{background:var(--info-bg)}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500}
+.st::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor;flex-shrink:0}
+.st.ok{color:var(--ok)}.st.crit{color:var(--crit)}
+.pill{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:4px;font-size:11px;font-weight:600;letter-spacing:.02em;text-transform:uppercase}
+.pill.warn{background:var(--warn-bg);color:var(--warn)}.pill.crit{background:var(--crit-bg);color:var(--crit)}.pill.info{background:var(--info-bg);color:var(--info)}
+.subnav{display:flex;flex-direction:column;gap:2px}
+.subnav a{padding:7px 10px;border-radius:5px;color:var(--ink);font-size:13px}
+.subnav a.on{background:var(--surface);border:1px solid var(--line);font-weight:500}
+.subnav a:hover{text-decoration:none;background:var(--surface-2)}
+</style>
+</helmet>
+<div style="min-height: 820px; background: var(--bg); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 13px; line-height: 1.45; display: flex; flex-direction: column">
+  <header class="top">
+    <a href="Main.dc.html" class="brand">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--acc)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="tlswatch"><path d="M12 2.5 4 5.5v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10v-6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>
+      tlswatch
+    </a>
+    <nav aria-label="Main navigation">
+      <a href="Main.dc.html">Overview</a>
+      <a href="Targets.dc.html">Targets <span class="cnt">14</span></a>
+      <a href="Certificates.dc.html">Certificates <span class="cnt">11</span></a>
+      <a href="Findings.dc.html">Findings <span class="cnt crit">3</span></a>
+      <a href="Channels.dc.html" class="on" aria-current="page">Settings</a>
+    </nav>
+    <span style="font-size: 12px; color: var(--chrome-muted)" class="mono">last run 04:17 · next 04:17</span>
+    <a href="Login.dc.html" style="display: inline-flex; align-items: center; gap: 8px; color: var(--chrome-fg); font-size: 13px">Sjoerd <span style="font-size: 11px; color: var(--chrome-muted); border: 1px solid var(--chrome-line); border-radius: 4px; padding: 1px 6px">admin</span></a>
+  </header>
+  <main style="padding: 20px 24px 32px; display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 1400px; margin: 0 auto; box-sizing: border-box">
+    <h1 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em">Settings</h1>
+    <div style="display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 20px; align-items: start">
+      <nav class="subnav" aria-label="Settings">
+        <a href="Channels.dc.html" class="on" aria-current="page">Channels</a>
+        <a href="#">CA bundles</a>
+        <a href="#">Defaults</a>
+        <a href="#">Users</a>
+        <a href="#">Audit log</a>
+        <a href="#">About</a>
+      </nav>
+      <div style="display: flex; flex-direction: column; gap: 14px">
+        <div style="display: flex; align-items: center; justify-content: space-between"><div style="display: flex; flex-direction: column; gap: 2px"><h2 style="margin: 0; font-size: 16px; font-weight: 600">Channels</h2><span style="color: var(--muted)">Where alerts go. Each target picks its channels; a channel only carries severities at or above its floor.</span></div><a href="#" class="btn btn-primary">Add channel</a></div>
+        <div class="card" style="overflow: hidden">
+          <table class="tbl">
+            <thead><tr><th>Name</th><th>Type</th><th>Destination</th><th>Severity floor</th><th>Last delivery</th><th class="num">Sent, 30 d</th><th></th></tr></thead>
+            <tbody>
+              <tr class="sel"><td style="font-weight: 500">Ops mailbox</td><td>SMTP</td><td class="mono" style="font-size: 12px">ops@example.nl, noc@example.nl</td><td><span class="pill warn">warn</span></td><td><span class="st ok">ok</span> <span class="mono" style="color: var(--muted)">today 04:14</span></td><td class="num mono">19</td><td><button type="button" class="btn btn-xs">Test</button> <a href="#" class="btn btn-xs">Edit</a></td></tr>
+              <tr><td style="font-weight: 500">Telegram ops</td><td>Telegram</td><td class="mono" style="font-size: 12px">chat -1001234567890</td><td><span class="pill crit">crit</span></td><td><span class="st ok">ok</span> <span class="mono" style="color: var(--muted)">today 04:14</span></td><td class="num mono">4</td><td><button type="button" class="btn btn-xs">Test</button> <a href="#" class="btn btn-xs">Edit</a></td></tr>
+              <tr><td style="font-weight: 500">Customer Fabrikam</td><td>SMTP</td><td class="mono" style="font-size: 12px">ict@fabrikam.example</td><td><span class="pill crit">crit</span></td><td><span class="st crit">failed</span> <span class="mono" style="color: var(--muted)">13 Oct 04:16 · retry in 32 min</span></td><td class="num mono">0</td><td><button type="button" class="btn btn-xs">Test</button> <a href="#" class="btn btn-xs">Edit</a></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card" style="padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; max-width: 720px">
+          <h3 style="margin: 0; font-size: 14px; font-weight: 600">Ops mailbox</h3>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px">
+            <div class="field"><label class="label" for="cname">Name</label><input id="cname" class="input" value="Ops mailbox"></div>
+            <div class="field"><label class="label" for="csev">Severity floor</label><select id="csev" class="input"><option>info, everything</option><option selected>warning</option><option>critical only</option></select></div>
+          </div>
+          <div style="display: grid; grid-template-columns: minmax(0, 1fr) 90px 170px; gap: 12px">
+            <div class="field"><label class="label" for="smtphost">SMTP host</label><input id="smtphost" class="input mono" value="smtp.example.nl" style="font-family: 'IBM Plex Mono', monospace"></div>
+            <div class="field"><label class="label" for="smtpport">Port</label><input id="smtpport" class="input mono" value="587" style="font-family: 'IBM Plex Mono', monospace"></div>
+            <div class="field"><label class="label" for="smtptls">Encryption</label><select id="smtptls" class="input"><option>STARTTLS</option><option>implicit TLS</option><option>none</option></select></div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px">
+            <div class="field"><label class="label" for="smtpuser">Username</label><input id="smtpuser" class="input" value="tlswatch@example.nl"></div>
+            <div class="field"><label class="label" for="smtppw">Password</label><input id="smtppw" class="input" type="password" value="••••••••••••"><span class="help">Stored encrypted with the secret key. Leave empty to keep.</span></div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px">
+            <div class="field"><label class="label" for="from">From</label><input id="from" class="input" value="tlswatch &lt;tlswatch@example.nl&gt;"></div>
+            <div class="field"><label class="label" for="to">Recipients</label><input id="to" class="input" value="ops@example.nl, noc@example.nl"></div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line)">
+            <button type="button" class="btn btn-primary">Save</button>
+            <button type="button" class="btn">Send test message</button>
+            <a href="#" style="margin-left: auto; color: var(--crit)">Delete channel</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

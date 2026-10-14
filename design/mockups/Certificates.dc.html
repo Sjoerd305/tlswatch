@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>tlswatch – Certificates</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0}
+:root{--bg:#f5f6f7;--surface:#ffffff;--surface-2:#f0f2f4;--ink:#1a2330;--muted:#5c6b7a;--line:#dde2e7;--line-soft:#eaeef1;--input-line:#b9c2cc;--input-bg:#ffffff;--acc:#2f6fd1;--acc-hover:#275bb0;--on-acc:#ffffff;--link:#2f6fd1;--ok:#1f8a4c;--ok-bg:#e3f3ea;--warn:#a86400;--warn-bg:#fdf1dc;--crit:#c62828;--crit-bg:#fde8e8;--off:#6b7785;--off-bg:#e9ecef;--info:#2f6fd1;--info-bg:#e6eefb;--chrome:#1c2430;--chrome-fg:#e8edf2;--chrome-muted:#95a2b1;--chrome-line:#2c3745;--track:#e4e8ec}
+a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.top{height:48px;background:var(--chrome);color:var(--chrome-fg);display:flex;align-items:center;padding:0 20px;gap:28px}
+.brand{display:flex;align-items:center;gap:9px;color:var(--chrome-fg);font-weight:600;font-size:15px}
+.brand:hover{text-decoration:none}
+.top nav{display:flex;align-items:center;height:48px;gap:4px;flex-grow:1}
+.top nav a{display:inline-flex;align-items:center;gap:6px;height:48px;padding:0 10px;color:var(--chrome-muted);font-size:13px;font-weight:500;border-bottom:2px solid transparent;border-top:2px solid transparent}
+.top nav a.on{color:var(--chrome-fg);border-bottom-color:var(--acc)}
+.top nav a:hover{color:var(--chrome-fg);text-decoration:none}
+.cnt{display:inline-flex;min-width:18px;height:18px;padding:0 5px;border-radius:9px;font-size:11px;font-weight:600;align-items:center;justify-content:center;background:var(--chrome-line);color:var(--chrome-fg)}
+.cnt.crit{background:var(--crit);color:#fff}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:6px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border-radius:5px;font:inherit;font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap;border:1px solid var(--input-line);background:var(--surface);color:var(--ink)}
+.btn:hover{text-decoration:none;background:var(--surface-2)}
+.btn-xs{height:24px;padding:0 7px;font-size:11px}
+.input{height:32px;padding:0 10px;border:1px solid var(--input-line);border-radius:5px;background:var(--input-bg);font:inherit;font-size:13px;color:var(--ink);box-sizing:border-box}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--surface-2);white-space:nowrap}
+.tbl td{padding:7px 10px;border-bottom:1px solid var(--line-soft);vertical-align:middle;white-space:nowrap}
+.tbl tr:last-child td{border-bottom:0}
+.tbl td.num,.tbl th.num{text-align:right}
+.tbl tr.detail td{background:var(--surface-2);padding:12px 12px 14px 34px;white-space:normal}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500}
+.st::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor;flex-shrink:0}
+.st.ok{color:var(--ok)}.st.warn{color:var(--warn)}.st.crit{color:var(--crit)}.st.off{color:var(--off)}
+.pill{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:4px;font-size:11px;font-weight:600;letter-spacing:.02em;text-transform:uppercase}
+.pill.off{background:var(--off-bg);color:var(--off)}.pill.warn{background:var(--warn-bg);color:var(--warn)}
+.bar{height:6px;border-radius:3px;background:var(--track);overflow:hidden;width:110px}
+.bar>span{display:block;height:6px;border-radius:3px}
+.chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:14px;border:1px solid var(--input-line);background:var(--surface);font-size:12px;font-weight:500;color:var(--ink)}
+.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.chip .x{color:var(--muted);font-size:11px}
+.chip.on .x{color:#c7ced6}
+</style>
+</helmet>
+<div style="min-height: 860px; background: var(--bg); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 13px; line-height: 1.45; display: flex; flex-direction: column">
+  <header class="top">
+    <a href="Main.dc.html" class="brand">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--acc)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="tlswatch"><path d="M12 2.5 4 5.5v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10v-6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>
+      tlswatch
+    </a>
+    <nav aria-label="Main navigation">
+      <a href="Main.dc.html">Overview</a>
+      <a href="Targets.dc.html">Targets <span class="cnt">14</span></a>
+      <a href="Certificates.dc.html" class="on" aria-current="page">Certificates <span class="cnt">11</span></a>
+      <a href="Findings.dc.html">Findings <span class="cnt crit">3</span></a>
+      <a href="Channels.dc.html">Settings</a>
+    </nav>
+    <span style="font-size: 12px; color: var(--chrome-muted)" class="mono">last run 04:17 · next 04:17</span>
+    <a href="Login.dc.html" style="display: inline-flex; align-items: center; gap: 8px; color: var(--chrome-fg); font-size: 13px">Sjoerd <span style="font-size: 11px; color: var(--chrome-muted); border: 1px solid var(--chrome-line); border-radius: 4px; padding: 1px 6px">admin</span></a>
+  </header>
+  <main style="padding: 20px 24px 32px; display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 1400px; margin: 0 auto; box-sizing: border-box">
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap">
+      <div style="display: flex; flex-direction: column; gap: 2px"><h1 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em">Certificates</h1><span style="color: var(--muted)">11 unique certificates served on 14 targets · one row per fingerprint</span></div>
+      <a href="#" class="btn">Export CSV</a>
+    </div>
+    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+      <div style="position: relative; width: 300px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2.2" stroke-linecap="round" aria-hidden="true" style="position: absolute; left: 10px; top: 9px"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input class="input" type="search" placeholder="Filter: subject, SAN, fingerprint, serial" aria-label="Filter" style="width: 100%; padding-left: 30px">
+      </div>
+      <button type="button" class="chip on">All <span class="x">11</span></button>
+      <button type="button" class="chip">≤ 30 days <span class="x">2</span></button>
+      <button type="button" class="chip">≤ 90 days <span class="x">6</span></button>
+      <span style="width: 1px; height: 20px; background: var(--line); margin: 0 4px"></span>
+      <button type="button" class="chip">Let's Encrypt <span class="x">4</span></button>
+      <button type="button" class="chip">Fabrikam CA <span class="x">1</span></button>
+      <button type="button" class="chip">self-signed <span class="x">2</span></button>
+      <button type="button" class="chip">RSA <span class="x">5</span></button>
+    </div>
+    <div class="card" style="overflow: hidden">
+      <table class="tbl">
+        <thead><tr><th style="width: 24px"></th><th>Subject</th><th>Issuer</th><th class="num">Days</th><th>Lifetime</th><th>Not after</th><th>Key</th><th class="num">Targets</th><th>SHA-256</th><th>First seen</th></tr></thead>
+        <tbody>
+          <tr><td style="color: var(--muted)">▸</td><td style="font-weight: 500">sip.contoso.example</td><td>Sectigo</td><td class="num mono" style="color: var(--crit); font-weight: 600">5</td><td><div class="bar"><span style="width: 98%; background: var(--crit)"></span></div></td><td class="mono">2026-10-19</td><td class="mono" style="font-size: 12px">RSA 2048</td><td class="num mono">2</td><td class="mono" style="font-size: 12px; color: var(--muted)">7f3b92a1</td><td class="mono" style="color: var(--muted)">2025-10-19</td></tr>
+          <tr><td style="color: var(--muted)">▸</td><td style="font-weight: 500">mail.contoso.example</td><td>DigiCert</td><td class="num mono" style="color: var(--warn); font-weight: 600">22</td><td><div class="bar"><span style="width: 94%; background: var(--warn)"></span></div></td><td class="mono">2026-11-05</td><td class="mono" style="font-size: 12px">RSA 2048</td><td class="num mono">3</td><td class="mono" style="font-size: 12px; color: var(--muted)">a0c4e118</td><td class="mono" style="color: var(--muted)">2025-11-05</td></tr>
+          <tr><td style="color: var(--muted)">▸</td><td style="font-weight: 500">status.example.nl</td><td>Let's Encrypt R12</td><td class="num mono">48</td><td><div class="bar"><span style="width: 47%; background: var(--ok)"></span></div></td><td class="mono">2026-12-01</td><td class="mono" style="font-size: 12px">ECDSA P-256</td><td class="num mono">1</td><td class="mono" style="font-size: 12px; color: var(--muted)">41e9b0d2</td><td class="mono" style="color: var(--muted)">2026-09-02</td></tr>
+          <tr><td style="color: var(--muted)">▸</td><td style="font-weight: 500">portal.contoso.example</td><td>Let's Encrypt R12</td><td class="num mono">61</td><td><div class="bar"><span style="width: 32%; background: var(--ok)"></span></div></td><td class="mono">2026-12-14</td><td class="mono" style="font-size: 12px">ECDSA P-256</td><td class="num mono">1</td><td class="mono" style="font-size: 12px; color: var(--muted)">9b7d3f20</td><td class="mono" style="color: var(--muted)">2026-09-15</td></tr>
+          <tr><td style="color: var(--muted)">▸</td><td style="font-weight: 500">portal.contoso.example <span class="pill warn" style="margin-left: 6px">stale node</span></td><td>Let's Encrypt R11</td><td class="num mono">12</td><td><div class="bar"><span style="width: 87%; background: var(--warn)"></span></div></td><td class="mono">2026-10-26</td><td class="mono" style="font-size: 12px">ECDSA P-256</td><td class="num mono">1 <span style="color: var(--muted)">(1 of 2 addr)</span></td><td class="mono" style="font-size: 12px; color: var(--muted)">2c88f1aa</td><td class="mono" style="color: var(--muted)">2026-07-28</td></tr>
+          <tr><td style="color: var(--muted)">▾</td><td style="font-weight: 500">*.fabrikam.example</td><td>Fabrikam Issuing CA</td><td class="num mono">340</td><td><div class="bar"><span style="width: 7%; background: var(--ok)"></span></div></td><td class="mono">2027-09-19</td><td class="mono" style="font-size: 12px">ECDSA P-256</td><td class="num mono">4</td><td class="mono" style="font-size: 12px; color: var(--muted)">b2c3d4e5</td><td class="mono" style="color: var(--muted)">2026-10-13</td></tr>
+          <tr class="detail"><td colspan="10">
+            <div style="display: grid; grid-template-columns: 90px minmax(0, 1fr); row-gap: 8px; column-gap: 12px; font-size: 13px">
+              <span style="color: var(--muted)">SHA-256</span><span style="display: flex; align-items: center; gap: 8px"><span class="mono" style="font-size: 12px">b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef012</span><button type="button" class="btn btn-xs">copy</button><button type="button" class="btn btn-xs">pem</button></span>
+              <span style="color: var(--muted)">SANs</span><span class="mono" style="font-size: 12px">*.fabrikam.example, fabrikam.example</span>
+              <span style="color: var(--muted)">Chain</span><span>Fabrikam Issuing CA (2029-01-01) → Fabrikam Root CA (2036-01-01) · trusted via bundle "Fabrikam"</span>
+              <span style="color: var(--muted)">Served on</span>
+              <table class="tbl" style="width: auto; min-width: 640px">
+                <tbody>
+                  <tr><td><a href="Target.dc.html">PBX Fabrikam</a></td><td class="mono">pbx.fabrikam.example:8089</td><td class="mono" style="color: var(--muted)">10.20.2.20</td><td><span class="st warn" style="font-size: 12px">changed 13 Oct</span></td></tr>
+                  <tr><td><a href="Target.dc.html">Sensor gateway</a></td><td class="mono">gw.fabrikam.example:443</td><td class="mono" style="color: var(--muted)">10.20.2.30</td><td><span class="st ok" style="font-size: 12px">healthy</span></td></tr>
+                  <tr><td><a href="Target.dc.html">Nurse call server</a></td><td class="mono">10.20.2.40:443</td><td class="mono" style="color: var(--muted)">10.20.2.40</td><td><span class="st ok" style="font-size: 12px">healthy</span></td></tr>
+                  <tr><td><a href="Target.dc.html">Switch core</a></td><td class="mono">10.20.2.2:443</td><td class="mono" style="color: var(--muted)">10.20.2.2</td><td><span class="st ok" style="font-size: 12px">healthy</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </td></tr>
+          <tr><td style="color: var(--muted)">▸</td><td style="font-weight: 500">vault.example.dev</td><td>Let's Encrypt E8</td><td class="num mono">74</td><td><div class="bar"><span style="width: 18%; background: var(--ok)"></span></div></td><td class="mono">2026-12-27</td><td class="mono" style="font-size: 12px">ECDSA P-256</td><td class="num mono">1</td><td class="mono" style="font-size: 12px; color: var(--muted)">d17e5c09</td><td class="mono" style="color: var(--muted)">2026-09-28</td></tr>
+          <tr><td style="color: var(--muted)">▸</td><td style="font-weight: 500">pfSense-66b1c2 <span class="pill off" style="margin-left: 6px">self-signed</span></td><td>pfSense-66b1c2</td><td class="num mono">3214</td><td><div class="bar"><span style="width: 4%; background: var(--ok)"></span></div></td><td class="mono">2035-08-02</td><td class="mono" style="font-size: 12px">RSA 2048</td><td class="num mono">1</td><td class="mono" style="font-size: 12px; color: var(--muted)">e4f5a6b7</td><td class="mono" style="color: var(--muted)">2026-03-03</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

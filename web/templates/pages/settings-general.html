@@ -1,0 +1,26 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}{{$s := $p.Settings}}
+<div class="page-head"><div><h1>Settings</h1></div></div>
+<div class="grid-settings">
+  {{template "settings-nav" $p}}
+  <div class="stack">
+    <div><h2 class="h2">General</h2><span class="summary">How tlswatch is reached and what it may probe.</span></div>
+    {{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
+    <form class="card form" method="post" action="/settings/general">
+      {{template "csrf" $p.CSRF}}
+      <div class="field"><label class="label" for="base_url">Public URL</label>
+        <input id="base_url" name="base_url" class="input mono" value="{{$d.G.BaseURL}}" placeholder="{{$d.Derived}}" spellcheck="false"{{if $s.Locked "base_url"}} readonly{{end}}>
+        {{if $s.Locked "base_url"}}{{template "env-note" (index $s.Env "base_url")}}{{else}}<span class="help">Used for links in alerts and as the Google redirect. Leave empty to derive it from each request (now <span class="mono">{{$d.Derived}}</span>).</span>{{end}}</div>
+      <div class="field"><label class="label" for="tz">Time zone</label>
+        <input id="tz" name="time_zone" class="input mono w150" value="{{$d.G.TimeZone}}" list="zones" placeholder="server local"{{if $s.Locked "time_zone"}} readonly{{end}}>
+        <datalist id="zones">{{range $d.Zones}}<option value="{{.}}">{{end}}</datalist>
+        {{if $s.Locked "time_zone"}}{{template "env-note" (index $s.Env "time_zone")}}{{else}}<span class="help">For dates and times in the UI, alerts and the digest. An IANA name such as Europe/Amsterdam.</span>{{end}}</div>
+      <p class="form-sec">Network</p>
+      <label class="check"><input type="checkbox" name="behind_proxy" value="1"{{if $d.G.BehindProxy}} checked{{end}}{{if $s.Locked "behind_proxy"}} disabled{{end}}> Behind a reverse proxy: trust X-Forwarded-For and X-Forwarded-Proto from one hop</label>
+      {{if $s.Locked "behind_proxy"}}{{template "env-note" (index $s.Env "behind_proxy")}}{{if $d.G.BehindProxy}}<input type="hidden" name="behind_proxy" value="1">{{end}}{{else}}<span class="help lift">Only enable this when tlswatch is reachable through the proxy alone; otherwise clients can spoof their address.</span>{{end}}
+      <label class="check"><input type="checkbox" name="allow_local" value="1"{{if $d.G.AllowLocal}} checked{{end}}{{if $s.Locked "allow_local"}} disabled{{end}}> Allow loopback and link-local addresses as targets</label>
+      {{if $s.Locked "allow_local"}}{{template "env-note" (index $s.Env "allow_local")}}{{if $d.G.AllowLocal}}<input type="hidden" name="allow_local" value="1">{{end}}{{else}}<span class="help lift">Private ranges are always allowed. Loopback and link-local are refused by default so the probe cannot be pointed at the host itself.</span>{{end}}
+      <div class="form-foot"><button type="submit" class="btn btn-primary">Save</button></div>
+    </form>
+  </div>
+</div>
+{{end}}

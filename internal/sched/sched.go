@@ -1,0 +1,407 @@
+// Package sched runs the checks: a priority queue of targets by next-run
+// time, a bounded worker pool, the Check now / Check all requests and the
+// periodic housekeeping (reminders, retention, digest).
+package sched
+
+import (
+	"container/heap"
+	"context"
+	"database/sql"
+	"errors"
+	"log/slog"
+	"math/rand/v2"
+	"strconv"
+	"sync"
+	"time"
+
+	"github.com/sjoerd305/tlswatch/internal/core"
+	"github.com/sjoerd305/tlswatch/internal/probe"
+)
+
+type item struct {
+	id   int64
+	next int64
+	idx  int
+}
+
+type queue []*item
+
+func (q queue) Len() int           { return len(q) }
+func (q queue) Less(i, j int) bool { return q[i].next < q[j].next }
+func (q queue) Swap(i, j int)      { q[i], q[j] = q[j], q[i]; q[i].idx = i; q[j].idx = j }
+func (q *queue) Push(x any)        { it := x.(*item); it.idx = len(*q); *q = append(*q, it) }
+func (q *queue) Pop() any {
+	old := *q
+	it := old[len(old)-1]
+	*q = old[:len(old)-1]
+	it.idx = -1
+	return it
+}
+
+// Scheduler owns the check schedule.
+type Scheduler struct {
+	Core *core.Service
+	Log  *slog.Logger
+	Now  func() time.Time
+	// Probe is replaceable in tests.
+	Probe func(ctx context.Context, req probe.Request) probe.Result
+
+	mu       sync.Mutex
+	q        queue
+	byID     map[int64]*item
+	inflight map[int64]chan struct{}
+	running  int
+	wake     chan struct{}
+	reload   chan struct{}
+	once     sync.Once
+
+	statMu    sync.Mutex
+	lastLoop  time.Time
+	lastCheck time.Time
+	checks    int64
+}
+
+func (s *Scheduler) init() {
+	s.once.Do(func() {
+		s.byID = map[int64]*item{}
+		s.inflight = map[int64]chan struct{}{}
+		s.wake = make(chan struct{}, 1)
+		s.reload = make(chan struct{}, 1)
+	})
+}
+
+func (s *Scheduler) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
+}
+
+func signal(c chan struct{}) {
+	select {
+	case c <- struct{}{}:
+	default:
+	}
+}
+
+// Reload re-reads the schedule from the database, after targets changed.
+func (s *Scheduler) Reload() { s.init(); signal(s.reload) }
+
+// Status is reported by /healthz.
+type Status struct {
+	LastLoop  time.Time
+	LastCheck time.Time
+	Backlog   int
+	Running   int
+	Checks    int64
+}
+
+// Status returns scheduler progress.
+func (s *Scheduler) Status() Status {
+	s.init()
+	now := s.now().Unix()
+	s.mu.Lock()
+	backlog := 0
+	for _, it := range s.q {
+		if it.next <= now {
+			backlog++
+		}
+	}
+	running := s.running
+	s.mu.Unlock()
+	s.statMu.Lock()
+	defer s.statMu.Unlock()
+	return Status{LastLoop: s.lastLoop, LastCheck: s.lastCheck, Backlog: backlog, Running: running, Checks: s.checks}
+}
+
+// load rebuilds the queue. Overdue targets that were already checked once
+// are spread over the next few minutes, so a restart does not fire every
+// probe at once; never-checked targets run right away.
+func (s *Scheduler) load(ctx context.Context, startup bool) error {
+	sched, err := s.Core.Schedule(ctx)
+	if err != nil {
+		return err
+	}
+	now := s.now().Unix()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.q = s.q[:0]
+	s.byID = map[int64]*item{}
+	n := len(sched)
+	spread := int64(300)
+	if n > 300 {
+		spread = int64(n) // at least one second per target
+	}
+	for id, next := range sched {
+		if startup && next != 0 && next < now {
+			next = now + rand.Int64N(spread) // #nosec G404 -- schedule jitter, not a secret
+		}
+		it := &item{id: id, next: next}
+		s.byID[id] = it
+		heap.Push(&s.q, it)
+	}
+	return nil
+}
+
+// Run processes the schedule until ctx ends.
+func (s *Scheduler) Run(ctx context.Context) {
+	s.init()
+	if err := s.load(ctx, true); err != nil {
+		s.Log.Error("load schedule", "err", err)
+	}
+	go s.housekeeping(ctx)
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+	refresh := time.NewTicker(time.Minute) // picks up targets added outside the UI, e.g. by seed
+	defer refresh.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		case <-s.wake:
+		case <-refresh.C:
+			if err := s.load(ctx, false); err != nil {
+				s.Log.Error("load schedule", "err", err)
+			}
+		case <-s.reload:
+			if err := s.load(ctx, false); err != nil {
+				s.Log.Error("load schedule", "err", err)
+			}
+		}
+		s.statMu.Lock()
+		s.lastLoop = s.now()
+		s.statMu.Unlock()
+		s.dispatch(ctx)
+	}
+}
+
+func (s *Scheduler) workers(ctx context.Context) int {
+	n := s.Core.CurrentSettings(ctx).Defaults.Workers
+	if n < 1 {
+		n = 1
+	}
+	return n
+}
+
+// dispatch starts due checks while workers are free.
+func (s *Scheduler) dispatch(ctx context.Context) {
+	limit := s.workers(ctx)
+	now := s.now().Unix()
+	for {
+		s.mu.Lock()
+		if s.running >= limit || len(s.q) == 0 || s.q[0].next > now {
+			s.mu.Unlock()
+			return
+		}
+		it := heap.Pop(&s.q).(*item)
+		delete(s.byID, it.id)
+		if _, busy := s.inflight[it.id]; busy {
+			s.mu.Unlock()
+			continue
+		}
+		done := make(chan struct{})
+		s.inflight[it.id] = done
+		s.running++
+		s.mu.Unlock()
+		go s.run(ctx, it.id, done)
+	}
+}
+
+func (s *Scheduler) run(ctx context.Context, id int64, done chan struct{}) {
+	_, err := s.check(ctx, id)
+	if err != nil && ctx.Err() == nil && !errors.Is(err, core.ErrNotFound) {
+		s.Log.Error("check failed", "target", id, "err", err)
+	}
+	s.mu.Lock()
+	s.running--
+	delete(s.inflight, id)
+	s.mu.Unlock()
+	close(done)
+	// Re-queue with the next slot the check stored.
+	if t, err := s.Core.Target(ctx, id); err == nil && t.Enabled {
+		s.push(id, t.NextCheck)
+	}
+	signal(s.wake)
+}
+
+func (s *Scheduler) push(id, next int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if it, ok := s.byID[id]; ok {
+		it.next = next
+		heap.Fix(&s.q, it.idx)
+		return
+	}
+	it := &item{id: id, next: next}
+	s.byID[id] = it
+	heap.Push(&s.q, it)
+}
+
+func (s *Scheduler) check(ctx context.Context, id int64) (core.Target, error) {
+	t, err := s.Core.Target(ctx, id)
+	if err != nil {
+		return t, err
+	}
+	st := s.Core.CurrentSettings(ctx)
+	req, err := s.Core.ProbeRequest(ctx, t, st)
+	if err != nil {
+		return t, err
+	}
+	pf := probe.Probe
+	if s.Probe != nil {
+		pf = s.Probe
+	}
+	r := pf(ctx, req)
+	if ctx.Err() != nil {
+		return t, ctx.Err()
+	}
+	if err := s.Core.Apply(ctx, t, r); err != nil {
+		return t, err
+	}
+	s.statMu.Lock()
+	s.lastCheck = s.now()
+	s.checks++
+	s.statMu.Unlock()
+	s.Log.Info("checked", "target", t.Name, "endpoint", t.HostPort(), "addresses", len(r.Addresses), "dns_error", r.DNSError, "ms", r.Duration.Milliseconds())
+	return s.Core.Target(ctx, id)
+}
+
+// CheckNow probes one target right away and returns its new state. A check
+// already running for the target is waited for instead of duplicated.
+func (s *Scheduler) CheckNow(ctx context.Context, id int64) (core.Target, error) {
+	s.init()
+	s.mu.Lock()
+	if done, busy := s.inflight[id]; busy {
+		s.mu.Unlock()
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return core.Target{}, ctx.Err()
+		}
+		return s.Core.Target(ctx, id)
+	}
+	done := make(chan struct{})
+	s.inflight[id] = done
+	s.running++
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.running--
+		delete(s.inflight, id)
+		s.mu.Unlock()
+		close(done)
+	}()
+	t, err := s.check(ctx, id)
+	if err == nil && t.Enabled {
+		s.push(id, t.NextCheck)
+	}
+	return t, err
+}
+
+// CheckAll queues every enabled target to run now, through the pool.
+func (s *Scheduler) CheckAll(ctx context.Context) (int, error) {
+	s.init()
+	sched, err := s.Core.Schedule(ctx)
+	if err != nil {
+		return 0, err
+	}
+	now := s.now().Unix()
+	for id := range sched {
+		s.push(id, now)
+	}
+	signal(s.wake)
+	return len(sched), nil
+}
+
+// housekeeping runs reminders, retention and the digest.
+func (s *Scheduler) housekeeping(ctx context.Context) {
+	remind := time.NewTicker(5 * time.Minute)
+	prune := time.NewTicker(time.Hour)
+	minute := time.NewTicker(time.Minute)
+	defer remind.Stop()
+	defer prune.Stop()
+	defer minute.Stop()
+	s.prune(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-remind.C:
+			if n, err := s.Core.Remind(ctx); err != nil {
+				s.Log.Error("reminders", "err", err)
+			} else if n > 0 {
+				s.Log.Info("reminders queued", "alerts", n)
+			}
+		case <-prune.C:
+			s.prune(ctx)
+		case <-minute.C:
+			s.digest(ctx)
+		}
+	}
+}
+
+func (s *Scheduler) prune(ctx context.Context) {
+	if err := s.Core.Prune(ctx); err != nil {
+		s.Log.Error("retention", "err", err)
+	}
+	if _, err := s.Core.DB.W.ExecContext(ctx, "DELETE FROM sessions WHERE last_seen < ?", s.now().Add(-8*time.Hour).Unix()); err != nil {
+		s.Log.Error("prune sessions", "err", err)
+	}
+}
+
+// digest sends the weekly digest once in the configured hour.
+func (s *Scheduler) digest(ctx context.Context) {
+	st := s.Core.CurrentSettings(ctx)
+	d := st.Defaults
+	if !d.DigestEnabled {
+		return
+	}
+	now := s.now().In(st.Location())
+	if int(now.Weekday()) != d.DigestWeekday || now.Hour() != d.DigestHour {
+		return
+	}
+	stamp := now.Format("2006-01-02")
+	var last string
+	err := s.Core.DB.R.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = 'digest.last'").Scan(&last)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		s.Log.Error("digest", "err", err)
+		return
+	}
+	if last == strconv.Quote(stamp) {
+		return
+	}
+	if err := s.SendDigest(ctx); err != nil {
+		s.Log.Error("digest", "err", err)
+		return
+	}
+	_, _ = s.Core.DB.W.ExecContext(ctx, "INSERT INTO settings(key, value) VALUES('digest.last', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", strconv.Quote(stamp))
+}
+
+// SendDigest queues the digest to the digest channels (every SMTP channel
+// when none are chosen).
+func (s *Scheduler) SendDigest(ctx context.Context) error {
+	st := s.Core.CurrentSettings(ctx)
+	m, err := s.Core.Digest(ctx)
+	if err != nil {
+		return err
+	}
+	chans, err := s.Core.Channels.Enabled(ctx)
+	if err != nil {
+		return err
+	}
+	want := map[int64]bool{}
+	for _, id := range st.Defaults.DigestChannels {
+		want[id] = true
+	}
+	var ids []int64
+	for _, c := range chans {
+		if (len(want) == 0 && c.Kind == "smtp") || want[c.ID] {
+			ids = append(ids, c.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return errors.New("no channel for the digest; add an SMTP channel")
+	}
+	return s.Core.Dispatcher.SendNow(ctx, ids, "digest", m)
+}

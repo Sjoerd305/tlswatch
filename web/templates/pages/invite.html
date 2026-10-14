@@ -1,0 +1,20 @@
+{{define "content"}}{{$d := .Data}}
+{{- if $d.Valid}}
+<form class="login-card" method="post" action="/invite">
+  <h1>Set your password</h1>
+  {{template "csrf" .CSRF}}<input type="hidden" name="token" value="{{$d.Token}}">
+  <p class="muted">For <span class="mono">{{$d.User.Email}}</span></p>
+  {{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
+  <input type="email" name="email" value="{{$d.User.Email}}" autocomplete="username" hidden>
+  <div class="field"><label class="label" for="pw">Password</label><input id="pw" name="password" type="password" class="input" autocomplete="new-password" minlength="12" required autofocus><span class="help">At least 12 characters, not a known leaked password.</span></div>
+  <div class="field"><label class="label" for="pw2">Repeat password</label><input id="pw2" name="password2" type="password" class="input" autocomplete="new-password" minlength="12" required></div>
+  <button type="submit" class="btn btn-primary">Set password and sign in</button>
+</form>
+{{- else}}
+<div class="login-card">
+  <h1>Link not valid</h1>
+  <p>This link is invalid, already used or expired. Ask an administrator for a new one.</p>
+  <a href="/login" class="btn">Sign in</a>
+</div>
+{{- end}}
+{{end}}

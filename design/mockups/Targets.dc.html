@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>tlswatch – Targets</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0}
+:root{--bg:#f5f6f7;--surface:#ffffff;--surface-2:#f0f2f4;--ink:#1a2330;--muted:#5c6b7a;--line:#dde2e7;--line-soft:#eaeef1;--input-line:#b9c2cc;--input-bg:#ffffff;--acc:#2f6fd1;--acc-hover:#275bb0;--on-acc:#ffffff;--link:#2f6fd1;--ok:#1f8a4c;--ok-bg:#e3f3ea;--warn:#a86400;--warn-bg:#fdf1dc;--crit:#c62828;--crit-bg:#fde8e8;--off:#6b7785;--off-bg:#e9ecef;--info:#2f6fd1;--info-bg:#e6eefb;--chrome:#1c2430;--chrome-fg:#e8edf2;--chrome-muted:#95a2b1;--chrome-line:#2c3745;--track:#e4e8ec}
+a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.top{height:48px;background:var(--chrome);color:var(--chrome-fg);display:flex;align-items:center;padding:0 20px;gap:28px}
+.brand{display:flex;align-items:center;gap:9px;color:var(--chrome-fg);font-weight:600;font-size:15px}
+.brand:hover{text-decoration:none}
+.top nav{display:flex;align-items:center;height:48px;gap:4px;flex-grow:1}
+.top nav a{display:inline-flex;align-items:center;gap:6px;height:48px;padding:0 10px;color:var(--chrome-muted);font-size:13px;font-weight:500;border-bottom:2px solid transparent;border-top:2px solid transparent}
+.top nav a.on{color:var(--chrome-fg);border-bottom-color:var(--acc)}
+.top nav a:hover{color:var(--chrome-fg);text-decoration:none}
+.cnt{display:inline-flex;min-width:18px;height:18px;padding:0 5px;border-radius:9px;font-size:11px;font-weight:600;align-items:center;justify-content:center;background:var(--chrome-line);color:var(--chrome-fg)}
+.cnt.crit{background:var(--crit);color:#fff}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:6px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border-radius:5px;font:inherit;font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap;border:1px solid var(--input-line);background:var(--surface);color:var(--ink)}
+.btn:hover{text-decoration:none;background:var(--surface-2)}
+.btn-primary{background:var(--acc);color:var(--on-acc);border-color:var(--acc)}
+.btn-xs{height:26px;padding:0 8px;font-size:12px}
+.input{height:32px;padding:0 10px;border:1px solid var(--input-line);border-radius:5px;background:var(--input-bg);font:inherit;font-size:13px;color:var(--ink);box-sizing:border-box}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--surface-2);white-space:nowrap}
+.tbl th.sorted{color:var(--ink)}
+.tbl td{padding:7px 10px;border-bottom:1px solid var(--line-soft);vertical-align:middle;white-space:nowrap}
+.tbl tr:last-child td{border-bottom:0}
+.tbl td.num,.tbl th.num{text-align:right}
+.tbl tr.sel td{background:var(--info-bg)}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500}
+.st::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor;flex-shrink:0}
+.st.ok{color:var(--ok)}.st.warn{color:var(--warn)}.st.crit{color:var(--crit)}.st.off{color:var(--off)}
+.tag{display:inline-flex;align-items:center;height:20px;padding:0 6px;border-radius:4px;background:var(--surface-2);border:1px solid var(--line);color:var(--muted);font-size:11px;font-family:"IBM Plex Mono",monospace}
+.bar{height:6px;border-radius:3px;background:var(--track);overflow:hidden;width:110px}
+.bar>span{display:block;height:6px;border-radius:3px}
+.chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:14px;border:1px solid var(--input-line);background:var(--surface);font-size:12px;font-weight:500;color:var(--ink)}
+.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.chip .x{color:var(--muted);font-size:11px}
+.chip.on .x{color:#c7ceD6}
+</style>
+</helmet>
+<div style="min-height: 860px; background: var(--bg); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 13px; line-height: 1.45; display: flex; flex-direction: column">
+  <header class="top">
+    <a href="Main.dc.html" class="brand">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--acc)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="tlswatch"><path d="M12 2.5 4 5.5v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10v-6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>
+      tlswatch
+    </a>
+    <nav aria-label="Main navigation">
+      <a href="Main.dc.html">Overview</a>
+      <a href="Targets.dc.html" class="on" aria-current="page">Targets <span class="cnt">14</span></a>
+      <a href="Certificates.dc.html">Certificates <span class="cnt">11</span></a>
+      <a href="Findings.dc.html">Findings <span class="cnt crit">3</span></a>
+      <a href="Channels.dc.html">Settings</a>
+    </nav>
+    <span style="font-size: 12px; color: var(--chrome-muted)" class="mono">last run 04:17 · next 04:17</span>
+    <a href="Login.dc.html" style="display: inline-flex; align-items: center; gap: 8px; color: var(--chrome-fg); font-size: 13px">Sjoerd <span style="font-size: 11px; color: var(--chrome-muted); border: 1px solid var(--chrome-line); border-radius: 4px; padding: 1px 6px">admin</span></a>
+  </header>
+  <main style="padding: 20px 24px 32px; display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 1400px; margin: 0 auto; box-sizing: border-box">
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap">
+      <h1 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em">Targets</h1>
+      <div style="display: flex; gap: 8px"><a href="#" class="btn">Check all</a><a href="TargetForm.dc.html" class="btn btn-primary">Add target</a></div>
+    </div>
+    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+      <div style="position: relative; width: 260px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2.2" stroke-linecap="round" aria-hidden="true" style="position: absolute; left: 10px; top: 9px"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input class="input" type="search" placeholder="Filter: name, host, tag, issuer" aria-label="Filter" style="width: 100%; padding-left: 30px">
+      </div>
+      <button type="button" class="chip on">All <span class="x">14</span></button>
+      <button type="button" class="chip"><span class="st crit" style="font-size: 12px">Critical</span><span class="x">1</span></button>
+      <button type="button" class="chip"><span class="st warn" style="font-size: 12px">Warning</span><span class="x">2</span></button>
+      <button type="button" class="chip"><span class="st ok" style="font-size: 12px">Healthy</span><span class="x">11</span></button>
+      <button type="button" class="chip"><span class="st off" style="font-size: 12px">Disabled</span><span class="x">1</span></button>
+      <span style="width: 1px; height: 20px; background: var(--line); margin: 0 4px"></span>
+      <button type="button" class="chip">customer:contoso <span class="x">5</span></button>
+      <button type="button" class="chip">customer:fabrikam <span class="x">4</span></button>
+      <button type="button" class="chip">internal <span class="x">6</span></button>
+      <span style="margin-left: auto; color: var(--muted); font-size: 12px">sorted by expiry</span>
+    </div>
+    <div class="card" style="overflow: hidden">
+      <table class="tbl">
+        <thead><tr><th>Status</th><th>Name</th><th>Host</th><th class="num sorted">Days ▲</th><th>Lifetime</th><th>Expires</th><th>Issuer</th><th>TLS</th><th>Tags</th><th>Checked</th><th></th></tr></thead>
+        <tbody>
+          <tr><td><span class="st crit">Critical</span></td><td><a href="Target.dc.html" style="color: var(--ink); font-weight: 500">SIP trunk</a></td><td class="mono">sip.contoso.example:5061</td><td class="num mono" style="color: var(--crit); font-weight: 600">5</td><td><div class="bar"><span style="width: 98%; background: var(--crit)"></span></div></td><td class="mono">2026-10-19</td><td>Sectigo</td><td class="mono" style="color: var(--muted)">1.2</td><td><span class="tag">customer:contoso</span> <span class="tag">sip</span></td><td class="mono" style="color: var(--muted)">04:14</td><td><a href="#" class="btn btn-xs">Check</a></td></tr>
+          <tr><td><span class="st warn">Warning</span></td><td><a href="Target.dc.html" style="color: var(--ink); font-weight: 500">Mail relay</a></td><td class="mono">mail.contoso.example:587 <span style="color: var(--muted)">smtp</span></td><td class="num mono" style="color: var(--warn); font-weight: 600">22</td><td><div class="bar"><span style="width: 94%; background: var(--warn)"></span></div></td><td class="mono">2026-11-05</td><td>DigiCert</td><td class="mono" style="color: var(--muted)">1.2</td><td><span class="tag">customer:contoso</span></td><td class="mono" style="color: var(--muted)">04:15</td><td><a href="#" class="btn btn-xs">Check</a></td></tr>
+          <tr><td><span class="st ok">Healthy</span></td><td><a href="Target.dc.html" style="color: var(--ink); font-weight: 500">Status page</a></td><td class="mono">status.example.nl:443</td><td class="num mono">48</td><td><div class="bar"><span style="width: 47%; background: var(--ok)"></span></div></td><td class="mono">2026-12-01</td><td>Let's Encrypt <span style="color: var(--muted)">auto</span></td><td class="mono" style="color: var(--muted)">1.3</td><td></td><td class="mono" style="color: var(--muted)">04:17</td><td><a href="#" class="btn btn-xs">Check</a></td></tr>
+          <tr><td><span class="st warn">Warning</span></td><td><a href="Target.dc.html" style="color: var(--ink); font-weight: 500">Resident portal</a></td><td class="mono">portal.contoso.example:443 <span style="color: var(--muted)">2 addr</span></td><td class="num mono">61</td><td><div class="bar"><span style="width: 32%; background: var(--ok)"></span></div></td><td class="mono">2026-12-14</td><td>Let's Encrypt <span style="color: var(--muted)">auto</span></td><td class="mono" style="color: var(--muted)">1.3</td><td><span class="tag">customer:contoso</span></td><td class="mono" style="color: var(--muted)">04:12</td><td><a href="#" class="btn btn-xs">Check</a></td></tr>
+          <tr><td><span class="st ok">Healthy</span></td><td><a href="Target.dc.html" style="color: var(--ink); font-weight: 500">Vault</a></td><td class="mono">vault.example.dev:443</td><td class="num mono">74</td><td><div class="bar"><span style="width: 18%; background: var(--ok)"></span></div></td><td class="mono">2026-12-27</td><td>Let's Encrypt <span style="color: var(--muted)">auto</span></td><td class="mono" style="color: var(--muted)">1.3</td><td><span class="tag">internal</span></td><td class="mono" style="color: var(--muted)">04:17</td><td><a href="#" class="btn btn-xs">Check</a></td></tr>
+          <tr><td><span class="st ok">Healthy</span></td><td><a href="Target.dc.html" style="color: var(--ink); font-weight: 500">SSO proxy</a></td><td class="mono">sso.example.nl:443</td><td class="num mono">88</td><td><div class="bar"><span style="width: 2%; background: var(--ok)"></span></div></td><td class="mono">2027-01-10</td><td>Let's Encrypt <span style="color: var(--muted)">auto</span></td><td class="mono" style="color: var(--muted)">1.3</td><td><span class="tag">internal</span></td><td class="mono" style="color: var(--muted)">04:17</td><td><a href="#" class="btn btn-xs">Check</a></td></tr>
+          <tr><td><span class="st warn">Changed</span></td><td><a href="Target.dc.html" style="color: var(--ink); font-weight: 500">PBX Fabrikam</a></td><td class="mono">pbx.fabrikam.example:8089</td><td class="num mono">340</td><td><div class="bar"><span style="width: 7%; background: var(--ok)"></span></div></td><td class="mono">2027-09-19</td><td>Fabrikam CA</td><td class="mono" style="color: var(--muted)">1.2</td><td><span class="tag">customer:fabrikam</span> <span class="tag">internal</span></td><td class="mono" style="color: var(--muted)">04:16</td><td><a href="#" class="btn btn-xs">Check</a></td></tr>
+          <tr><td><span class="st ok">Healthy</span></td><td><a href="Target.dc.html" style="color: var(--ink); font-weight: 500">Sensor gateway</a></td><td class="mono">gw.fabrikam.example:443</td><td class="num mono">340</td><td><div class="bar"><span style="width: 7%; background: var(--ok)"></span></div></td><td class="mono">2027-09-19</td><td>Fabrikam CA</td><td class="mono" style="color: var(--muted)">1.3</td><td><span class="tag">customer:fabrikam</span> <span class="tag">internal</span></td><td class="mono" style="color: var(--muted)">04:16</td><td><a href="#" class="btn btn-xs">Check</a></td></tr>
+          <tr><td><span class="st ok">Healthy</span></td><td><a href="Target.dc.html" style="color: var(--ink); font-weight: 500">Nurse call server</a></td><td class="mono">10.20.2.40:443</td><td class="num mono">340</td><td><div class="bar"><span style="width: 7%; background: var(--ok)"></span></div></td><td class="mono">2027-09-19</td><td>Fabrikam CA</td><td class="mono" style="color: var(--muted)">1.3</td><td><span class="tag">customer:fabrikam</span> <span class="tag">internal</span></td><td class="mono" style="color: var(--muted)">04:16</td><td><a href="#" class="btn btn-xs">Check</a></td></tr>
+          <tr><td><span class="st ok">Healthy</span></td><td><a href="Target.dc.html" style="color: var(--ink); font-weight: 500">Switch core</a></td><td class="mono">10.20.2.2:443</td><td class="num mono">340</td><td><div class="bar"><span style="width: 7%; background: var(--ok)"></span></div></td><td class="mono">2027-09-19</td><td>Fabrikam CA</td><td class="mono" style="color: var(--muted)">1.2</td><td><span class="tag">customer:fabrikam</span> <span class="tag">internal</span></td><td class="mono" style="color: var(--muted)">04:16</td><td><a href="#" class="btn btn-xs">Check</a></td></tr>
+          <tr><td><span class="st ok">Healthy</span></td><td><a href="Target.dc.html" style="color: var(--ink); font-weight: 500">Firewall Fabrikam</a></td><td class="mono">10.20.2.1:443</td><td class="num mono">3214</td><td><div class="bar"><span style="width: 4%; background: var(--ok)"></span></div></td><td class="mono">2035-08-02</td><td>self-signed <span style="color: var(--muted)">pinned</span></td><td class="mono" style="color: var(--muted)">1.3</td><td><span class="tag">customer:fabrikam</span> <span class="tag">internal</span></td><td class="mono" style="color: var(--muted)">04:16</td><td><a href="#" class="btn btn-xs">Check</a></td></tr>
+          <tr><td><span class="st ok">Healthy</span></td><td><a href="Target.dc.html" style="color: var(--ink); font-weight: 500">Firewall Contoso</a></td><td class="mono">10.30.0.1:443</td><td class="num mono">3102</td><td><div class="bar"><span style="width: 6%; background: var(--ok)"></span></div></td><td class="mono">2035-04-12</td><td>self-signed <span style="color: var(--muted)">pinned</span></td><td class="mono" style="color: var(--muted)">1.3</td><td><span class="tag">customer:contoso</span> <span class="tag">internal</span></td><td class="mono" style="color: var(--muted)">04:13</td><td><a href="#" class="btn btn-xs">Check</a></td></tr>
+          <tr><td><span class="st ok">Healthy</span></td><td><a href="Target.dc.html" style="color: var(--ink); font-weight: 500">IMAP Contoso</a></td><td class="mono">mail.contoso.example:143 <span style="color: var(--muted)">imap</span></td><td class="num mono">22</td><td><div class="bar"><span style="width: 94%; background: var(--warn)"></span></div></td><td class="mono">2026-11-05</td><td>DigiCert</td><td class="mono" style="color: var(--muted)">1.2</td><td><span class="tag">customer:contoso</span></td><td class="mono" style="color: var(--muted)">04:15</td><td><a href="#" class="btn btn-xs">Check</a></td></tr>
+          <tr style="color: var(--muted)"><td><span class="st off">Disabled</span></td><td><a href="Target.dc.html" style="color: var(--muted); font-weight: 500">Lab appliance</a></td><td class="mono">10.40.1.10:8443</td><td class="num mono">—</td><td></td><td class="mono">—</td><td>—</td><td></td><td><span class="tag">lab</span></td><td class="mono">12 Oct</td><td><a href="#" class="btn btn-xs">Enable</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <span style="color: var(--muted); font-size: 12px">14 of 14 targets · lifetime bar shows the share of the certificate's validity already used</span>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

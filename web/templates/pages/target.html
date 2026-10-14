@@ -1,0 +1,166 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}{{$t := $d.T}}{{$c := $t.Cert}}
+<div class="crumbs"><a href="/targets">Targets</a><span>/</span><span>{{$t.Name}}</span></div>
+<div class="page-head top-align">
+  <div>
+    <div class="title-row"><h1>{{$t.Name}}</h1>{{template "status" $t.Status}}</div>
+    <div class="sub-row"><span class="mono">{{$t.HostPort}}</span><span class="tag">{{$t.Protocol}}</span>{{range $t.Tags}}<a class="tag" href="/targets?tag={{.}}">{{.}}</a>{{end}}</div>
+  </div>
+  {{- if $p.Can "targets.edit"}}
+  <div class="actions row">
+    {{- if $t.Enabled}}
+    <form method="post" action="/targets/{{$t.ID}}/check" data-api="/api/v1/targets/{{$t.ID}}/check">{{template "csrf" $p.CSRF}}<input type="hidden" name="from" value="detail"><button type="submit" class="btn">Check now</button></form>
+    {{- end}}
+    <a href="/targets/{{$t.ID}}/edit" class="btn">Edit</a>
+    {{- if $t.Enabled}}
+    <form method="post" action="/targets/{{$t.ID}}/disable">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-danger">Disable</button></form>
+    {{- else}}
+    <form method="post" action="/targets/{{$t.ID}}/enable">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-primary">Enable</button></form>
+    {{- end}}
+    <a href="/targets/{{$t.ID}}/delete" class="btn btn-danger">Delete</a>
+  </div>
+  {{- end}}
+</div>
+{{- if not $t.Enabled}}
+<div class="notice info" role="status">{{template "notice-icon" "info"}}<div>This target is disabled and not checked. History is kept.</div></div>
+{{- else if not $t.LastCheck}}
+<div class="notice info" role="status">{{template "notice-icon" "info"}}<div>Not checked yet. The first check runs shortly{{if $p.Can "targets.edit"}}, or use Check now{{end}}.</div></div>
+{{- else if and $t.LastError (not $c)}}
+<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$t.LastError}}</div></div>
+{{- end}}
+<div class="grid-main-side w360">
+  <div class="stack">
+    {{- if $c}}{{$cls := $t.ExpiryClass $p.Settings.Defaults $p.Now}}{{$days := days $p.Now $t.NotAfter}}
+    <section class="card pad{{if eq $cls "crit"}} crit-border{{else if eq $cls "warn"}} warn-border{{end}}">
+      <div class="count-row">
+        <span class="countdown {{if $cls}}{{$cls}}{{else}}ok{{end}}">{{if lt $days 0}}expired{{else}}{{$days}} {{plural $days "day" "days"}}{{end}}</span>
+        <span class="when">{{if lt $days 0}}since{{else}}until expiry ·{{end}} <span class="mono">{{datetime $p.Loc $t.NotAfter}}</span></span>
+        {{- with $d.OpenMain}}
+        <span class="meta">finding open since {{when $p.Loc $p.Now .OpenedAt}}{{if $p.Can "findings.ack"}} · <a href="/findings?sel={{.ID}}">{{if .Kind.AckResolves}}confirm{{else}}acknowledge{{end}}</a>{{end}}</span>
+        {{- end}}
+      </div>
+      <div class="lifetime">
+        {{template "bar" (dict "Used" ($c.LifetimeUsed $p.Now) "Class" ($t.BarClass $p.Settings.Defaults $p.Now) "Wide" "full")}}
+        <div class="lifetime-legend"><span>{{date $p.Loc $c.NotBefore}} issued</span><span>{{$c.LifetimeDays}}-day certificate · {{$c.LifetimeUsed $p.Now}}% used · {{if $t.RenewalManaged}}renewal managed{{else}}manual renewal{{end}}</span><span>{{date $p.Loc $c.NotAfter}}</span></div>
+      </div>
+      <dl class="kv cols4">
+        <dt>Subject</dt><dd class="wrap-any">{{$c.Subject}}</dd>
+        <dt>Issuer</dt><dd class="wrap-any">{{$c.IssuerCN}}{{if and $c.IssuerOrg (ne $c.IssuerOrg $c.IssuerCN)}} <span class="muted">· {{$c.IssuerOrg}}</span>{{end}}</dd>
+        <dt>SANs</dt><dd class="mono">{{if $c.SANs}}{{join $c.SANs ", "}}{{else}}—{{end}}</dd>
+        <dt>Key</dt><dd>{{$c.KeyDesc}} · {{$c.SigAlg}}</dd>
+        <dt>Serial</dt><dd class="mono">{{$c.Serial}}</dd>
+        <dt>Seen</dt><dd>since {{date $p.Loc $c.FirstSeen}}{{if $d.AlsoOn}} · also on {{range $i, $s := $d.AlsoOn}}{{if $i}}, {{end}}<a href="/targets/{{$s.TargetID}}">{{$s.TargetName}}</a>{{end}}{{end}}</dd>
+        <dt>SHA-256</dt><dd class="mono fp-row"><span class="ellipsis" title="{{$c.Fingerprint}}">{{$c.Fingerprint}}</span><button type="button" class="btn btn-xs" data-copy="{{$c.Fingerprint}}">copy</button><a class="btn btn-xs" href="/certificates/{{$c.Fingerprint}}/pem?download=1" data-copy-url="/certificates/{{$c.Fingerprint}}/pem">pem</a></dd>
+        <dt>Hostname</dt><dd>{{if not $t.ServerName}}<span class="muted">not checked, no server name</span>{{else}}{{$mm := false}}{{range $d.Findings}}{{if and .Open (eq (print .Kind) "hostname_mismatch")}}{{$mm = true}}{{end}}{{end}}{{if $mm}}<span class="st sm crit">does not match {{$t.ServerName}}</span>{{else}}<span class="st sm ok">matches {{$t.ServerName}}</span>{{end}}{{end}}</dd>
+      </dl>
+    </section>
+    {{- end}}
+
+    {{- if $d.Chain}}
+    <section class="card clip">
+      <div class="sec"><h2>Chain as served</h2>{{if eq (print $t.Trust) "self-signed"}}<span class="st sm off">pinned, not verified</span>{{else if $d.ChainOK}}<span class="st sm ok">trusted via {{if eq (print $t.Trust) "bundle"}}bundle "{{$t.BundleName}}"{{else}}system store{{end}}</span>{{else}}<span class="st sm crit">not trusted</span>{{end}}</div>
+      <div class="chain">
+        {{- $ecls := $t.ExpiryClass $p.Settings.Defaults $p.Now}}
+        {{- range $d.Chain}}{{$dl := days $p.Now .NotAfter}}
+        <div class="link"><span class="d {{if or (lt $dl 0) .Weak}}bad{{else if and .Worst $ecls}}{{if eq $ecls "crit"}}bad{{else}}warn{{end}}{{else}}good{{end}}"></span>
+          <div><div class="name">{{.SubjectCN}}</div><div class="sub">{{.Role}}{{if .InStore}}, in {{if eq (print $t.Trust) "bundle"}}bundle{{else}}store{{end}}{{end}} · {{.KeyDesc}} · {{.SigAlg}}{{if .Weak}} · <span class="crit-t">weak</span>{{end}}</div></div>
+          <span class="date mono">{{date $p.Loc .NotAfter}}</span>
+          <span class="left mono{{if and .Worst $ecls}} {{$ecls}}-t bold{{end}}">{{$dl}} d</span>
+        </div>
+        {{- end}}
+      </div>
+      {{- if and (not $d.ChainOK) $d.ChainNote (ne (print $t.Trust) "self-signed")}}<div class="li muted">{{$d.ChainNote}}</div>{{end}}
+    </section>
+    {{- end}}
+
+    {{- if $d.Last}}{{$first := index $d.Last 0}}
+    <section class="card clip">
+      <div class="sec"><h2>Last check · {{whenTime $p.Loc $p.Now $first.CheckedAt}} · {{len $d.Last}} {{plural (len $d.Last) "address" "addresses"}}</h2><span class="meta mono">{{if $t.AllAddresses}}all addresses, max 8{{else}}first address only{{end}}</span></div>
+      <table class="tbl cards">
+        <thead><tr><th>Address</th><th>Result</th><th>Protocol</th><th>Cipher</th><th>Certificate</th><th class="num">Time</th></tr></thead>
+        <tbody>
+        {{- range $d.Last}}
+          <tr>
+            <td data-label="Address" class="mono">{{if .Address}}{{.Address}}{{else}}—{{end}}</td>
+            <td data-label="Result">{{if eq .Status "ok"}}<span class="st ok">OK</span>{{else if eq .Status "warning"}}<span class="st warn">Warning</span>{{else if eq .Status "critical"}}<span class="st crit">Critical</span>{{else if eq .Status "skipped"}}<span class="st off">Skipped</span>{{else}}<span class="st crit">Failed</span>{{end}}{{if .Error}} <span class="muted small">{{.Error}}</span>{{end}}</td>
+            <td data-label="Protocol" class="mono">{{.TLSVersion}}</td>
+            <td data-label="Cipher" class="mono muted small">{{.Cipher}}</td>
+            <td data-label="Certificate" class="mono small">{{if .LeafFP}}<a href="/certificates?open={{short .LeafFP}}" class="ink">{{short .LeafFP}}…</a>{{end}}</td>
+            <td data-label="Time" class="num mono">{{if .DurationMS}}{{.DurationMS}} ms{{end}}</td>
+          </tr>
+        {{- end}}
+        </tbody>
+      </table>
+    </section>
+    {{- end}}
+
+    {{- if $d.History}}
+    <section class="card clip">
+      <div class="sec"><h2>History</h2><span class="meta">certificates seen on this target · {{$p.Settings.Defaults.RetentionDays}} days</span></div>
+      <table class="tbl cards">
+        <thead><tr><th>Certificate</th><th>Issuer</th><th>Not after</th><th>First seen</th><th>Last seen</th></tr></thead>
+        <tbody>
+        {{- range $d.History}}
+          <tr>
+            <td data-label="Certificate" class="mono small"><a href="/certificates?open={{short .Fingerprint}}&amp;all=1" class="ink">{{short .Fingerprint}}…</a>{{if .Current}} <span class="muted">current</span>{{end}}</td>
+            <td data-label="Issuer">{{.IssuerName}}</td>
+            <td data-label="Not after" class="mono">{{date $p.Loc .NotAfter}}</td>
+            <td data-label="First seen" class="mono">{{date $p.Loc .First}}</td>
+            <td data-label="Last seen" class="mono">{{when $p.Loc $p.Now .Last}}</td>
+          </tr>
+        {{- end}}
+        </tbody>
+      </table>
+    </section>
+    {{- end}}
+  </div>
+
+  <aside class="stack">
+    <section class="card pad">
+      <h2 class="h-sec">Configuration</h2>
+      <dl class="kv w110">
+        <dt>Protocol</dt><dd>{{if eq (print $t.Protocol) "tls"}}tls, implicit{{else}}{{$t.Protocol}}, STARTTLS{{end}}</dd>
+        <dt>Server name</dt><dd class="mono">{{if $t.ServerName}}{{$t.ServerName}}{{else}}<span class="muted">none</span>{{end}}</dd>
+        <dt>Trust</dt><dd>{{if eq (print $t.Trust) "bundle"}}CA bundle "{{$t.BundleName}}"{{else if eq (print $t.Trust) "self-signed"}}self-signed, pinned{{if $t.PinnedFP}} <span class="mono small">{{short $t.PinnedFP}}</span>{{end}}{{else}}system store{{end}}</dd>
+        <dt>Renewal</dt><dd>{{if $t.RenewalManaged}}managed (ACME){{else}}manual{{end}}{{if not $t.RenewalSet}} <span class="muted">· from issuer</span>{{end}}</dd>
+        {{- if $t.ExpectedIssuer}}<dt>Expected issuer</dt><dd>{{$t.ExpectedIssuer}}</dd>{{end}}
+        <dt>Thresholds</dt><dd class="mono">warn {{$d.Eff.Warn}} d · crit {{$d.Eff.Crit}} d{{if $d.Eff.WarnDefault}} <span class="muted">default</span>{{end}}</dd>
+        <dt>Interval</dt><dd class="mono">{{duration $d.Eff.IntervalS}}{{if $d.Slot}} · slot {{$d.Slot}}{{end}}</dd>
+        <dt>Next check</dt><dd class="mono">{{if $t.Enabled}}{{whenTime $p.Loc $p.Now $t.NextCheck}}{{else}}—{{end}}</dd>
+        <dt>Addresses</dt><dd>{{if $t.AllAddresses}}all, max 8{{else}}first only{{end}}</dd>
+        <dt>Reminders</dt><dd class="mono">warn {{duration $d.Eff.RemindWarnS}} · crit {{duration $d.Eff.RemindCritS}}</dd>
+        <dt>Channels</dt><dd>{{if $d.Channels}}{{join $d.Channels ", "}}{{else}}<span class="muted">none</span>{{end}}{{if $t.AllChannels}} <span class="muted">· all</span>{{end}}</dd>
+        <dt>Added</dt><dd>{{date $p.Loc $t.CreatedAt}}{{if $t.CreatedBy}} by {{$t.CreatedBy}}{{end}}</dd>
+      </dl>
+      {{- if $t.Notes}}<div class="notes"><span>Notes</span><p>{{$t.Notes}}</p></div>{{end}}
+    </section>
+    <section class="card clip">
+      <div class="sec"><h2>Findings on this target</h2></div>
+      <table class="tbl">
+        <tbody>
+        {{- range $d.Findings}}
+          <tr{{if not .Open}} class="muted"{{end}}>
+            <td>{{if .Open}}{{if .Acked $p.Now}}<span class="pill off">ack</span>{{else}}<span class="pill {{.Severity.Class}}">{{.Severity.Short}}</span>{{end}}{{else}}<span class="pill off">done</span>{{end}}</td>
+            <td class="wrap"><a href="/findings?sel={{.ID}}{{if not .Open}}&amp;state=resolved{{end}}" class="ink">{{lower .Kind.Label}}</a>{{if .DaysLeft}}{{if .Open}} · {{daysPtr .DaysLeft}} d{{end}}{{end}}</td>
+            <td class="mono muted">{{when $p.Loc $p.Now .OpenedAt}}</td>
+          </tr>
+        {{- else}}
+          <tr><td class="muted">None in the last {{$p.Settings.Defaults.RetentionDays}} days.</td></tr>
+        {{- end}}
+        </tbody>
+      </table>
+    </section>
+    <section class="card clip">
+      <div class="sec"><h2>Alerts sent</h2></div>
+      <table class="tbl">
+        <tbody>
+        {{- range $d.Alerts}}
+          <tr><td class="mono muted">{{whenTime $p.Loc $p.Now .CreatedAt}}</td><td class="wrap">{{template "event-label" .Event}} · {{.Channel}}</td><td><span class="st sm {{if eq .State "sent"}}ok{{else if eq .State "failed"}}crit{{else}}off{{end}}">{{if eq .State "pending"}}queued{{else}}{{.State}}{{end}}</span></td></tr>
+        {{- else}}
+          <tr><td class="muted">No alerts.</td></tr>
+        {{- end}}
+        </tbody>
+      </table>
+    </section>
+  </aside>
+</div>
+{{end}}

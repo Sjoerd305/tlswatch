@@ -1,0 +1,55 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}{{$x := $d.D}}{{$s := $p.Settings}}
+<div class="page-head"><div><h1>Settings</h1></div></div>
+<div class="grid-settings">
+  {{template "settings-nav" $p}}
+  <div class="stack">
+    <div><h2 class="h2">Defaults</h2><span class="summary">Every target follows these values unless it sets its own. Changing a default does not touch targets that already have a value.</span></div>
+    {{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
+    <form class="card form" method="post" action="/settings/defaults">
+      {{template "csrf" $p.CSRF}}
+      <p class="form-sec">Expiry thresholds, days before expiry</p>
+      <div class="fgrid c4">
+        <div class="field"><label class="label" for="mw">Manual · warning</label><input id="mw" name="manual_warn" class="input mono" value="{{$x.Manual.WarnDays}}" inputmode="numeric"></div>
+        <div class="field"><label class="label" for="mc">Manual · critical</label><input id="mc" name="manual_crit" class="input mono" value="{{$x.Manual.CritDays}}" inputmode="numeric"></div>
+        <div class="field"><label class="label" for="aw">Renewal managed · warning</label><input id="aw" name="managed_warn" class="input mono" value="{{$x.Managed.WarnDays}}" inputmode="numeric"></div>
+        <div class="field"><label class="label" for="ac">Renewal managed · critical</label><input id="ac" name="managed_crit" class="input mono" value="{{$x.Managed.CritDays}}" inputmode="numeric"></div>
+      </div>
+      <span class="help lift">A threshold fires when strictly fewer whole days remain: warning 30 alerts at 29 days. ACME clients renew at about two-thirds of the lifetime, so renewal-managed targets warn later.</span>
+      <p class="form-sec">Probing</p>
+      <div class="fgrid c4">
+        <div class="field"><label class="label" for="iv">Interval</label><select id="iv" name="interval_s" class="input">{{range $v := (seq 0 5)}}{{$n := index (dict "0" 3600 "1" 21600 "2" 43200 "3" 86400 "4" 259200 "5" 604800) (print $v)}}<option value="{{$n}}"{{if eq (print $n) (print $x.IntervalS)}} selected{{end}}>{{duration $n}}</option>{{end}}</select></div>
+        <div class="field"><label class="label" for="ad">Addresses</label><select id="ad" name="addresses" class="input"><option value="all"{{if $x.AllAddresses}} selected{{end}}>All, max 8</option><option value="first"{{if not $x.AllAddresses}} selected{{end}}>First only</option></select></div>
+        <div class="field"><label class="label" for="to">Connect timeout, s</label><input id="to" name="timeout_s" class="input mono" value="{{$x.TimeoutS}}" inputmode="numeric"></div>
+        <div class="field"><label class="label" for="re">Retries</label><input id="re" name="retries" class="input mono" value="{{$x.Retries}}" inputmode="numeric"></div>
+        <div class="field"><label class="label" for="db">Debounce, checks</label><input id="db" name="debounce" class="input mono" value="{{$x.Debounce}}" inputmode="numeric"><span class="help">For unreachable and DNS failures only.</span></div>
+        <div class="field"><label class="label" for="wk">Concurrent probes</label><input id="wk" name="workers" class="input mono" value="{{$x.Workers}}" inputmode="numeric"{{if $s.Locked "workers"}} readonly{{end}}>{{if $s.Locked "workers"}}{{template "env-note" (index $s.Env "workers")}}{{end}}</div>
+        <div class="field"><label class="label" for="rt">History retention, days</label><input id="rt" name="retention_days" class="input mono" value="{{$x.RetentionDays}}" inputmode="numeric"{{if $s.Locked "retention_days"}} readonly{{end}}>{{if $s.Locked "retention_days"}}{{template "env-note" (index $s.Env "retention_days")}}{{end}}</div>
+      </div>
+      <p class="form-sec">Reminders while a finding stays open</p>
+      <div class="fgrid c4">
+        <div class="field"><label class="label" for="rw">Warning</label>{{template "remind-default" (dict "Name" "remind_warn_s" "ID" "rw" "Value" $x.RemindWarnS "Min" 86400)}}</div>
+        <div class="field"><label class="label" for="rc">Critical</label>{{template "remind-default" (dict "Name" "remind_crit_s" "ID" "rc" "Value" $x.RemindCritS "Min" 3600)}}</div>
+      </div>
+      <p class="form-sec">Weekly digest</p>
+      <label class="check"><input type="checkbox" name="digest_enabled" value="1"{{if $x.DigestEnabled}} checked{{end}}> Send a weekly e-mail with open findings, certificates expiring within 30 days and failed targets</label>
+      <div class="fgrid c4">
+        <div class="field"><label class="label" for="dd">Day</label><select id="dd" name="digest_weekday" class="input">{{range (seq 0 6)}}<option value="{{.}}"{{if eq . $x.DigestWeekday}} selected{{end}}>{{weekday .}}</option>{{end}}</select></div>
+        <div class="field"><label class="label" for="dh">Hour</label><select id="dh" name="digest_hour" class="input">{{range (seq 0 23)}}<option value="{{.}}"{{if eq . $x.DigestHour}} selected{{end}}>{{.}}:00</option>{{end}}</select></div>
+      </div>
+      {{- if $d.Channels}}
+      <div class="field"><span class="label">Digest channels</span><div class="checks">{{range $d.Channels}}<label class="check"><input type="checkbox" name="digest_channel" value="{{.ID}}"{{if hasID $x.DigestChannels .ID}} checked{{end}}> {{.Name}} <span class="muted">{{.KindLabel}}</span></label>{{end}}</div><span class="help">None checked: every SMTP channel.</span></div>
+      {{- end}}
+      <div class="form-foot"><button type="submit" class="btn btn-primary">Save defaults</button><button type="submit" form="digest-now" class="btn cancel">Send digest now</button></div>
+    </form>
+    <form id="digest-now" method="post" action="/settings/digest/send" hidden>{{template "csrf" $p.CSRF}}</form>
+  </div>
+</div>
+{{end}}
+
+{{define "remind-default"}}
+<select id="{{.ID}}" name="{{.Name}}" class="input">
+  {{- $v := .Value}}{{$min := .Min}}
+  {{- range $s := (seq 0 5)}}{{$n := index (dict "0" 3600 "1" 21600 "2" 86400 "3" 259200 "4" 604800 "5" 1209600) (print $s)}}{{if ge $n $min}}<option value="{{$n}}"{{if eq (print $v) (print $n)}} selected{{end}}>every {{duration $n}}</option>{{end}}{{end}}
+  <option value="0"{{if eq $v 0}} selected{{end}}>never</option>
+</select>
+{{end}}

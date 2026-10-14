@@ -1,0 +1,43 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}
+<div class="page-head">
+  <div><h1>Findings</h1><span class="summary">{{$d.OpenCount}} open{{if $d.AckCount}} · {{$d.AckCount}} acknowledged{{end}} · {{$d.ResCount}} resolved in the last {{$d.Retention}} days</span></div>
+</div>
+<div class="row">
+  <span class="row gap-sm">{{template "chips" $d.State}}</span>
+  {{- if or $d.Sev $d.Kinds}}<span class="divider"></span>{{end}}
+  <span class="row gap-sm">{{template "sevchips" $d.Sev}}</span>
+  <span class="row gap-sm">{{template "chips" $d.Kinds}}</span>
+</div>
+<div class="grid-main-side">
+  <div class="card clip">
+    {{- if $d.Items}}
+    <table class="tbl vtop cards">
+      <thead><tr><th>Sev</th><th>Finding</th><th>Target</th><th>{{if $d.Resolved}}Resolved{{else}}Since{{end}}</th><th>Last alert</th><th>Ack</th><th><span class="sr-only">Actions</span></th></tr></thead>
+      <tbody>
+      {{- range $d.Items}}{{$acked := .Acked $p.Now}}
+        <tr class="{{if and $d.Sel (eq $d.Sel.F.ID .ID)}}sel{{else if or $acked $d.Resolved}}muted{{end}}">
+          <td data-label="Severity"><span class="pill {{.Severity.Class}}">{{.Severity.Short}}</span></td>
+          <td data-label="Finding" class="wrap"><div class="strong">{{.Kind.Label}}</div><div class="muted wrap-any">{{.Details}}</div></td>
+          <td data-label="Target" class="wrap"><a href="/targets/{{.TargetID}}" class="ink strong">{{.TargetName}}</a><div class="mono small muted">{{.HostPort}}</div></td>
+          <td data-label="{{if $d.Resolved}}Resolved{{else}}Since{{end}}" class="mono nowrap">{{if $d.Resolved}}{{when $p.Loc $p.Now .ResolvedAt}}{{else}}{{when $p.Loc $p.Now .OpenedAt}}{{end}}</td>
+          <td data-label="Last alert" class="muted nowrap">{{if .LastAlertVia}}{{whenTime $p.Loc $p.Now .LastAlertAt}}<br>{{.LastAlertVia}}{{else}}—{{end}}</td>
+          <td data-label="Ack" class="nowrap">{{if .AckAt}}<span class="pill off">{{.AckBy}}</span>{{if .AckUntil}}<div class="small">until {{when $p.Loc $p.Now .AckUntil}}</div>{{end}}{{else}}—{{end}}</td>
+          <td data-label="">
+            {{- $label := "Details"}}{{if and .Open ($p.Can "findings.ack")}}{{if .Kind.AckResolves}}{{$label = "Confirm"}}{{else if .AckAt}}{{$label = "Unack"}}{{else}}{{$label = "Acknowledge"}}{{end}}{{end}}
+            <a href="?{{if $d.Resolved}}state=resolved&amp;{{end}}sel={{.ID}}" class="btn btn-xs{{if and $d.Sel (eq $d.Sel.F.ID .ID)}} btn-primary{{end}}" data-panel="#finding-panel" data-panel-url="/api/v1/findings/{{.ID}}/panel">{{$label}}</a>
+          </td>
+        </tr>
+      {{- end}}
+      </tbody>
+    </table>
+    {{- else if $d.Resolved}}
+    <div class="empty">No resolved findings in the last {{$d.Retention}} days.</div>
+    {{- else}}
+    <div class="healthy"><span class="st ok">No open findings</span><span class="muted">Every target passes its checks.</span></div>
+    {{- end}}
+  </div>
+  <aside class="panel" id="finding-panel" aria-live="polite"{{if not $d.Sel}} hidden{{end}}>
+    {{- with $d.Sel}}{{template "finding-panel" (frag $p .)}}{{end}}
+  </aside>
+</div>
+{{end}}

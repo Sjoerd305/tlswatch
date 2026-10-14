@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>tlswatch – Add target</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0}
+:root{--bg:#f5f6f7;--surface:#ffffff;--surface-2:#f0f2f4;--ink:#1a2330;--muted:#5c6b7a;--line:#dde2e7;--line-soft:#eaeef1;--input-line:#b9c2cc;--input-bg:#ffffff;--acc:#2f6fd1;--acc-hover:#275bb0;--on-acc:#ffffff;--link:#2f6fd1;--ok:#1f8a4c;--ok-bg:#e3f3ea;--warn:#a86400;--warn-bg:#fdf1dc;--crit:#c62828;--crit-bg:#fde8e8;--off:#6b7785;--off-bg:#e9ecef;--info:#2f6fd1;--info-bg:#e6eefb;--chrome:#1c2430;--chrome-fg:#e8edf2;--chrome-muted:#95a2b1;--chrome-line:#2c3745;--track:#e4e8ec}
+a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.top{height:48px;background:var(--chrome);color:var(--chrome-fg);display:flex;align-items:center;padding:0 20px;gap:28px}
+.brand{display:flex;align-items:center;gap:9px;color:var(--chrome-fg);font-weight:600;font-size:15px}
+.brand:hover{text-decoration:none}
+.top nav{display:flex;align-items:center;height:48px;gap:4px;flex-grow:1}
+.top nav a{display:inline-flex;align-items:center;gap:6px;height:48px;padding:0 10px;color:var(--chrome-muted);font-size:13px;font-weight:500;border-bottom:2px solid transparent;border-top:2px solid transparent}
+.top nav a.on{color:var(--chrome-fg);border-bottom-color:var(--acc)}
+.top nav a:hover{color:var(--chrome-fg);text-decoration:none}
+.cnt{display:inline-flex;min-width:18px;height:18px;padding:0 5px;border-radius:9px;font-size:11px;font-weight:600;align-items:center;justify-content:center;background:var(--chrome-line);color:var(--chrome-fg)}
+.cnt.crit{background:var(--crit);color:#fff}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:6px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border-radius:5px;font:inherit;font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap;border:1px solid var(--input-line);background:var(--surface);color:var(--ink)}
+.btn:hover{text-decoration:none;background:var(--surface-2)}
+.btn-primary{background:var(--acc);color:var(--on-acc);border-color:var(--acc)}
+.input{height:32px;padding:0 10px;border:1px solid var(--input-line);border-radius:5px;background:var(--input-bg);font:inherit;font-size:13px;color:var(--ink);box-sizing:border-box;width:100%}
+.label{font-size:12px;font-weight:600;color:var(--muted)}
+.field{display:flex;flex-direction:column;gap:5px}
+.help{font-size:12px;color:var(--muted)}
+.check{display:flex;gap:8px;align-items:center;font-size:13px}
+.check input{width:16px;height:16px;margin:0;accent-color:var(--acc)}
+.sec{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:6px 0 0;padding-top:14px;border-top:1px solid var(--line)}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500}
+.st::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor;flex-shrink:0}
+.st.ok{color:var(--ok)}
+.kv{display:grid;grid-template-columns:96px minmax(0,1fr);row-gap:6px;column-gap:10px;font-size:13px;margin:0}
+.kv dt{color:var(--muted);margin:0}.kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.seg{display:inline-flex;border:1px solid var(--input-line);border-radius:5px;overflow:hidden}
+.seg button{height:32px;padding:0 12px;border:0;background:var(--surface);font:inherit;font-size:13px;color:var(--ink);cursor:pointer;border-right:1px solid var(--input-line)}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--ink);color:#fff}
+</style>
+</helmet>
+<div style="min-height: 980px; background: var(--bg); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 13px; line-height: 1.45; display: flex; flex-direction: column">
+  <header class="top">
+    <a href="Main.dc.html" class="brand">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--acc)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="tlswatch"><path d="M12 2.5 4 5.5v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10v-6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>
+      tlswatch
+    </a>
+    <nav aria-label="Main navigation">
+      <a href="Main.dc.html">Overview</a>
+      <a href="Targets.dc.html" class="on" aria-current="page">Targets <span class="cnt">14</span></a>
+      <a href="Certificates.dc.html">Certificates <span class="cnt">11</span></a>
+      <a href="Findings.dc.html">Findings <span class="cnt crit">3</span></a>
+      <a href="Channels.dc.html">Settings</a>
+    </nav>
+    <span style="font-size: 12px; color: var(--chrome-muted)" class="mono">last run 04:17 · next 04:17</span>
+    <a href="Login.dc.html" style="display: inline-flex; align-items: center; gap: 8px; color: var(--chrome-fg); font-size: 13px">Sjoerd <span style="font-size: 11px; color: var(--chrome-muted); border: 1px solid var(--chrome-line); border-radius: 4px; padding: 1px 6px">admin</span></a>
+  </header>
+  <main style="padding: 20px 24px 32px; display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 1400px; margin: 0 auto; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted)"><a href="Targets.dc.html">Targets</a><span>/</span><span>Add target</span></div>
+    <h1 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em">Add target</h1>
+    <div style="display: grid; grid-template-columns: minmax(0, 680px) minmax(0, 1fr); gap: 16px; align-items: start">
+      <form class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 14px">
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) 96px 170px; gap: 12px">
+          <div class="field"><label class="label" for="host">Host</label><input id="host" class="input mono" value="10.20.2.40" style="font-family: 'IBM Plex Mono', monospace"><span class="help">DNS name or IP address</span></div>
+          <div class="field"><label class="label" for="port">Port</label><input id="port" class="input mono" value="443" style="font-family: 'IBM Plex Mono', monospace"></div>
+          <div class="field"><label class="label" for="proto">Protocol</label><select id="proto" class="input"><option>tls, implicit</option><option>smtp STARTTLS</option><option>imap STARTTLS</option><option>pop3 STLS</option><option>ftp AUTH TLS</option><option>postgres</option></select></div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px">
+          <div class="field"><label class="label" for="name">Name</label><input id="name" class="input" value="Nurse call server"></div>
+          <div class="field"><label class="label" for="sni">Server name, SNI</label><input id="sni" class="input mono" value="nursecall.fabrikam.example" style="font-family: 'IBM Plex Mono', monospace"><span class="help">Sent in the handshake, checked against the certificate. Empty for a plain IP target.</span></div>
+        </div>
+        <p class="sec">Trust</p>
+        <div style="display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: end">
+          <div class="field"><span class="label">Verify against</span><div class="seg"><button type="button">System store</button><button type="button" class="on">CA bundle</button><button type="button">Self-signed, pin</button></div></div>
+          <div class="field"><label class="label" for="bundle">Bundle</label><select id="bundle" class="input"><option>Fabrikam — Root + Issuing CA</option><option>Contoso internal</option></select></div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: end">
+          <label class="check"><input type="checkbox"> Renewal managed, ACME: expected renewals are logged, not alerted</label>
+          <div class="field"><label class="label" for="issuer">Expected issuer, optional</label><input id="issuer" class="input" value="Fabrikam Issuing CA"></div>
+        </div>
+        <p class="sec">Thresholds and schedule</p>
+        <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+          <div class="field"><label class="label" for="warn">Warning, days</label><input id="warn" class="input mono" value="30" style="font-family: 'IBM Plex Mono', monospace"></div>
+          <div class="field"><label class="label" for="crit">Critical, days</label><input id="crit" class="input mono" value="7" style="font-family: 'IBM Plex Mono', monospace"></div>
+          <div class="field"><label class="label" for="interval">Interval</label><select id="interval" class="input"><option>24 h</option><option>12 h</option><option>6 h</option><option>1 h</option></select></div>
+          <div class="field"><label class="label" for="addr">Addresses</label><select id="addr" class="input"><option>All, max 8</option><option>First only</option></select></div>
+        </div>
+        <span class="help" style="margin-top: -6px">Pre-filled from Settings › Defaults for manually renewed targets.</span>
+        <p class="sec">Organisation</p>
+        <div class="field"><label class="label" for="tags">Tags</label><input id="tags" class="input mono" value="customer:fabrikam, internal" style="font-family: 'IBM Plex Mono', monospace"></div>
+        <div class="field"><span class="label">Channels</span><div style="display: flex; gap: 16px; flex-wrap: wrap"><label class="check"><input type="checkbox" checked> Ops mailbox</label><label class="check"><input type="checkbox" checked> Telegram ops</label><label class="check"><input type="checkbox"> Customer Fabrikam</label></div></div>
+        <div class="field"><label class="label" for="notes">Notes</label><textarea id="notes" class="input" style="height: auto; min-height: 64px; padding: 8px 10px; resize: vertical">Issued from the Fabrikam internal CA, 1 year. Renew via the CA admin at Fabrikam, contact in the service desk.</textarea></div>
+        <div style="display: flex; align-items: center; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line)">
+          <a href="Target.dc.html" class="btn btn-primary">Save target</a>
+          <button type="button" class="btn">Test without saving</button>
+          <a href="Targets.dc.html" style="margin-left: auto">Cancel</a>
+        </div>
+      </form>
+      <aside class="card" style="padding: 16px; display: flex; flex-direction: column; gap: 12px">
+        <div style="display: flex; align-items: center; justify-content: space-between"><h2 style="margin: 0; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em">Test result</h2><span class="st ok">Healthy</span></div>
+        <span class="help">Probed just now · 48 ms · not saved</span>
+        <dl class="kv">
+          <dt>Address</dt><dd class="mono" style="font-size: 12px">10.20.2.40</dd>
+          <dt>Protocol</dt><dd class="mono" style="font-size: 12px">TLS 1.3 · TLS_AES_256_GCM_SHA384</dd>
+          <dt>Subject</dt><dd>nursecall.fabrikam.example</dd>
+          <dt>Issuer</dt><dd>Fabrikam Issuing CA</dd>
+          <dt>Not after</dt><dd><span class="mono">2027-06-02</span> · 231 days · 37% of lifetime used</dd>
+          <dt>Chain</dt><dd>3 certificates · verified against bundle "Fabrikam"</dd>
+          <dt>Hostname</dt><dd>matches SNI</dd>
+          <dt>SHA-256</dt><dd class="mono" style="font-size: 12px">1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809</dd>
+        </dl>
+        <div style="padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted)">Saved as is, this target would be <span class="st ok" style="font-size: 12px">healthy</span> with no findings.</div>
+      </aside>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":980}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

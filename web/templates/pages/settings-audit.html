@@ -1,0 +1,31 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}
+<div class="page-head"><div><h1>Settings</h1></div></div>
+<div class="grid-settings">
+  {{template "settings-nav" $p}}
+  <div class="stack">
+    <div class="row between">
+      <div><h2 class="h2">Audit log</h2><span class="summary">Who changed what in tlswatch. Kept for {{$p.Settings.Defaults.RetentionDays}} days.</span></div>
+      <a href="/settings/audit.csv{{if $d.Query}}?q={{$d.Query}}{{end}}" class="btn">Export CSV</a>
+    </div>
+    <form class="row" method="get" action="/settings/audit" role="search">
+      <div class="filter w300">{{template "search-icon"}}<input class="input" type="search" name="q" value="{{$d.Query}}" placeholder="Filter: user, action, object" aria-label="Filter the audit log"></div>
+      <button type="submit" class="btn">Filter</button>
+    </form>
+    <div class="card clip">
+      {{- if $d.Entries}}
+      <table class="tbl vtop cards">
+        <thead><tr><th>When</th><th>User</th><th>Action</th><th>Object</th><th>Details</th></tr></thead>
+        <tbody>
+        {{- range $d.Entries}}
+          <tr><td data-label="When" class="mono nowrap">{{datetime $p.Loc .At}}</td><td data-label="User" class="mono small">{{.User}}</td><td data-label="Action" class="mono small">{{.Action}}</td><td data-label="Object" class="wrap">{{.Object}}</td><td data-label="Details" class="wrap muted small wrap-any">{{.Details}}</td></tr>
+        {{- end}}
+        </tbody>
+      </table>
+      {{- else}}
+      <div class="empty">No entries{{if $d.Query}} match the filter{{end}}.</div>
+      {{- end}}
+    </div>
+    {{- if eq (len $d.Entries) $d.Limit}}<span class="table-foot">Showing the newest {{$d.Limit}}; the CSV export has all.</span>{{end}}
+  </div>
+</div>
+{{end}}

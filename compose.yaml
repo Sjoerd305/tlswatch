@@ -1,0 +1,25 @@
+# Runs tlswatch from this checkout, with one volume for its database and
+# secret key: `docker compose up --build -d`, then open http://127.0.0.1:8080/
+# and create the first admin on the setup screen.
+#
+# Put a reverse proxy with TLS in front before exposing it, then set the
+# public URL and "behind a reverse proxy" under Settings › General.
+# To run a released image instead of building, replace `build: .` and the
+# image name with `image: ghcr.io/sjoerd305/tlswatch:latest`.
+services:
+  tlswatch:
+    build: .
+    image: tlswatch:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - tlswatch-data:/data
+    # Optional overrides; everything else is configured in the UI.
+    # environment:
+    #   TLSWATCH_BASE_URL: https://tlswatch.example.nl
+    #   TLSWATCH_BEHIND_PROXY: "true"
+    #   TZ: Europe/Amsterdam
+
+volumes:
+  tlswatch-data:

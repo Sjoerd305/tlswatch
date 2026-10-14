@@ -1,0 +1,25 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}{{$s := $p.Settings}}
+<div class="page-head"><div><h1>Settings</h1></div></div>
+<div class="grid-settings">
+  {{template "settings-nav" $p}}
+  <div class="stack">
+    <div><h2 class="h2">Sign-in</h2><span class="summary">Local accounts always work. Google sign-in is on once a client ID and secret are set; only users added under Users can sign in.</span></div>
+    {{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
+    <form class="card form" method="post" action="/settings/signin" autocomplete="off">
+      {{template "csrf" $p.CSRF}}
+      <div class="row between"><h3 class="h3">Google</h3>{{if $s.GoogleEnabled}}<span class="st sm ok">enabled</span>{{else}}<span class="st sm off">off</span>{{end}}</div>
+      <div class="field"><label class="label" for="redirect">Authorised redirect URI</label>
+        <div class="fp-row"><input id="redirect" class="input mono" value="{{$d.Redirect}}" readonly><button type="button" class="btn btn-xs" data-copy="{{$d.Redirect}}">copy</button></div>
+        <span class="help">Register this URI on the OAuth client in the Google Cloud console (type: Web application).</span></div>
+      <div class="field"><label class="label" for="cid">Client ID</label><input id="cid" name="google_client_id" class="input mono" value="{{$d.S.GoogleClientID}}" spellcheck="false"{{if $s.Locked "google_client_id"}} readonly{{end}}>{{if $s.Locked "google_client_id"}}{{template "env-note" (index $s.Env "google_client_id")}}{{end}}</div>
+      <div class="field"><label class="label" for="csecret">Client secret</label>
+        <input id="csecret" name="google_client_secret" class="input mono" type="password" value="" autocomplete="new-password" placeholder="{{if $d.HasSecret}}stored · leave empty to keep{{else}}not set{{end}}"{{if $s.Locked "google_client_secret"}} readonly{{end}}>
+        {{if $s.Locked "google_client_secret"}}{{template "env-note" (index $s.Env "google_client_secret")}}{{else}}<span class="help">Stored encrypted with the secret key; never shown again.</span>
+        {{- if $d.HasSecret}}<label class="check"><input type="checkbox" name="clear_secret" value="1"> Remove the stored secret (turns Google sign-in off)</label>{{end}}{{end}}</div>
+      <div class="field"><label class="label" for="domain">Workspace domain, optional</label><input id="domain" name="google_domain" class="input mono" value="{{$d.S.GoogleDomain}}" placeholder="example.nl" spellcheck="false"{{if $s.Locked "google_domain"}} readonly{{end}}>
+        {{if $s.Locked "google_domain"}}{{template "env-note" (index $s.Env "google_domain")}}{{else}}<span class="help">Only accept accounts of this Google Workspace domain.</span>{{end}}</div>
+      <div class="form-foot"><button type="submit" class="btn btn-primary">Save</button></div>
+    </form>
+  </div>
+</div>
+{{end}}

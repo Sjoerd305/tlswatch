@@ -1,0 +1,75 @@
+{{define "layout"}}<!doctype html>
+<html lang="en"{{if ne .Theme "system"}} data-theme="{{.Theme}}"{{end}}>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf-token" content="{{.CSRF}}">
+<meta name="referrer" content="no-referrer">
+<title>{{.Title}} · tlswatch</title>
+<link rel="icon" href="/favicon.ico" type="image/svg+xml">
+<link rel="stylesheet" href="/static/css/app.css?v={{.Version}}">
+<script type="module" src="/static/js/app.js?v={{.Version}}"></script>
+</head>
+<body>
+{{- if .User}}
+{{template "chrome" .}}
+<main class="page" id="main">
+{{template "notices" .}}
+{{template "content" .}}
+</main>
+{{- else}}
+<main class="login" id="main">
+<div>
+<div class="wordmark">{{template "mark" 26}}<span>tlswatch</span></div>
+{{template "notices" .}}
+{{template "content" .}}
+<p class="login-foot">{{if ne .Title "Set up tlswatch"}}Accounts are created by an administrator · {{end}}<span class="mono">{{.Version}}</span></p>
+</div>
+</main>
+{{- end}}
+</body>
+</html>
+{{end}}
+
+{{define "mark"}}<svg class="mark" width="{{.}}" height="{{.}}" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="tlswatch"><path d="M12 2.5 4 5.5v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10v-6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>{{end}}
+
+{{define "chrome"}}
+<header class="top">
+  <a href="/" class="brand">{{template "mark" 18}}tlswatch</a>
+  <nav aria-label="Main navigation">
+    <a href="/"{{if eq .Nav "overview"}} class="on" aria-current="page"{{end}}>Overview</a>
+    <a href="/targets"{{if eq .Nav "targets"}} class="on" aria-current="page"{{end}}>Targets <span class="cnt">{{.Counts.Targets}}</span></a>
+    <a href="/certificates"{{if eq .Nav "certificates"}} class="on" aria-current="page"{{end}}>Certificates <span class="cnt">{{.Counts.Certificates}}</span></a>
+    <a href="/findings"{{if eq .Nav "findings"}} class="on" aria-current="page"{{end}}>Findings {{if .Counts.Findings}}<span class="cnt{{if .Counts.Critical}} crit{{end}}">{{.Counts.Findings}}</span>{{end}}</a>
+    {{- if .Can "settings.manage"}}
+    <a href="/settings"{{if eq .Nav "settings"}} class="on" aria-current="page"{{end}}>Settings</a>
+    {{- else if .Can "users.manage"}}
+    <a href="/settings/users"{{if eq .Nav "settings"}} class="on" aria-current="page"{{end}}>Settings</a>
+    {{- end}}
+  </nav>
+  <span class="runinfo">last run {{clock .Loc .Counts.LastCheck}} · next {{clock .Loc .Counts.NextCheck}}</span>
+  <details class="menu">
+    <summary class="who">{{.User.DisplayName}} <span class="role">{{.User.Role}}</span></summary>
+    <div class="menu-list">
+      <div class="menu-meta">{{.User.Email}}</div>
+      <a href="/account">Account</a>
+      <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button type="submit" class="linkbtn">Sign out</button></form>
+    </div>
+  </details>
+</header>
+{{end}}
+
+{{define "notices"}}
+{{- range .Notices}}
+<div class="notice {{.Kind}}" role="{{if eq .Kind "crit"}}alert{{else}}status{{end}}">
+  {{template "notice-icon" .Kind}}
+  <div>{{.Text}}{{if .Link}}<div class="copyable"><span class="mono wrap-any">{{.Link}}</span> <button type="button" class="btn btn-xs" data-copy="{{.Link}}">copy</button></div>{{end}}</div>
+</div>
+{{- end}}
+{{end}}
+
+{{define "notice-icon"}}
+{{- if eq . "ok"}}<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg>
+{{- else if eq . "info"}}<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>
+{{- else}}<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.5"/></svg>{{end}}
+{{- end}}

@@ -1,0 +1,33 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}
+<div class="page-head"><div><h1>Account</h1><span class="summary">{{$d.U.Email}} · {{$d.U.Role}} · {{if eq $d.U.Method "google"}}signs in with Google{{else}}local password{{end}}</span></div></div>
+{{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
+<div class="grid-form-side">
+  <div class="stack">
+    <form class="card form" method="post" action="/account">
+      {{template "csrf" $p.CSRF}}
+      <h2 class="h3">Profile</h2>
+      <div class="field"><label class="label" for="name">Name</label><input id="name" name="name" class="input" value="{{$d.U.Name}}" autocomplete="name"></div>
+      <div class="field"><span class="label" id="theme-label">Theme</span>
+        <div class="seg" role="radiogroup" aria-labelledby="theme-label">
+          <label><input type="radio" name="theme" value="system"{{if or (eq $d.U.Theme "system") (eq $d.U.Theme "")}} checked{{end}}><span>System</span></label>
+          <label><input type="radio" name="theme" value="light"{{if eq $d.U.Theme "light"}} checked{{end}}><span>Light</span></label>
+          <label><input type="radio" name="theme" value="dark"{{if eq $d.U.Theme "dark"}} checked{{end}}><span>Dark</span></label>
+        </div></div>
+      <div class="form-foot"><button type="submit" class="btn btn-primary">Save</button></div>
+    </form>
+    {{- if eq $d.U.Method "local"}}
+    <form class="card form" method="post" action="/account/password">
+      {{template "csrf" $p.CSRF}}
+      <h2 class="h3">Change password</h2>
+      <input type="email" name="email" value="{{$d.U.Email}}" autocomplete="username" hidden>
+      <div class="field"><label class="label" for="cur">Current password</label><input id="cur" name="current" type="password" class="input" autocomplete="current-password" required></div>
+      <div class="fgrid c2">
+        <div class="field"><label class="label" for="npw">New password</label><input id="npw" name="password" type="password" class="input" autocomplete="new-password" minlength="12" required><span class="help">At least 12 characters, not a known leaked password.</span></div>
+        <div class="field"><label class="label" for="npw2">Repeat</label><input id="npw2" name="password2" type="password" class="input" autocomplete="new-password" minlength="12" required></div>
+      </div>
+      <div class="form-foot"><button type="submit" class="btn btn-primary">Change password</button><span class="help">Other sessions are signed out.</span></div>
+    </form>
+    {{- end}}
+  </div>
+</div>
+{{end}}

@@ -1,0 +1,83 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}
+<div class="page-head"><div><h1>Settings</h1></div></div>
+<div class="grid-settings">
+  {{template "settings-nav" $p}}
+  <div class="stack">
+    <div class="row between">
+      <div><h2 class="h2">Channels</h2><span class="summary">Where alerts go. Each target picks its channels; a channel only carries severities at or above its floor.</span></div>
+      <div class="row gap-sm"><a href="?new=smtp" class="btn btn-primary">Add SMTP</a><a href="?new=telegram" class="btn">Add Telegram</a></div>
+    </div>
+    {{- if $d.Channels}}
+    <div class="card clip">
+      <table class="tbl cards">
+        <thead><tr><th>Name</th><th>Type</th><th>Destination</th><th>Severity floor</th><th>Last delivery</th><th class="num">Sent, 30 d</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody>
+        {{- range $d.Channels}}
+          <tr{{if and $d.Edit (eq $d.Edit.ID .ID)}} class="sel"{{else if not .Enabled}} class="muted"{{end}}>
+            <td data-label="Name" class="strong">{{.Name}}{{if not .Enabled}} <span class="pill off ml">off</span>{{end}}</td>
+            <td data-label="Type">{{.KindLabel}}</td>
+            <td data-label="Destination" class="mono small wrap-any">{{.Destination}}</td>
+            <td data-label="Floor"><span class="pill {{sevClass .MinSeverity}}">{{sevShort .MinSeverity}}</span></td>
+            <td data-label="Last delivery">{{if eq .LastState "sent"}}<span class="st ok">ok</span> <span class="mono muted">{{whenTime $p.Loc $p.Now .LastAt}}</span>{{else if eq .LastState "failed"}}<span class="st crit">failed</span> <span class="mono muted" title="{{.LastError}}">{{whenTime $p.Loc $p.Now .LastAt}}</span>{{else if eq .LastState "retrying"}}<span class="st crit">failing</span> <span class="mono muted">retry {{whenTime $p.Loc $p.Now .NextAttempt}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+            <td data-label="Sent, 30 d" class="num mono">{{.Sent30d}}</td>
+            <td data-label=""><span class="btn-row"><form method="post" action="/settings/channels/{{.ID}}/test">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-xs">Test</button></form><a href="?edit={{.ID}}" class="btn btn-xs">Edit</a></span></td>
+          </tr>
+          {{- if and .LastError (eq .LastState "failed" "retrying")}}<tr class="muted"><td colspan="7" class="wrap small">{{.Name}}: {{.LastError}}</td></tr>{{end}}
+        {{- end}}
+        </tbody>
+      </table>
+    </div>
+    {{- else if not $d.Edit}}
+    <section class="card"><div class="empty"><span class="h3">No channels yet</span><span>Findings are recorded but not delivered. Add an SMTP relay or a Telegram bot to receive alerts.</span></div></section>
+    {{- end}}
+
+    {{- with $d.Edit}}{{$c := .}}
+    <form class="card form" method="post" action="/settings/channels" autocomplete="off">
+      {{template "csrf" $p.CSRF}}<input type="hidden" name="id" value="{{$c.ID}}"><input type="hidden" name="kind" value="{{$c.Kind}}">
+      <h3 class="h3">{{if $c.ID}}{{$c.Name}}{{else}}New {{$c.KindLabel}} channel{{end}}</h3>
+      {{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
+      <div class="fgrid c2">
+        <div class="field"><label class="label" for="cname">Name</label><input id="cname" name="name" class="input" value="{{$c.Name}}" required placeholder="{{if eq $c.Kind "smtp"}}Ops mailbox{{else}}Telegram ops{{end}}"></div>
+        <div class="field"><label class="label" for="csev">Severity floor</label>
+          <select id="csev" name="min_severity" class="input">
+            <option value="info"{{if eq $c.MinSeverity "info"}} selected{{end}}>info, everything</option>
+            <option value="warning"{{if eq $c.MinSeverity "warning"}} selected{{end}}>warning</option>
+            <option value="critical"{{if eq $c.MinSeverity "critical"}} selected{{end}}>critical only</option>
+          </select></div>
+      </div>
+      {{- if eq $c.Kind "smtp"}}
+      <div class="fgrid smtp">
+        <div class="field"><label class="label" for="smtphost">SMTP host</label><input id="smtphost" name="host" class="input mono" value="{{$c.SMTP.Host}}" required spellcheck="false" placeholder="smtp.example.nl"></div>
+        <div class="field"><label class="label" for="smtpport">Port</label><input id="smtpport" name="port" class="input mono" value="{{if $c.SMTP.Port}}{{$c.SMTP.Port}}{{end}}" inputmode="numeric" required></div>
+        <div class="field"><label class="label" for="smtptls">Encryption</label>
+          <select id="smtptls" name="encryption" class="input" data-port-for="#smtpport">
+            <option value="starttls" data-port="587"{{if or (eq $c.SMTP.Encryption "starttls") (eq $c.SMTP.Encryption "")}} selected{{end}}>STARTTLS (587)</option>
+            <option value="tls" data-port="465"{{if eq $c.SMTP.Encryption "tls"}} selected{{end}}>implicit TLS (465)</option>
+            <option value="none" data-port="25"{{if eq $c.SMTP.Encryption "none"}} selected{{end}}>none (local relay)</option>
+          </select></div>
+      </div>
+      <div class="fgrid c2">
+        <div class="field"><label class="label" for="smtpuser">Username</label><input id="smtpuser" name="username" class="input" value="{{$c.SMTP.Username}}" autocomplete="off" placeholder="empty for a relay without authentication"></div>
+        <div class="field"><label class="label" for="smtppw">Password</label><input id="smtppw" name="password" class="input" type="password" value="" autocomplete="new-password" placeholder="{{if $c.ID}}stored · leave empty to keep{{end}}"><span class="help">Stored encrypted with the secret key.{{if $c.ID}} Leave empty to keep.{{end}}</span></div>
+      </div>
+      <div class="fgrid c2">
+        <div class="field"><label class="label" for="from">From</label><input id="from" name="from" class="input" value="{{$c.SMTP.From}}" required placeholder="tlswatch &lt;tlswatch@example.nl&gt;"></div>
+        <div class="field"><label class="label" for="to">Recipients</label><input id="to" name="recipients" class="input" value="{{join $c.SMTP.Recipients ", "}}" required placeholder="ops@example.nl, noc@example.nl"></div>
+      </div>
+      <label class="check"><input type="checkbox" name="insecure_skip_verify" value="1"{{if $c.SMTP.InsecureSkipVerify}} checked{{end}}> Accept the relay's certificate without verifying it (private relays only)</label>
+      {{- else}}
+      <div class="field"><label class="label" for="token">Bot token</label><input id="token" name="token" class="input mono" type="password" value="" autocomplete="new-password" placeholder="{{if $c.ID}}stored · leave empty to keep{{else}}123456789:AA…{{end}}"{{if not $c.ID}} required{{end}}><span class="help">From @BotFather. Stored encrypted with the secret key{{if $c.ID}}; leave empty to keep{{end}}.</span></div>
+      <div class="field"><label class="label" for="chats">Chat IDs</label><input id="chats" name="chat_ids" class="input mono" value="{{join $c.Telegram.ChatIDs ", "}}" required placeholder="-1001234567890, @opschannel"><span class="help">Add the bot to the chat first. A group ID starts with -100; a public channel can be given as @name.</span></div>
+      {{- end}}
+      <label class="check"><input type="checkbox" name="enabled" value="1"{{if $c.Enabled}} checked{{end}}> Enabled</label>
+      <div class="form-foot">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <a href="/settings/channels" class="btn">Cancel</a>
+        {{- if $c.ID}}<button type="submit" form="delete-channel" class="btn-link danger cancel">Delete channel</button>{{end}}
+      </div>
+    </form>
+    {{- if $c.ID}}<form id="delete-channel" method="post" action="/settings/channels/{{$c.ID}}/delete" hidden>{{template "csrf" $p.CSRF}}</form>{{end}}
+    {{- end}}
+  </div>
+</div>
+{{end}}

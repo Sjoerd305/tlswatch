@@ -1,0 +1,131 @@
+{{/* Shared partials. Partials that the JSON API renders alone take a frag: {P: *Page, Item}. */}}
+
+{{define "status"}}<span class="st {{statusClass .}}">{{statusLabel .}}</span>{{end}}
+
+{{define "bar"}}<div class="bar{{if .Wide}} {{.Wide}}{{end}}" role="img" aria-label="{{.Used}}% of lifetime used"><span class="f {{.Class}} p{{.Used}}"></span></div>{{end}}
+
+{{define "chips"}}{{range .}}<a class="chip{{if .On}} on{{end}}" href="{{.Href}}" data-chip-key="{{.Key}}" data-chip-value="{{.Value}}">{{if .Class}}<span class="st sm {{.Class}}">{{.Label}}</span>{{else}}{{.Label}}{{end}}{{if or .Count .Class}} <span class="x">{{.Count}}</span>{{end}}</a>{{end}}{{end}}
+
+{{define "sevchips"}}{{range .}}<a class="chip{{if .On}} on{{end}}" href="{{.Href}}" data-chip-key="{{.Key}}" data-chip-value="{{.Value}}"><span class="pill {{.Class}}">{{.Label}}</span> <span class="x">{{.Count}}</span></a>{{end}}{{end}}
+
+{{define "search-icon"}}<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>{{end}}
+
+{{define "err"}}{{with .}}<span class="err">{{.}}</span>{{end}}{{end}}
+
+{{define "csrf"}}<input type="hidden" name="csrf" value="{{.}}">{{end}}
+
+{{/* target-row: one row of the targets table. frag{P, Item: targetRow} */}}
+{{define "target-row"}}{{$p := .P}}{{$r := .Item}}{{$t := $r.T}}
+<tr id="target-{{$t.ID}}" data-search="{{$r.Search}}" data-status="{{$r.StatusToken}}" data-tag="{{join $t.Tags " "}}"{{if not $t.Enabled}} class="muted"{{end}}{{if $r.Hidden}} hidden{{end}}>
+  <td data-label="Status">{{template "status" $t.Status}}</td>
+  <td data-label="Name"><a href="/targets/{{$t.ID}}" class="ink strong">{{$t.Name}}</a></td>
+  <td data-label="Host" class="mono">{{$t.HostPort}}{{if ne (print $t.Protocol) "tls"}} <span class="muted">{{$t.Protocol}}</span>{{end}}{{if gt $t.AddressCount 1}} <span class="muted">{{$t.AddressCount}} addr</span>{{end}}</td>
+  {{- if $t.NotAfter}}{{$c := $t.ExpiryClass $p.Settings.Defaults $p.Now}}
+  <td data-label="Days" class="num mono days{{if $c}} {{$c}}-t{{end}}">{{days $p.Now $t.NotAfter}}</td>
+  <td data-label="Lifetime">{{if $t.Cert}}{{template "bar" (dict "Used" (used $p.Now $t.Cert.NotBefore $t.Cert.NotAfter) "Class" ($t.BarClass $p.Settings.Defaults $p.Now))}}{{end}}</td>
+  <td data-label="Expires" class="mono">{{date $p.Loc $t.NotAfter}}</td>
+  <td data-label="Issuer">{{if $t.Cert}}{{$t.Cert.IssuerName}}{{if eq (print $t.Trust) "self-signed"}} <span class="muted">pinned</span>{{else if $t.RenewalManaged}} <span class="muted">auto</span>{{end}}{{end}}</td>
+  <td data-label="TLS" class="mono muted">{{$t.TLSVersion}}</td>
+  {{- else}}
+  <td data-label="Days" class="num mono">—</td><td data-label="Lifetime"></td><td data-label="Expires" class="mono">—</td><td data-label="Issuer">{{if $t.LastError}}<span class="muted ellipsis" title="{{$t.LastError}}">{{$t.LastError}}</span>{{else}}—{{end}}</td><td data-label="TLS"></td>
+  {{- end}}
+  <td data-label="Tags">{{if $t.Tags}}<span class="tags">{{range $t.Tags}}<span class="tag">{{.}}</span>{{end}}</span>{{end}}</td>
+  <td data-label="Checked" class="mono muted">{{when $p.Loc $p.Now $t.LastCheck}}</td>
+  <td data-label="">{{if $p.Can "targets.edit"}}
+    {{- if $t.Enabled}}<form method="post" action="/targets/{{$t.ID}}/check" data-api="/api/v1/targets/{{$t.ID}}/check" data-replace="row">{{template "csrf" $p.CSRF}}<input type="hidden" name="next" value="/targets"><button type="submit" class="btn btn-xs">Check</button></form>
+    {{- else}}<form method="post" action="/targets/{{$t.ID}}/enable">{{template "csrf" $p.CSRF}}<input type="hidden" name="next" value="/targets"><button type="submit" class="btn btn-xs">Enable</button></form>{{end}}
+  {{- end}}</td>
+</tr>
+{{end}}
+
+{{/* test-result: the "Test without saving" panel. frag{P, Item: testResult} */}}
+{{define "test-result"}}{{$p := .P}}{{$r := .Item}}
+<div class="panel-head"><h2 class="h-sec">Test result</h2>{{template "status" $r.Status}}</div>
+<span class="help">Probed just now · {{$r.R.Duration.Milliseconds}} ms · not saved</span>
+{{- if $r.Err}}<div class="notice crit">{{template "notice-icon" "crit"}}<div>{{$r.Err}}</div></div>{{end}}
+<dl class="kv narrow">
+  {{- range $r.R.Addresses}}
+  <dt>Address</dt><dd class="mono">{{.IP}}{{if not .OK}} · <span class="crit-t">{{.Error}}</span>{{end}}</dd>
+  {{- end}}
+  {{- if $r.R.DNSError}}<dt>DNS</dt><dd class="crit-t">{{$r.R.DNSError}}</dd>{{end}}
+  {{- range $r.R.SkippedIPv6}}<dt>Skipped</dt><dd class="mono">{{.}} · no IPv6 route</dd>{{end}}
+  {{- with $r.Cert}}
+  {{- range $r.R.Addresses}}{{if .OK}}<dt>Protocol</dt><dd class="mono">{{.TLSVersion}} · {{.Cipher}}</dd>{{break}}{{end}}{{end}}
+  <dt>Subject</dt><dd>{{.SubjectCN}}</dd>
+  <dt>Issuer</dt><dd>{{.IssuerCN}}</dd>
+  <dt>Not after</dt><dd><span class="mono">{{date $p.Loc .NotAfter.Unix}}</span> · {{$r.Days}} days · {{$r.Used}}% of lifetime used</dd>
+  <dt>Chain</dt><dd>{{$r.ChainLen}} {{plural $r.ChainLen "certificate" "certificates"}} · {{$r.Trust}}</dd>
+  <dt>SANs</dt><dd class="mono">{{join .SANs ", "}}</dd>
+  <dt>Key</dt><dd>{{.KeyDesc}} · {{.SigAlg}}</dd>
+  <dt>SHA-256</dt><dd class="mono">{{.Fingerprint}}</dd>
+  <dt>Renewal</dt><dd>{{if $r.O.RenewalManaged}}managed (ACME), thresholds {{$r.O.Thresholds.Warn}}/{{$r.O.Thresholds.Crit}} d{{else}}manual, thresholds {{$r.O.Thresholds.Warn}}/{{$r.O.Thresholds.Crit}} d{{end}}</dd>
+  {{- end}}
+</dl>
+<div class="sect">
+{{- if $r.Findings}}
+  <span class="label">Saved as is, this target would open</span>
+  {{- range $r.Findings}}
+  <div class="timeline"><div class="ev"><span class="pill {{.Severity.Class}}">{{.Severity.Short}}</span><span><span class="strong">{{.Kind.Label}}</span> · {{.Details}}</span></div></div>
+  {{- end}}
+{{- else if eq $r.Status "healthy"}}
+  <span class="muted">Saved as is, this target would be <span class="st sm ok">healthy</span> with no findings.</span>
+{{- end}}
+</div>
+{{end}}
+
+{{/* finding-panel: acknowledge form and alert timeline. frag{P, Item: findingPanel} */}}
+{{define "finding-panel"}}{{$p := .P}}{{$d := .Item}}{{$f := $d.F}}
+<div class="panel-head"><div class="title"><span class="pill {{$f.Severity.Class}}">{{$f.Severity.Short}}</span><h2>{{if $f.Open}}{{if $f.Kind.AckResolves}}Confirm{{else}}Acknowledge{{end}}: {{end}}{{$f.TargetName}} · {{lower $f.Kind.Label}}</h2></div></div>
+<p class="muted">{{$f.Details}}</p>
+{{- if and $f.Open $d.CanAck}}
+  {{- if $f.Kind.AckResolves}}
+  <p class="muted">Confirming accepts the new certificate as intended and resolves the finding.</p>
+  {{- else}}
+  <p class="muted">Reminders stop. Escalation and the recovery notice still go out. Visible to everyone on the finding.</p>
+  {{- end}}
+  <form method="post" action="/findings/{{$f.ID}}/ack" class="stack gap-sm">
+    {{template "csrf" $p.CSRF}}<input type="hidden" name="next" value="/findings">
+    {{- if not $f.Kind.AckResolves}}
+    <div class="field"><label class="label" for="ack-until">Until</label><input id="ack-until" name="until" class="input mono w150" type="date" value="{{$d.Until}}" placeholder="YYYY-MM-DD"><span class="help">Reminders resume after this date if still open. Leave empty for until resolved.</span></div>
+    {{- end}}
+    <div class="field"><label class="label" for="ack-comment">Comment</label><textarea id="ack-comment" name="comment" class="input" rows="3" maxlength="2000">{{$d.Comment}}</textarea></div>
+    <div class="form-foot end"><a href="/findings" class="btn">Cancel</a><button type="submit" class="btn btn-primary">{{if $f.Kind.AckResolves}}Confirm{{else if $f.AckAt}}Update{{else}}Acknowledge{{end}}</button></div>
+  </form>
+  {{- if $f.AckAt}}{{if not $f.Kind.AckResolves}}
+  <form method="post" action="/findings/{{$f.ID}}/unack">{{template "csrf" $p.CSRF}}<input type="hidden" name="next" value="/findings"><button type="submit" class="btn-link">Remove acknowledgement by {{$f.AckBy}}</button></form>
+  {{- end}}{{end}}
+{{- else if $f.AckAt}}
+  <p>Acknowledged by {{$f.AckBy}}{{if $f.AckUntil}} until {{date $p.Loc $f.AckUntil}}{{end}}{{if $f.AckComment}}: {{$f.AckComment}}{{end}}</p>
+{{- end}}
+<div class="sect">
+  <span class="label">Timeline</span>
+  <div class="timeline">
+  {{- if $f.ResolvedAt}}<div class="ev"><span class="when">{{whenTime $p.Loc $p.Now $f.ResolvedAt}}</span><span>resolved{{if and $f.AckAt (eq $f.ResolvedAt $f.AckAt)}} by {{$f.AckBy}}{{end}}</span></div>{{end}}
+  {{- range $d.Alerts}}
+    <div class="ev"><span class="when">{{whenTime $p.Loc $p.Now .CreatedAt}}</span><span>{{template "event-label" .Event}} · {{.Channel}} · <span class="st sm {{if eq .State "sent"}}ok{{else if eq .State "failed"}}crit{{else}}off{{end}}">{{if eq .State "pending"}}{{if .Attempts}}retrying{{else}}queued{{end}}{{else}}{{.State}}{{end}}</span>{{if .Error}} <span class="muted">{{.Error}}</span>{{end}}</span></div>
+  {{- end}}
+  {{- if and $f.AckAt (ne $f.ResolvedAt $f.AckAt)}}<div class="ev"><span class="when">{{whenTime $p.Loc $p.Now $f.AckAt}}</span><span>acknowledged by {{$f.AckBy}}</span></div>{{end}}
+    <div class="ev"><span class="when">{{whenTime $p.Loc $p.Now $f.OpenedAt}}</span><span>opened as {{$f.Severity}}</span></div>
+  </div>
+</div>
+<a href="/targets/{{$f.TargetID}}">Open target {{$f.TargetName}}</a>
+{{end}}
+
+{{define "event-label"}}{{if eq . "open"}}opened{{else if eq . "escalate"}}escalated{{else if eq . "remind"}}reminder{{else if eq . "recover"}}recovery{{else}}{{.}}{{end}}{{end}}
+
+{{define "settings-nav"}}
+<nav class="subnav" aria-label="Settings">
+  {{- if .Can "settings.manage"}}
+  <a href="/settings/general"{{if eq .SettingsNav "general"}} class="on" aria-current="page"{{end}}>General</a>
+  <a href="/settings/channels"{{if eq .SettingsNav "channels"}} class="on" aria-current="page"{{end}}>Channels</a>
+  <a href="/settings/signin"{{if eq .SettingsNav "signin"}} class="on" aria-current="page"{{end}}>Sign-in</a>
+  <a href="/settings/bundles"{{if eq .SettingsNav "bundles"}} class="on" aria-current="page"{{end}}>CA bundles</a>
+  <a href="/settings/defaults"{{if eq .SettingsNav "defaults"}} class="on" aria-current="page"{{end}}>Defaults</a>
+  {{- end}}
+  {{- if .Can "users.manage"}}<a href="/settings/users"{{if eq .SettingsNav "users"}} class="on" aria-current="page"{{end}}>Users</a>{{end}}
+  {{- if .Can "audit.view"}}<a href="/settings/audit"{{if eq .SettingsNav "audit"}} class="on" aria-current="page"{{end}}>Audit log</a>{{end}}
+  {{- if .Can "settings.manage"}}<a href="/settings/about"{{if eq .SettingsNav "about"}} class="on" aria-current="page"{{end}}>About</a>{{end}}
+</nav>
+{{end}}
+
+{{define "env-note"}}<span class="readonly-note">set by environment ({{.}})</span>{{end}}

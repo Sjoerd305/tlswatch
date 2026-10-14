@@ -1,0 +1,18 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}{{$t := $d.T}}
+<div class="crumbs"><a href="/targets">Targets</a><span>/</span><a href="/targets/{{$t.ID}}">{{$t.Name}}</a><span>/</span><span>Delete</span></div>
+<div class="page-head"><div><h1>Delete {{$t.Name}}?</h1><span class="summary mono">{{$t.HostPort}} · {{$t.Protocol}}</span></div></div>
+<section class="card pad">
+  <p>This removes the target and its history. It cannot be undone.</p>
+  <dl class="kv">
+    <dt>Checks</dt><dd class="mono">{{$d.Impact.Observations}} {{plural $d.Impact.Observations "observation" "observations"}}</dd>
+    <dt>Findings</dt><dd class="mono">{{$d.Impact.Findings}}{{if $d.Impact.OpenFindings}} · {{$d.Impact.OpenFindings}} open, closed without a recovery notice{{end}}</dd>
+    <dt>Alert log</dt><dd class="mono">{{$d.Impact.Alerts}} {{plural $d.Impact.Alerts "delivery" "deliveries"}}</dd>
+  </dl>
+  <p class="muted">Certificates stay in the inventory while other targets serve them. To stop checking but keep the history, disable the target instead.</p>
+  <div class="form-foot">
+    <form method="post" action="/targets/{{$t.ID}}/delete">{{template "csrf" $p.CSRF}}<input type="hidden" name="confirm" value="yes"><button type="submit" class="btn btn-danger">Delete permanently</button></form>
+    {{- if $t.Enabled}}<form method="post" action="/targets/{{$t.ID}}/disable">{{template "csrf" $p.CSRF}}<button type="submit" class="btn">Disable instead</button></form>{{end}}
+    <a href="/targets/{{$t.ID}}" class="cancel">Cancel</a>
+  </div>
+</section>
+{{end}}

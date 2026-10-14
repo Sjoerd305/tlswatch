@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>tlswatch – Target detail</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0}
+:root{--bg:#f5f6f7;--surface:#ffffff;--surface-2:#f0f2f4;--ink:#1a2330;--muted:#5c6b7a;--line:#dde2e7;--line-soft:#eaeef1;--input-line:#b9c2cc;--input-bg:#ffffff;--acc:#2f6fd1;--acc-hover:#275bb0;--on-acc:#ffffff;--link:#2f6fd1;--ok:#1f8a4c;--ok-bg:#e3f3ea;--warn:#a86400;--warn-bg:#fdf1dc;--crit:#c62828;--crit-bg:#fde8e8;--off:#6b7785;--off-bg:#e9ecef;--info:#2f6fd1;--info-bg:#e6eefb;--chrome:#1c2430;--chrome-fg:#e8edf2;--chrome-muted:#95a2b1;--chrome-line:#2c3745;--track:#e4e8ec}
+a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.top{height:48px;background:var(--chrome);color:var(--chrome-fg);display:flex;align-items:center;padding:0 20px;gap:28px}
+.brand{display:flex;align-items:center;gap:9px;color:var(--chrome-fg);font-weight:600;font-size:15px}
+.brand:hover{text-decoration:none}
+.top nav{display:flex;align-items:center;height:48px;gap:4px;flex-grow:1}
+.top nav a{display:inline-flex;align-items:center;gap:6px;height:48px;padding:0 10px;color:var(--chrome-muted);font-size:13px;font-weight:500;border-bottom:2px solid transparent;border-top:2px solid transparent}
+.top nav a.on{color:var(--chrome-fg);border-bottom-color:var(--acc)}
+.top nav a:hover{color:var(--chrome-fg);text-decoration:none}
+.cnt{display:inline-flex;min-width:18px;height:18px;padding:0 5px;border-radius:9px;font-size:11px;font-weight:600;align-items:center;justify-content:center;background:var(--chrome-line);color:var(--chrome-fg)}
+.cnt.crit{background:var(--crit);color:#fff}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:6px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border-radius:5px;font:inherit;font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap;border:1px solid var(--input-line);background:var(--surface);color:var(--ink)}
+.btn:hover{text-decoration:none;background:var(--surface-2)}
+.btn-primary{background:var(--acc);color:var(--on-acc);border-color:var(--acc)}
+.btn-danger{color:var(--crit)}
+.btn-xs{height:24px;padding:0 7px;font-size:11px}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--surface-2);white-space:nowrap}
+.tbl td{padding:7px 10px;border-bottom:1px solid var(--line-soft);vertical-align:middle;white-space:nowrap}
+.tbl tr:last-child td{border-bottom:0}
+.tbl td.num,.tbl th.num{text-align:right}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500}
+.st::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor;flex-shrink:0}
+.st.ok{color:var(--ok)}.st.warn{color:var(--warn)}.st.crit{color:var(--crit)}.st.off{color:var(--off)}
+.pill{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:4px;font-size:11px;font-weight:600;letter-spacing:.02em;text-transform:uppercase}
+.pill.ok{background:var(--ok-bg);color:var(--ok)}.pill.warn{background:var(--warn-bg);color:var(--warn)}.pill.crit{background:var(--crit-bg);color:var(--crit)}.pill.off{background:var(--off-bg);color:var(--off)}
+.tag{display:inline-flex;align-items:center;height:20px;padding:0 6px;border-radius:4px;background:var(--surface-2);border:1px solid var(--line);color:var(--muted);font-size:11px;font-family:"IBM Plex Mono",monospace}
+.kv{display:grid;grid-template-columns:118px minmax(0,1fr);row-gap:6px;column-gap:12px;font-size:13px;margin:0}
+.kv dt{color:var(--muted);margin:0}.kv dd{margin:0;min-width:0}
+.sec{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--line)}
+.sec h2{margin:0;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.chain{display:flex;flex-direction:column}
+.link{display:grid;grid-template-columns:28px minmax(0,1fr) 110px 70px;gap:12px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line-soft)}
+.link:last-child{border-bottom:0}
+.link .d{width:10px;height:10px;border-radius:50%;border:2px solid var(--line);box-sizing:border-box;justify-self:center}
+.link .d.bad{border-color:var(--crit);background:var(--crit)}
+.link .d.good{border-color:var(--ok)}
+</style>
+</helmet>
+<div style="min-height: 1080px; background: var(--bg); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 13px; line-height: 1.45; display: flex; flex-direction: column">
+  <header class="top">
+    <a href="Main.dc.html" class="brand">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--acc)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="tlswatch"><path d="M12 2.5 4 5.5v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10v-6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>
+      tlswatch
+    </a>
+    <nav aria-label="Main navigation">
+      <a href="Main.dc.html">Overview</a>
+      <a href="Targets.dc.html" class="on" aria-current="page">Targets <span class="cnt">14</span></a>
+      <a href="Certificates.dc.html">Certificates <span class="cnt">11</span></a>
+      <a href="Findings.dc.html">Findings <span class="cnt crit">3</span></a>
+      <a href="Channels.dc.html">Settings</a>
+    </nav>
+    <span style="font-size: 12px; color: var(--chrome-muted)" class="mono">last run 04:17 · next 04:17</span>
+    <a href="Login.dc.html" style="display: inline-flex; align-items: center; gap: 8px; color: var(--chrome-fg); font-size: 13px">Sjoerd <span style="font-size: 11px; color: var(--chrome-muted); border: 1px solid var(--chrome-line); border-radius: 4px; padding: 1px 6px">admin</span></a>
+  </header>
+  <main style="padding: 20px 24px 32px; display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 1400px; margin: 0 auto; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted)"><a href="Targets.dc.html">Targets</a><span>/</span><span>SIP trunk</span></div>
+    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap">
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <div style="display: flex; align-items: center; gap: 12px"><h1 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em">SIP trunk</h1><span class="st crit">Critical</span></div>
+        <div style="display: flex; align-items: center; gap: 10px"><span class="mono" style="font-size: 14px">sip.contoso.example:5061</span><span class="tag">tls</span><span class="tag">customer:contoso</span><span class="tag">sip</span></div>
+      </div>
+      <div style="display: flex; gap: 8px"><a href="#" class="btn">Check now</a><a href="TargetForm.dc.html" class="btn">Edit</a><a href="#" class="btn btn-danger">Disable</a></div>
+    </div>
+    <div style="display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start">
+      <div style="display: flex; flex-direction: column; gap: 16px">
+        <section class="card" style="padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; border-color: var(--crit)">
+          <div style="display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap">
+            <span style="font-size: 34px; font-weight: 600; letter-spacing: -0.02em; color: var(--crit); line-height: 1">5 days</span>
+            <span style="font-size: 14px">until expiry · <span class="mono">2026-10-19 23:59 UTC</span></span>
+            <span style="margin-left: auto; color: var(--muted)">finding open since 7 Oct · reminded daily · <a href="Findings.dc.html">acknowledge</a></span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 5px">
+            <div style="height: 8px; border-radius: 4px; background: var(--track); overflow: hidden"><span style="display: block; height: 8px; width: 98.6%; background: var(--crit); border-radius: 4px"></span></div>
+            <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--muted)" class="mono"><span>2025-10-19 issued</span><span>365-day certificate · 98.6% used · manual renewal</span><span>2026-10-19</span></div>
+          </div>
+          <dl class="kv" style="grid-template-columns: 118px minmax(0,1fr) 118px minmax(0,1fr)">
+            <dt>Subject</dt><dd>CN=sip.contoso.example</dd>
+            <dt>Issuer</dt><dd>Sectigo RSA Domain Validation Secure Server CA</dd>
+            <dt>SANs</dt><dd class="mono" style="font-size: 12px">sip.contoso.example, sip2.contoso.example</dd>
+            <dt>Key</dt><dd>RSA 2048 · SHA-256 with RSA</dd>
+            <dt>Serial</dt><dd class="mono" style="font-size: 12px">3A9F120C77B45E2D9108AAC34F10E26B</dd>
+            <dt>Seen</dt><dd>since 2025-10-19 · also on <a href="Target.dc.html">SIP trunk 2</a></dd>
+            <dt>SHA-256</dt><dd class="mono" style="font-size: 12px; display: flex; align-items: center; gap: 8px; min-width: 0"><span style="overflow: hidden; text-overflow: ellipsis">7f3b92a10c4e5d6f8a9b1c2d3e4f506172839 4a5b6c7d8e9f0a1b2c3d4e5f607</span><button type="button" class="btn btn-xs">copy</button><button type="button" class="btn btn-xs">pem</button></dd>
+            <dt>Hostname</dt><dd><span class="st ok" style="font-size: 12px">matches SNI</span></dd>
+          </dl>
+        </section>
+        <section class="card" style="overflow: hidden">
+          <div class="sec"><h2>Chain as served</h2><span class="st ok" style="font-size: 12px">trusted via system store</span></div>
+          <div class="chain">
+            <div class="link"><span class="d bad"></span><div style="min-width: 0"><div style="font-weight: 500">sip.contoso.example</div><div style="color: var(--muted); font-size: 12px">leaf · RSA 2048 · SHA-256</div></div><span class="mono" style="font-size: 12px">2026-10-19</span><span class="mono" style="color: var(--crit); font-weight: 600; text-align: right">5 d</span></div>
+            <div class="link"><span class="d good"></span><div style="min-width: 0"><div style="font-weight: 500">Sectigo RSA Domain Validation Secure Server CA</div><div style="color: var(--muted); font-size: 12px">intermediate · RSA 2048 · SHA-384</div></div><span class="mono" style="font-size: 12px">2030-12-31</span><span class="mono" style="text-align: right">1539 d</span></div>
+            <div class="link"><span class="d good"></span><div style="min-width: 0"><div style="font-weight: 500">USERTrust RSA Certification Authority</div><div style="color: var(--muted); font-size: 12px">root, in store · RSA 4096 · SHA-384</div></div><span class="mono" style="font-size: 12px">2038-01-18</span><span class="mono" style="text-align: right">4114 d</span></div>
+          </div>
+        </section>
+        <section class="card" style="overflow: hidden">
+          <div class="sec"><h2>Last check · today 04:14 · 2 addresses</h2><span class="mono" style="font-size: 12px; color: var(--muted)">A + AAAA, resolved at check</span></div>
+          <table class="tbl">
+            <thead><tr><th>Address</th><th>Result</th><th>Protocol</th><th>Cipher</th><th>Certificate</th><th class="num">Time</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">192.0.2.17</td><td><span class="st crit">Expiring</span></td><td class="mono">TLS 1.2</td><td class="mono" style="color: var(--muted); font-size: 12px">ECDHE-RSA-AES256-GCM-SHA384</td><td class="mono" style="font-size: 12px">7f3b92a1…</td><td class="num mono">212 ms</td></tr>
+              <tr><td class="mono">2001:db8:c0::17</td><td><span class="st crit">Expiring</span></td><td class="mono">TLS 1.2</td><td class="mono" style="color: var(--muted); font-size: 12px">ECDHE-RSA-AES256-GCM-SHA384</td><td class="mono" style="font-size: 12px">7f3b92a1…</td><td class="num mono">198 ms</td></tr>
+            </tbody>
+          </table>
+        </section>
+        <section class="card" style="overflow: hidden">
+          <div class="sec"><h2>History</h2><span style="font-size: 12px; color: var(--muted)">certificates seen on this target · 180 days</span></div>
+          <table class="tbl">
+            <thead><tr><th>Certificate</th><th>Issuer</th><th>Not after</th><th>First seen</th><th>Last seen</th><th></th></tr></thead>
+            <tbody>
+              <tr><td class="mono" style="font-size: 12px">7f3b92a1… <span style="font-family: 'IBM Plex Sans'; color: var(--muted)">current</span></td><td>Sectigo</td><td class="mono">2026-10-19</td><td class="mono">2025-10-19</td><td class="mono">today</td><td></td></tr>
+              <tr><td class="mono" style="font-size: 12px">c41d08ee…</td><td>Sectigo</td><td class="mono">2025-10-20</td><td class="mono">2025-05-14</td><td class="mono">2025-10-18</td><td><a href="#" class="btn btn-xs">compare</a></td></tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
+      <aside style="display: flex; flex-direction: column; gap: 16px">
+        <section class="card" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 12px">
+          <h2 style="margin: 0; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em">Configuration</h2>
+          <dl class="kv" style="grid-template-columns: 110px minmax(0,1fr)">
+            <dt>Protocol</dt><dd>tls, implicit</dd>
+            <dt>Server name</dt><dd class="mono" style="font-size: 12px">sip.contoso.example</dd>
+            <dt>Trust</dt><dd>system store</dd>
+            <dt>Renewal</dt><dd>manual</dd>
+            <dt>Expected issuer</dt><dd>Sectigo</dd>
+            <dt>Thresholds</dt><dd class="mono" style="font-size: 12px">warn 30 d · crit 7 d</dd>
+            <dt>Interval</dt><dd class="mono" style="font-size: 12px">24 h · jitter 04:14</dd>
+            <dt>Addresses</dt><dd>all, max 8</dd>
+            <dt>Channels</dt><dd>Ops mailbox, Telegram ops</dd>
+            <dt>Added</dt><dd>2026-03-03 by Sjoerd</dd>
+          </dl>
+          <div style="padding-top: 10px; border-top: 1px solid var(--line)"><span style="color: var(--muted); font-size: 12px">Notes</span><p style="margin: 3px 0 0">Renewal via Sectigo reseller portal, ticket in the service desk. Reload with <span class="mono" style="font-size: 12px">systemctl reload opensips</span>.</p></div>
+        </section>
+        <section class="card" style="overflow: hidden">
+          <div class="sec"><h2>Findings on this target</h2></div>
+          <table class="tbl">
+            <tbody>
+              <tr><td><span class="pill crit">crit</span></td><td>expiring · 5 d</td><td class="mono" style="color: var(--muted)">7 Oct</td></tr>
+              <tr style="color: var(--muted)"><td><span class="pill off">done</span></td><td>certificate changed</td><td class="mono">19 Oct 25</td></tr>
+              <tr style="color: var(--muted)"><td><span class="pill off">done</span></td><td>unreachable · 1 address</td><td class="mono">2 Jul 25</td></tr>
+            </tbody>
+          </table>
+        </section>
+        <section class="card" style="overflow: hidden">
+          <div class="sec"><h2>Alerts sent</h2></div>
+          <table class="tbl">
+            <tbody>
+              <tr><td class="mono" style="color: var(--muted)">today 04:14</td><td>reminder · Telegram ops</td><td><span class="st ok" style="font-size: 12px">sent</span></td></tr>
+              <tr><td class="mono" style="color: var(--muted)">13 Oct 04:14</td><td>escalated · mail, Telegram</td><td><span class="st ok" style="font-size: 12px">sent</span></td></tr>
+              <tr><td class="mono" style="color: var(--muted)">7 Oct 04:14</td><td>opened · Ops mailbox</td><td><span class="st ok" style="font-size: 12px">sent</span></td></tr>
+            </tbody>
+          </table>
+        </section>
+      </aside>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1080}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
