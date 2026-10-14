@@ -283,8 +283,15 @@ func (s *Server) bundleDelete(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusNotFound, "No such bundle.")
 		return
 	}
-	if err := s.Core.DeleteBundle(r.Context(), id); err != nil {
+	switch err := s.Core.DeleteBundle(r.Context(), id); {
+	case errors.Is(err, core.ErrBundleInUse):
 		s.back(w, r, "/settings/bundles", err.Error(), "crit")
+		return
+	case errors.Is(err, core.ErrNotFound):
+		s.fail(w, r, http.StatusNotFound, "No such bundle.")
+		return
+	case err != nil:
+		s.serverError(w, r, err)
 		return
 	}
 	s.Core.Audit(r.Context(), user(r).Email, "bundle.delete", fmt.Sprintf("bundle %d", id), "")

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -127,33 +128,46 @@ func uniqueBundle(err error) error {
 	return err
 }
 
-// DeleteBundle removes a bundle; it refuses while targets use it.
+// ErrBundleInUse is returned when deleting a bundle that targets use.
+var ErrBundleInUse = errors.New("The bundle is used by targets; switch them to another trust mode first")
+
+// DeleteBundle removes a bundle; it refuses while targets use it. The check
+// and the delete are one statement, so a target saved meanwhile cannot be
+// left pointing at nothing.
 func (s *Service) DeleteBundle(ctx context.Context, id int64) error {
-	var n int
-	if err := s.DB.R.QueryRowContext(ctx, "SELECT COUNT(*) FROM targets WHERE bundle_id = ?", id).Scan(&n); err != nil {
+	res, err := s.DB.W.ExecContext(ctx, "DELETE FROM ca_bundles WHERE id = ?1 AND NOT EXISTS (SELECT 1 FROM targets WHERE bundle_id = ?1)", id)
+	if err != nil {
 		return err
 	}
-	if n > 0 {
-		return errors.New("The bundle is used by targets; switch them to another trust mode first")
-	}
-	_, err := s.DB.W.ExecContext(ctx, "DELETE FROM ca_bundles WHERE id = ?", id)
 	s.bundles.mu.Lock()
 	delete(s.bundles.pools, id)
 	s.bundles.mu.Unlock()
-	return err
+	if n, _ := res.RowsAffected(); n == 0 {
+		var exists bool
+		if err := s.DB.R.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM ca_bundles WHERE id = ?)", id).Scan(&exists); err != nil {
+			return err
+		}
+		if exists {
+			return ErrBundleInUse
+		}
+		return ErrNotFound
+	}
+	return nil
 }
 
-// BundlePool returns the certificate pool of a bundle.
+// BundlePool returns the certificate pool of a bundle. A missing bundle is
+// an error: an empty pool would report every chain as untrusted.
 func (s *Service) BundlePool(ctx context.Context, id int64) (*x509.CertPool, error) {
 	s.bundles.mu.Lock()
-	defer s.bundles.mu.Unlock()
-	if p, ok := s.bundles.pools[id]; ok {
+	p, ok := s.bundles.pools[id]
+	s.bundles.mu.Unlock()
+	if ok {
 		return p, nil
 	}
 	var data string
 	err := s.DB.R.QueryRowContext(ctx, "SELECT pem FROM ca_bundles WHERE id = ?", id).Scan(&data)
 	if errors.Is(err, sql.ErrNoRows) {
-		return x509.NewCertPool(), nil
+		return nil, fmt.Errorf("CA bundle %d: %w", id, ErrNotFound)
 	}
 	if err != nil {
 		return nil, err
@@ -162,14 +176,16 @@ func (s *Service) BundlePool(ctx context.Context, id int64) (*x509.CertPool, err
 	if err != nil {
 		return nil, err
 	}
-	p := x509.NewCertPool()
+	p = x509.NewCertPool()
 	for _, c := range certs {
 		p.AddCert(c)
 	}
+	s.bundles.mu.Lock()
 	if s.bundles.pools == nil {
 		s.bundles.pools = map[int64]*x509.CertPool{}
 	}
 	s.bundles.pools[id] = p
+	s.bundles.mu.Unlock()
 	return p, nil
 }
 

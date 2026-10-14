@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
 	"io"
 	"log/slog"
@@ -655,6 +656,32 @@ func TestTelegramRetrySkipsReachedChats(t *testing.T) {
 	}
 	if got["-1001"] != 1 || got["-1002"] != 1 {
 		t.Fatalf("after retry: %v", got)
+	}
+}
+
+func TestDeleteBundle(t *testing.T) {
+	e := newEnv(t)
+	ca := newCA(t, "Internal")
+	pemData := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.cert.Raw}))
+	id, err := e.svc.SaveBundle(e.ctx, 0, "internal", pemData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tg := e.target(func(t *Target) { t.Trust = probe.TrustBundle; t.BundleID = id })
+	if err := e.svc.DeleteBundle(e.ctx, id); !errors.Is(err, ErrBundleInUse) {
+		t.Fatalf("delete in use: %v", err)
+	}
+	if err := e.svc.DeleteTarget(e.ctx, tg.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.svc.DeleteBundle(e.ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.svc.DeleteBundle(e.ctx, id); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("delete twice: %v", err)
+	}
+	if _, err := e.svc.BundlePool(e.ctx, id); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("pool of a deleted bundle: %v", err)
 	}
 }
 
