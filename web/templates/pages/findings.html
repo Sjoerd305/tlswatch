@@ -1,6 +1,6 @@
 {{define "content"}}{{$p := .}}{{$d := .Data}}
 <div class="page-head">
-  <div><h1>Findings</h1><span class="summary">{{$d.OpenCount}} open{{if $d.AckCount}} · {{$d.AckCount}} acknowledged{{end}} · {{$d.ResCount}} resolved in the last {{$d.Retention}} days</span></div>
+  <div><h1>Findings</h1><span class="summary">{{$d.OpenCount}} open{{if $d.AckCount}} · {{$d.AckCount}} acknowledged{{end}} · {{if $d.ResCapped}}latest {{$d.ResCount}}{{else}}{{$d.ResCount}}{{end}} resolved in the last {{$d.Retention}} days</span></div>
 </div>
 <form class="row" method="get" action="/findings" role="search" data-keep-filter="state sev kind target sel">
   {{- if $d.Resolved}}<input type="hidden" name="state" value="resolved">{{end}}

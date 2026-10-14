@@ -4,6 +4,7 @@ Newest first, one line per change.
 
 ## Unreleased
 
+- Settings › Defaults refuses text in a number field instead of saving it as 0. The findings page says "latest 1000 resolved" when the list is capped.
 - `tlswatch rotate-key` replaces the secret key: stored credentials are re-encrypted under a new key, and the old key file is kept next to the new one.
 - Each delivered alert records the reference it went out under; for SMTP that is the Message-ID, shown on the alert in the finding's timeline and in the delivery log, so a message can be traced in the mail relay's logs.
 - Every check logs what it changed: the check ID, the status, the findings opened, escalated and resolved, failures held back by the debounce, alerts queued and alerts held back by a channel's severity floor. See "Why did (or didn't) an alert go out?" in docs/operations.md.

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sjoerd305/tlswatch/internal/authz"
 	"github.com/sjoerd305/tlswatch/internal/check"
 	"github.com/sjoerd305/tlswatch/internal/core"
 )
@@ -211,6 +212,7 @@ type findingsData struct {
 	OpenCount int
 	AckCount  int
 	ResCount  int
+	ResCapped bool // only the latest maxResolved resolved findings are listed
 	Retention int
 	Query     string
 	Shown     int
@@ -249,6 +251,9 @@ type findingPanel struct {
 	Comment string
 }
 
+// maxResolved caps the resolved findings listed on the findings page.
+const maxResolved = 1000
+
 func (s *Server) findings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	q := r.URL.Query()
@@ -268,13 +273,13 @@ func (s *Server) findings(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	done, err := s.Core.Findings(ctx, core.FindingFilter{TargetID: targetID, Resolved: true, Since: since, Limit: 1000})
+	done, err := s.Core.Findings(ctx, core.FindingFilter{TargetID: targetID, Resolved: true, Since: since, Limit: maxResolved})
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
-	d.OpenCount, d.ResCount = len(open), len(done)
-	d.Bulk = !resolved && s.can(r, "findings.ack")
+	d.OpenCount, d.ResCount, d.ResCapped = len(open), len(done), len(done) == maxResolved
+	d.Bulk = !resolved && s.can(r, authz.Acknowledge)
 	d.Next, d.SelPrefix = "/findings", "?"
 	if back := findingsHref(r, "sel", "", false); strings.HasPrefix(back, "?") {
 		d.Next += back
@@ -363,7 +368,7 @@ func (s *Server) findingPanel(r *http.Request, id int64) (findingPanel, error) {
 	if err != nil {
 		return findingPanel{}, err
 	}
-	p := findingPanel{F: f, Alerts: alerts, CanAck: s.can(r, "findings.ack")}
+	p := findingPanel{F: f, Alerts: alerts, CanAck: s.can(r, authz.Acknowledge)}
 	if f.AckUntil > 0 {
 		p.Until = time.Unix(f.AckUntil, 0).In(info(r).settings.Location()).Format("2006-01-02")
 	}
@@ -371,13 +376,9 @@ func (s *Server) findingPanel(r *http.Request, id int64) (findingPanel, error) {
 	return p, nil
 }
 
-func (s *Server) can(r *http.Request, action string) bool {
-	p := Page{}
-	if sess := info(r).session; sess != nil {
-		u := sess.User
-		p.User = &u
-	}
-	return p.Can(action)
+func (s *Server) can(r *http.Request, action authz.Action) bool {
+	sess := info(r).session
+	return sess != nil && authz.Allowed(sess.User.Role, action)
 }
 
 // apiCertChain renders the chain a certificate was last served with, for a

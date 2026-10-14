@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -317,7 +318,16 @@ func (s *Server) settingsDefaultsSave(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	v := r.PostForm
 	cur := info(r).settings
-	n := func(k string) int { x, _ := strconv.Atoi(strings.TrimSpace(v.Get(k))); return x }
+	// Non-numeric input is an error, not 0: for retries, reminders and the
+	// digest day and hour, 0 is a valid value.
+	var bad []string
+	n := func(k string) int {
+		x, err := strconv.Atoi(strings.TrimSpace(v.Get(k)))
+		if err != nil {
+			bad = append(bad, k)
+		}
+		return x
+	}
 	d := config.Defaults{
 		Manual:        config.Thresholds{WarnDays: n("manual_warn"), CritDays: n("manual_crit")},
 		Managed:       config.Thresholds{WarnDays: n("managed_warn"), CritDays: n("managed_crit")},
@@ -336,9 +346,17 @@ func (s *Server) settingsDefaultsSave(w http.ResponseWriter, r *http.Request) {
 	}
 	if cur.Locked("workers") {
 		d.Workers = cur.Defaults.Workers
+		bad = slices.DeleteFunc(bad, func(k string) bool { return k == "workers" })
 	}
 	if cur.Locked("retention_days") {
 		d.RetentionDays = cur.Defaults.RetentionDays
+		bad = slices.DeleteFunc(bad, func(k string) bool { return k == "retention_days" })
+	}
+	if len(bad) > 0 {
+		chans, _ := s.Core.Channels.List(r.Context())
+		s.settingsPage(w, r, http.StatusBadRequest, "settings-defaults", "defaults", "Settings",
+			defaultsData{D: cur.Defaults, Channels: chans, Error: "Enter whole numbers in every field (" + strings.Join(bad, ", ") + ")."})
+		return
 	}
 	for _, c := range v["digest_channel"] {
 		if id, err := strconv.ParseInt(c, 10, 64); err == nil {

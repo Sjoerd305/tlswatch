@@ -123,7 +123,10 @@ func (s *Service) Target(ctx context.Context, id int64) (Target, error) {
 	return t, rows.Err()
 }
 
-// Validate checks a target's configuration.
+// Validate normalises the target in place (host and server name lower case
+// without a trailing dot or IPv6 brackets, the name trimmed and defaulting
+// to the host, the bundle cleared unless bundle trust is chosen) and returns
+// the problems keyed by form field.
 func (t *Target) Validate(st config.Settings) map[string]string {
 	errs := map[string]string{}
 	t.Host = strings.TrimSuffix(strings.TrimSpace(strings.ToLower(t.Host)), ".")
@@ -322,7 +325,7 @@ func (s *Service) DeleteTarget(ctx context.Context, id int64) error {
 	return nil
 }
 
-// DueTargets returns enabled targets with their next check time.
+// Schedule returns the next check time of every enabled target.
 func (s *Service) Schedule(ctx context.Context) (map[int64]int64, error) {
 	rows, err := s.DB.R.QueryContext(ctx, "SELECT id, next_check FROM targets WHERE enabled = 1")
 	if err != nil {
@@ -360,7 +363,7 @@ func NextCheck(id int64, interval time.Duration, now time.Time) time.Time {
 	return cand
 }
 
-// Tags returns every tag with the number of targets carrying it.
+// TagCounts returns every tag of ts with the number of targets carrying it.
 func TagCounts(ts []Target) []TagCount {
 	m := map[string]int{}
 	var order []string

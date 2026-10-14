@@ -107,11 +107,14 @@ const userCols = "id, email, name, role, method, password_hash, enabled, theme, 
 
 type rowScanner interface{ Scan(...any) error }
 
-func scanUser(r rowScanner) (User, string, error) {
+// scanUser scans the userCols of a row, then any extra columns that follow
+// them into extra. It returns the user and the password hash.
+func scanUser(r rowScanner, extra ...any) (User, string, error) {
 	var u User
 	var hash, role string
 	var enabled int
-	err := r.Scan(&u.ID, &u.Email, &u.Name, &role, &u.Method, &hash, &enabled, &u.Theme, &u.LastLogin, &u.CreatedAt)
+	dest := append([]any{&u.ID, &u.Email, &u.Name, &role, &u.Method, &hash, &enabled, &u.Theme, &u.LastLogin, &u.CreatedAt}, extra...)
+	err := r.Scan(dest...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return u, "", ErrNotFound
 	}
@@ -180,13 +183,12 @@ func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
 	defer rows.Close()
 	var out []User
 	for rows.Next() {
-		var u User
-		var hash, role string
-		var enabled int
-		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &role, &u.Method, &hash, &enabled, &u.Theme, &u.LastLogin, &u.CreatedAt, &u.LockedUntil); err != nil {
+		var locked int64
+		u, _, err := scanUser(rows, &locked)
+		if err != nil {
 			return nil, err
 		}
-		u.Role, u.Enabled, u.HasPassword = authz.Role(role), enabled == 1, hash != ""
+		u.LockedUntil = locked
 		out = append(out, u)
 	}
 	return out, rows.Err()
@@ -345,12 +347,10 @@ func (s *Service) Login(ctx context.Context, email, pw, ip string) (User, error)
 		return User{}, ErrLocked
 	}
 	row := s.DB.R.QueryRowContext(ctx, "SELECT "+userCols+", failed_count, locked_until FROM users WHERE email = ?", strings.TrimSpace(email))
-	var u User
-	var hash, role string
-	var enabled, failed int
+	var failed int
 	var lockedUntil int64
-	err := row.Scan(&u.ID, &u.Email, &u.Name, &role, &u.Method, &hash, &enabled, &u.Theme, &u.LastLogin, &u.CreatedAt, &failed, &lockedUntil)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && (u.Method != MethodLocal || hash == "")) {
+	u, hash, err := scanUser(row, &failed, &lockedUntil)
+	if errors.Is(err, ErrNotFound) || (err == nil && (u.Method != MethodLocal || hash == "")) {
 		VerifyPassword(dummyHash(), pw)
 		s.ipFail(ip, now)
 		return User{}, s.phantomFail(email, now)
@@ -358,9 +358,6 @@ func (s *Service) Login(ctx context.Context, email, pw, ip string) (User, error)
 	if err != nil {
 		return User{}, err
 	}
-	u.Role = authz.Role(role)
-	u.Enabled = enabled == 1
-	u.HasPassword = true
 	if lockedUntil > now {
 		VerifyPassword(dummyHash(), pw)
 		return User{}, ErrLocked

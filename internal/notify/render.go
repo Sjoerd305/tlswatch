@@ -2,6 +2,7 @@ package notify
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -124,7 +125,25 @@ func Render(a AlertData) Message {
 	if a.Link != "" {
 		b.WriteString("\n" + a.Link + "\n")
 	}
-	return Message{Subject: "[" + tag + "] " + subject, Body: b.String()}
+	return Message{Subject: tagged(tag, subject), Body: b.String()}
+}
+
+// Subject tags, worst first: Render starts every subject with one, which
+// mail rules route on, and Combine orders a batch by it. Messages in the
+// outbox are stored rendered, so the tag is how a batch learns severity.
+var subjectTags = []string{"critical", "warning", "info", "resolved"}
+
+func tagged(tag, subject string) string { return "[" + tag + "] " + subject }
+
+// tagRank is the position of the subject's tag in subjectTags; an untagged
+// subject ranks as info.
+func tagRank(subject string) int {
+	for i, t := range subjectTags {
+		if strings.HasPrefix(subject, "["+t+"]") {
+			return i
+		}
+	}
+	return slices.Index(subjectTags, "info")
 }
 
 // MaxBatchLines caps a collapsed message.
@@ -136,28 +155,9 @@ func Combine(msgs []Message, link string) Message {
 	if len(msgs) == 1 {
 		return msgs[0]
 	}
-	rank := func(s string) int {
-		switch {
-		case strings.HasPrefix(s, "[critical]"):
-			return 0
-		case strings.HasPrefix(s, "[warning]"):
-			return 1
-		case strings.HasPrefix(s, "[resolved]"):
-			return 3
-		}
-		return 2
-	}
 	sorted := append([]Message(nil), msgs...)
-	sort.SliceStable(sorted, func(i, j int) bool { return rank(sorted[i].Subject) < rank(sorted[j].Subject) })
-	worst := "info"
-	switch rank(sorted[0].Subject) {
-	case 0:
-		worst = "critical"
-	case 1:
-		worst = "warning"
-	case 3:
-		worst = "resolved"
-	}
+	sort.SliceStable(sorted, func(i, j int) bool { return tagRank(sorted[i].Subject) < tagRank(sorted[j].Subject) })
+	worst := subjectTags[tagRank(sorted[0].Subject)]
 	var b strings.Builder
 	for i, m := range sorted {
 		if i == MaxBatchLines {
@@ -169,7 +169,7 @@ func Combine(msgs []Message, link string) Message {
 	if link != "" {
 		b.WriteString("\n" + link + "\n")
 	}
-	return Message{Subject: fmt.Sprintf("[%s] %d alerts from tlswatch", worst, len(msgs)), Body: b.String()}
+	return Message{Subject: tagged(worst, fmt.Sprintf("%d alerts from tlswatch", len(msgs))), Body: b.String()}
 }
 
 // TestMessage is the sample sent by a channel's Test button.
@@ -178,5 +178,5 @@ func TestMessage(channel, link string) Message {
 	if link != "" {
 		body += "\n" + link + "\n"
 	}
-	return Message{Subject: "[info] tlswatch test message", Body: body}
+	return Message{Subject: tagged("info", "tlswatch test message"), Body: body}
 }

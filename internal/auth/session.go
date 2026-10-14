@@ -171,20 +171,16 @@ func (s *Service) session(ctx context.Context, raw string, touch bool) (*Session
 	}
 	h := hashToken(raw)
 	row := s.DB.R.QueryRowContext(ctx,
-		"SELECT s.csrf, s.created_at, s.last_seen, "+prefixed("u.", userCols)+" FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.hash = ?", h)
+		"SELECT "+prefixed("u.", userCols)+", s.csrf, s.created_at, s.last_seen FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.hash = ?", h)
 	sess := &Session{Hash: h}
-	var hash, role string
-	var enabled int
-	u := &sess.User
-	err := row.Scan(&sess.CSRF, &sess.CreatedAt, &sess.LastSeen,
-		&u.ID, &u.Email, &u.Name, &role, &u.Method, &hash, &enabled, &u.Theme, &u.LastLogin, &u.CreatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
+	u, _, err := scanUser(row, &sess.CSRF, &sess.CreatedAt, &sess.LastSeen)
+	if errors.Is(err, ErrNotFound) {
 		return nil, ErrNoSession
 	}
 	if err != nil {
 		return nil, err
 	}
-	u.Role, u.Enabled, u.HasPassword = authz.Role(role), enabled == 1, hash != ""
+	sess.User = u
 	now := s.now()
 	if !u.Enabled || now-sess.LastSeen > int64(s.IdleTimeout/time.Second) || s.MaxAge > 0 && now-sess.CreatedAt > int64(s.MaxAge/time.Second) {
 		_, _ = s.DB.W.ExecContext(ctx, "DELETE FROM sessions WHERE hash = ?", h)

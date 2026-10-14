@@ -367,7 +367,8 @@ func (s *Service) Audit(ctx context.Context, user, action, object, details strin
 	}
 }
 
-// Settings returns the current settings.
+// CurrentSettings returns the current settings; a load error is logged and
+// the defaults are used.
 func (s *Service) CurrentSettings(ctx context.Context) config.Settings {
 	st, err := s.Settings.Get(ctx)
 	if err != nil && s.Log != nil {

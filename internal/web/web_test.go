@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +22,7 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/probe"
 	"github.com/sjoerd305/tlswatch/internal/sched"
 	"github.com/sjoerd305/tlswatch/internal/secret"
+	assets "github.com/sjoerd305/tlswatch/web"
 )
 
 type harness struct {
@@ -266,6 +268,34 @@ func TestCertChainAPI(t *testing.T) {
 	}
 }
 
+// Templates name actions as strings ({{if $p.Can "targets.edit"}}); every
+// one must be a real action, or the control silently never shows.
+func TestTemplateActionsExist(t *testing.T) {
+	known := map[string]bool{}
+	for _, a := range authz.Actions {
+		known[string(a)] = true
+	}
+	re := regexp.MustCompile(`\.Can "([^"]+)"`)
+	err := fs.WalkDir(assets.FS, "templates", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, err := fs.ReadFile(assets.FS, path)
+		if err != nil {
+			return err
+		}
+		for _, m := range re.FindAllStringSubmatch(string(b), -1) {
+			if !known[m[1]] {
+				t.Errorf("%s: unknown action %q", path, m[1])
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSecurityHeaders(t *testing.T) {
 	hs := newHarness(t)
 	rec := hs.do(authz.Viewer, "GET", "/", nil, false)
@@ -401,10 +431,18 @@ func TestSettingsSavedFromUI(t *testing.T) {
 	}
 	// Invalid defaults are refused with a message.
 	d := url.Values{"manual_warn": {"10"}, "manual_crit": {"20"}, "managed_warn": {"10"}, "managed_crit": {"3"}, "interval_s": {"86400"},
-		"timeout_s": {"10"}, "retries": {"2"}, "debounce": {"2"}, "remind_warn_s": {"604800"}, "remind_crit_s": {"86400"}, "workers": {"8"}, "retention_days": {"180"}}
+		"timeout_s": {"10"}, "retries": {"2"}, "debounce": {"2"}, "remind_warn_s": {"604800"}, "remind_crit_s": {"86400"}, "workers": {"8"}, "retention_days": {"180"},
+		"digest_weekday": {"1"}, "digest_hour": {"8"}}
 	rec2 := hs.do(authz.Admin, "POST", "/settings/defaults", d, true)
 	if rec2.Code != http.StatusBadRequest || !strings.Contains(rec2.Body.String(), "critical must be 1 to warning minus 1") {
 		t.Fatalf("bad defaults: %d", rec2.Code)
+	}
+	// Text in a number field is refused, not stored as 0.
+	d.Set("manual_crit", "7")
+	d.Set("retries", "two")
+	rec2 = hs.do(authz.Admin, "POST", "/settings/defaults", d, true)
+	if rec2.Code != http.StatusBadRequest || !strings.Contains(rec2.Body.String(), "retries") {
+		t.Fatalf("non-numeric retries: %d", rec2.Code)
 	}
 }
 

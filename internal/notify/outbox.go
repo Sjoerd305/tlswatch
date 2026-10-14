@@ -179,22 +179,15 @@ func (d *Dispatcher) deliver(ctx context.Context, chID int64, delivered string, 
 		}
 		m := Combine(msgs, link)
 		m.Ref = ref
-		sender := c.Sender()
-		if d.Senders != nil {
-			sender = d.Senders(c)
-		}
-		sctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-		if ps, ok := sender.(PartialSender); ok {
+		sctx, cancel := context.WithTimeout(ctx, sendTimeout)
+		if ps, ok := d.sender(c).(PartialSender); ok {
 			var reached []string
 			reached, sendErr = ps.SendSkipping(sctx, m, splitList(delivered))
 			delivered = joinList(append(splitList(delivered), reached...))
 		} else {
-			sendErr = sender.Send(sctx, m)
+			sendErr = d.sender(c).Send(sctx, m)
 		}
 		cancel()
-		if sendErr != nil {
-			sendErr = redactErr(sendErr, c.Secrets()...)
-		}
 	}
 	var wait time.Duration
 	if ra := (*RetryAfterError)(nil); errors.As(sendErr, &ra) {
@@ -235,6 +228,18 @@ func (d *Dispatcher) deliver(ctx context.Context, chID int64, delivered string, 
 	}
 }
 
+// sendTimeout bounds one delivery attempt.
+const sendTimeout = 60 * time.Second
+
+// sender is the transport for c. Transports redact their own credentials
+// from the errors they return.
+func (d *Dispatcher) sender(c Channel) Sender {
+	if d.Senders != nil {
+		return d.Senders(c)
+	}
+	return c.Sender()
+}
+
 func splitList(s string) []string {
 	if s == "" {
 		return nil
@@ -259,17 +264,12 @@ func (d *Dispatcher) SendTest(ctx context.Context, chID int64, link string) erro
 	}
 	m := TestMessage(c.Name, link)
 	m.Ref = NewRef()
-	sender := c.Sender()
-	if d.Senders != nil {
-		sender = d.Senders(c)
-	}
-	sctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	sendErr := sender.Send(sctx, m)
+	sctx, cancel := context.WithTimeout(ctx, sendTimeout)
+	sendErr := d.sender(c).Send(sctx, m)
 	cancel()
 	now := d.now().Unix()
 	state, msg := "sent", ""
 	if sendErr != nil {
-		sendErr = redactErr(sendErr, c.Secrets()...)
 		state, msg = "failed", sendErr.Error()
 	}
 	sent := int64(0)
