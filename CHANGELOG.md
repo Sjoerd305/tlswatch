@@ -4,6 +4,7 @@ Newest first, one line per change.
 
 ## Unreleased
 
+- Alert, digest and test mails now carry an HTML part in the style of the UI next to the plain text: status pill, countdown, the fields as a table with mono identifiers, and a button to open tlswatch; dark mode where the mail client supports it. Telegram stays plain text. Alerts queued before the upgrade go out as plain text.
 - Without a release version, `tlswatch version` and the asset URLs use the git revision the binary was built from. Static files are cached for good unless the build is a development one (no version, or a modified working tree).
 - Settings pages show validation messages and log any other error instead of showing its text.
 - Prometheus metrics at `/metrics`, off by default: switch them on under Settings › General (or `TLSWATCH_METRICS=true`). They cover targets by status, open findings, the outbox, every target's certificate expiry and the scheduler.

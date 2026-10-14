@@ -2,9 +2,7 @@ package core
 
 import (
 	"context"
-	"fmt"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/sjoerd305/tlswatch/internal/check"
@@ -25,21 +23,25 @@ func (s *Service) Digest(ctx context.Context) (notify.Message, error) {
 	if err != nil {
 		return notify.Message{}, err
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "tlswatch weekly digest, %s\n\n", now.In(loc).Format("Monday 2 January 2006"))
-	fmt.Fprintf(&b, "Open findings (%d)\n", len(findings))
-	for _, f := range findings {
-		ack := ""
-		if f.Acked(now) {
-			ack = " (acknowledged by " + f.AckBy + ")"
-		}
-		fmt.Fprintf(&b, "  [%s] %s %s: %s%s\n", f.Severity, f.HostPort(), f.Kind.Label(), f.Details, ack)
+	d := notify.DigestData{Date: now.In(loc).Format("Monday 2 January 2006")}
+	if st.General.BaseURL != "" {
+		d.Link = st.General.BaseURL + "/"
 	}
-	if len(findings) == 0 {
-		b.WriteString("  none\n")
+	tag := "info"
+	for _, f := range findings {
+		df := notify.DigestFinding{Severity: string(f.Severity), HostPort: f.HostPort(), Kind: f.Kind.Label(), Details: f.Details}
+		if f.Acked(now) {
+			df.AckBy = f.AckBy
+		}
+		d.Findings = append(d.Findings, df)
+		switch {
+		case f.Severity == check.Critical:
+			tag = "critical"
+		case f.Severity == check.Warning && tag != "critical":
+			tag = "warning"
+		}
 	}
 	var exp []Target
-	var failed []Target
 	for _, t := range ts {
 		if !t.Enabled {
 			continue
@@ -48,39 +50,17 @@ func (s *Service) Digest(ctx context.Context) (notify.Message, error) {
 			exp = append(exp, t)
 		}
 		if t.LastError != "" || t.Status == StatusUnreachable {
-			failed = append(failed, t)
+			d.Failed = append(d.Failed, notify.DigestFailure{Name: t.Name, HostPort: t.HostPort(), Error: t.LastError})
 		}
 	}
 	sort.Slice(exp, func(i, j int) bool { return exp[i].NotAfter < exp[j].NotAfter })
-	fmt.Fprintf(&b, "\nExpiring in the next 30 days (%d)\n", len(exp))
 	for _, t := range exp {
-		fmt.Fprintf(&b, "  %s  %4d d  %s (%s)\n", time.Unix(t.NotAfter, 0).In(loc).Format("2006-01-02"), check.DaysLeft(time.Unix(t.NotAfter, 0), now), t.Name, t.HostPort())
-	}
-	if len(exp) == 0 {
-		b.WriteString("  none\n")
-	}
-	fmt.Fprintf(&b, "\nFailed their last check (%d)\n", len(failed))
-	for _, t := range failed {
-		fmt.Fprintf(&b, "  %s (%s): %s\n", t.Name, t.HostPort(), t.LastError)
-	}
-	if len(failed) == 0 {
-		b.WriteString("  none\n")
-	}
-	if st.General.BaseURL != "" {
-		b.WriteString("\n" + st.General.BaseURL + "/\n")
-	}
-	sev := "info"
-	for _, f := range findings {
-		if f.Severity == check.Critical {
-			sev = "critical"
-			break
+		days := check.DaysLeft(time.Unix(t.NotAfter, 0), now)
+		e := notify.DigestExpiry{Date: time.Unix(t.NotAfter, 0).In(loc).Format("2006-01-02"), Days: days, Tag: "warning", Name: t.Name, HostPort: t.HostPort()}
+		if days < st.Defaults.Manual.CritDays {
+			e.Tag = "critical"
 		}
-		if f.Severity == check.Warning {
-			sev = "warning"
-		}
+		d.Expiring = append(d.Expiring, e)
 	}
-	return notify.Message{
-		Subject: fmt.Sprintf("[%s] tlswatch weekly digest: %d open, %d expiring within 30 days", sev, len(findings), len(exp)),
-		Body:    b.String(),
-	}, nil
+	return notify.RenderDigest(d, tag), nil
 }

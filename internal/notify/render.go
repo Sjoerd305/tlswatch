@@ -93,39 +93,78 @@ func Render(a AlertData) Message {
 		tag = "resolved"
 		subject = fmt.Sprintf("%s %s resolved", a.HostPort, strings.ToLower(a.KindLabel))
 	}
-	var b strings.Builder
-	line := func(label, value string) {
+	// One list of fields feeds the plain text and the HTML part.
+	var rows []kv
+	add := func(label, value string, mono bool) {
 		if value != "" {
-			fmt.Fprintf(&b, "%-12s %s\n", label+":", value)
+			rows = append(rows, kv{label, value, mono})
 		}
 	}
-	line("Target", fmt.Sprintf("%s (%s)", a.TargetName, a.HostPort))
+	add("Target", fmt.Sprintf("%s (%s)", a.TargetName, a.HostPort), false)
 	if a.Event == EventRecover {
-		line("Resolved", a.KindLabel)
+		add("Resolved", a.KindLabel, false)
 	} else {
-		line("Finding", fmt.Sprintf("%s, %s", a.KindLabel, a.Severity))
+		add("Finding", fmt.Sprintf("%s, %s", a.KindLabel, a.Severity), false)
 	}
-	line("Details", a.Details)
+	add("Details", a.Details, false)
 	if !a.NotAfter.IsZero() {
 		exp := a.NotAfter.In(loc).Format("2006-01-02 15:04 MST")
 		if a.DaysLeft != nil {
 			exp += fmt.Sprintf(" (%d days left)", *a.DaysLeft)
 		}
-		line("Expires", exp)
+		add("Expires", exp, true)
 	}
-	line("Subject", a.SubjectCN)
-	line("Issuer", a.IssuerCN)
+	add("Subject", a.SubjectCN, false)
+	add("Issuer", a.IssuerCN, false)
 	if len(a.Fingerprint) >= 16 {
-		line("SHA-256", a.Fingerprint[:16]+"…")
+		add("SHA-256", a.Fingerprint[:16]+"…", true)
 	}
-	line("Address", a.Address)
+	add("Address", a.Address, true)
 	if !a.OpenedAt.IsZero() && a.Event != EventOpen {
-		line("Open since", a.OpenedAt.In(loc).Format("2006-01-02 15:04"))
+		add("Open since", a.OpenedAt.In(loc).Format("2006-01-02 15:04"), true)
+	}
+	var b strings.Builder
+	for _, r := range rows {
+		fmt.Fprintf(&b, "%-12s %s\n", r.K+":", r.V)
 	}
 	if a.Link != "" {
 		b.WriteString("\n" + a.Link + "\n")
 	}
-	return Message{Subject: tagged(tag, subject), Body: b.String()}
+
+	view := &alertView{Tag: tag, Event: eventLabel(a, loc), Title: subject, Rows: rows}
+	if a.DaysLeft != nil && a.Event != EventRecover {
+		view.Countdown, view.CountdownNote = countdown(*a.DaysLeft, a.NotAfter.In(loc))
+	}
+	html := renderHTML(emailDoc{Kind: "alert", Title: subject, Preheader: a.Details, Label: "Alert", Link: a.Link, Alert: view})
+	return Message{Subject: tagged(tag, subject), Body: b.String(), HTML: html}
+}
+
+// eventLabel says what kind of alert this is, above the title.
+func eventLabel(a AlertData, loc *time.Location) string {
+	switch a.Event {
+	case EventEscalate:
+		return "Escalated to " + a.Severity
+	case EventRemind:
+		return "Reminder, open since " + a.OpenedAt.In(loc).Format("2 Jan 2006")
+	case EventRecover:
+		return "Resolved"
+	}
+	return "New finding on " + a.TargetName
+}
+
+// countdown is the large figure of an expiry alert and the note beside it.
+func countdown(days int, notAfter time.Time) (string, string) {
+	date := ""
+	if !notAfter.IsZero() {
+		date = notAfter.Format("2 Jan 2006")
+	}
+	switch {
+	case days < 0:
+		return "Expired", "on " + date
+	case days == 1:
+		return "1", "day left · expires " + date
+	}
+	return fmt.Sprint(days), "days left · expires " + date
 }
 
 // Subject tags, worst first: Render starts every subject with one, which
@@ -169,7 +208,18 @@ func Combine(msgs []Message, link string) Message {
 	if link != "" {
 		b.WriteString("\n" + link + "\n")
 	}
-	return Message{Subject: tagged(worst, fmt.Sprintf("%d alerts from tlswatch", len(msgs))), Body: b.String()}
+	subject := fmt.Sprintf("%d alerts from tlswatch", len(msgs))
+	view := &batchView{Title: subject, Count: len(msgs)}
+	for i, m := range sorted {
+		if i == MaxBatchLines {
+			view.More = len(sorted) - MaxBatchLines
+			break
+		}
+		view.Rows = append(view.Rows, batchRow{Tag: subjectTag(m.Subject), Text: untagged(m.Subject)})
+	}
+	html := renderHTML(emailDoc{Kind: "batch", Title: subject, Preheader: untagged(sorted[0].Subject), Label: "Alerts", Link: link,
+		LinkText: "Open findings in tlswatch", Batch: view})
+	return Message{Subject: tagged(worst, subject), Body: b.String(), HTML: html}
 }
 
 // TestMessage is the sample sent by a channel's Test button.
@@ -178,5 +228,87 @@ func TestMessage(channel, link string) Message {
 	if link != "" {
 		body += "\n" + link + "\n"
 	}
-	return Message{Subject: tagged("info", "tlswatch test message"), Body: body}
+	html := renderHTML(emailDoc{Kind: "test", Title: "tlswatch test message", Preheader: "Alerts will arrive here.", Label: "Test",
+		Link: link, Test: &testView{Channel: channel}})
+	return Message{Subject: tagged("info", "tlswatch test message"), Body: body, HTML: html}
+}
+
+// DigestData is the content of the weekly digest.
+type DigestData struct {
+	Date     string // "Monday 19 October 2026"
+	Findings []DigestFinding
+	Expiring []DigestExpiry
+	Failed   []DigestFailure
+	Link     string
+}
+
+// DigestFinding is an open finding in the digest.
+type DigestFinding struct {
+	Severity, HostPort, Kind, Details, AckBy string
+}
+
+// DigestExpiry is a certificate expiring within 30 days.
+type DigestExpiry struct {
+	Date           string
+	Days           int
+	Tag            string // critical or warning, for the colour of Days
+	Name, HostPort string
+}
+
+// DigestFailure is a target whose last check failed.
+type DigestFailure struct {
+	Name, HostPort, Error string
+}
+
+// RenderDigest builds the weekly digest; tag is the subject tag (the worst
+// open severity, or info).
+func RenderDigest(d DigestData, tag string) Message {
+	var b strings.Builder
+	fmt.Fprintf(&b, "tlswatch weekly digest, %s\n\n", d.Date)
+	fmt.Fprintf(&b, "Open findings (%d)\n", len(d.Findings))
+	for _, f := range d.Findings {
+		ack := ""
+		if f.AckBy != "" {
+			ack = " (acknowledged by " + f.AckBy + ")"
+		}
+		fmt.Fprintf(&b, "  [%s] %s %s: %s%s\n", f.Severity, f.HostPort, f.Kind, f.Details, ack)
+	}
+	none := func(n int) {
+		if n == 0 {
+			b.WriteString("  none\n")
+		}
+	}
+	none(len(d.Findings))
+	fmt.Fprintf(&b, "\nExpiring in the next 30 days (%d)\n", len(d.Expiring))
+	for _, e := range d.Expiring {
+		fmt.Fprintf(&b, "  %s  %4d d  %s (%s)\n", e.Date, e.Days, e.Name, e.HostPort)
+	}
+	none(len(d.Expiring))
+	fmt.Fprintf(&b, "\nFailed their last check (%d)\n", len(d.Failed))
+	for _, f := range d.Failed {
+		fmt.Fprintf(&b, "  %s (%s): %s\n", f.Name, f.HostPort, f.Error)
+	}
+	none(len(d.Failed))
+	if d.Link != "" {
+		b.WriteString("\n" + d.Link + "\n")
+	}
+	subject := fmt.Sprintf("tlswatch weekly digest: %d open, %d expiring within 30 days", len(d.Findings), len(d.Expiring))
+
+	figure := func(n int, tag string) string {
+		if n == 0 {
+			return "ok"
+		}
+		return tag
+	}
+	worstOpen := "ok"
+	if len(d.Findings) > 0 {
+		worstOpen = tag
+	}
+	view := &digestView{DigestData: d, Calm: len(d.Findings)+len(d.Expiring)+len(d.Failed) == 0, Tiles: []tile{
+		{K: "Open findings", N: len(d.Findings), Tag: worstOpen},
+		{K: "Expiring ≤ 30 d", N: len(d.Expiring), Tag: figure(len(d.Expiring), "warning")},
+		{K: "Failed checks", N: len(d.Failed), Tag: figure(len(d.Failed), "critical")},
+	}}
+	html := renderHTML(emailDoc{Kind: "digest", Title: subject, Preheader: subject, Label: "Weekly digest", Link: d.Link, Digest: view})
+	return Message{Subject: tagged(tag, subject), Body: b.String(), HTML: html}
 }

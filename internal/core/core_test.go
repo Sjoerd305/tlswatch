@@ -234,6 +234,9 @@ func TestExpiryLifecycle(t *testing.T) {
 	if len(mail) != 1 || !strings.HasPrefix(mail[0].Subject, "[warning] portal.example.nl:443 expires in 29 days") {
 		t.Fatalf("mail: %+v", mail)
 	}
+	if !strings.Contains(mail[0].HTML, "portal.example.nl:443 expires in 29 days") {
+		t.Fatal("queued alert lost its HTML part")
+	}
 	if tm := e.take("telegram"); len(tm) != 0 {
 		t.Fatalf("telegram floor critical got a warning: %+v", tm)
 	}
@@ -508,6 +511,9 @@ func TestBatchCollapsesPerChannel(t *testing.T) {
 	}
 	if !strings.Contains(mail[0].Subject, "60 alerts") || !strings.Contains(mail[0].Body, "and 10 more") {
 		t.Fatalf("collapsed: %s\n%s", mail[0].Subject, mail[0].Body)
+	}
+	if !strings.Contains(mail[0].HTML, "60 alerts from tlswatch") || !strings.Contains(mail[0].HTML, "and 10 more") {
+		t.Fatal("collapsed mail has no HTML part")
 	}
 	// Every alert of the batch records the reference the message went out under.
 	var refs, n int

@@ -22,8 +22,8 @@ func Enqueue(ctx context.Context, tx *sql.Tx, findingID, channelID int64, event 
 	if findingID != 0 {
 		fid = findingID
 	}
-	_, err := tx.ExecContext(ctx, `INSERT INTO alerts(finding_id, channel_id, event, created_at, next_attempt, subject, body)
-		VALUES(?,?,?,?,?,?,?)`, fid, channelID, event, now.Unix(), now.Add(BatchDelay).Unix(), m.Subject, m.Body)
+	_, err := tx.ExecContext(ctx, `INSERT INTO alerts(finding_id, channel_id, event, created_at, next_attempt, subject, body, html)
+		VALUES(?,?,?,?,?,?,?,?)`, fid, channelID, event, now.Unix(), now.Add(BatchDelay).Unix(), m.Subject, m.Body, m.HTML)
 	return err
 }
 
@@ -118,7 +118,7 @@ func (d *Dispatcher) Flush(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	now := d.now()
-	rows, err := d.DB.R.QueryContext(ctx, `SELECT id, channel_id, delivered, ref, created_at, attempts, subject, body FROM alerts
+	rows, err := d.DB.R.QueryContext(ctx, `SELECT id, channel_id, delivered, ref, created_at, attempts, subject, body, html FROM alerts
 		WHERE state = 'pending' AND next_attempt <= ? ORDER BY id`, now.Unix())
 	if err != nil {
 		return err
@@ -128,7 +128,7 @@ func (d *Dispatcher) Flush(ctx context.Context) error {
 	for rows.Next() {
 		var p pending
 		var k batchKey
-		if err := rows.Scan(&p.id, &k.channel, &k.delivered, &p.ref, &p.createdAt, &p.attempts, &p.msg.Subject, &p.msg.Body); err != nil {
+		if err := rows.Scan(&p.id, &k.channel, &k.delivered, &p.ref, &p.createdAt, &p.attempts, &p.msg.Subject, &p.msg.Body, &p.msg.HTML); err != nil {
 			rows.Close()
 			return err
 		}
@@ -325,8 +325,8 @@ func (d *Dispatcher) SendNow(ctx context.Context, chIDs []int64, event string, m
 	}
 	now := d.now()
 	for _, id := range chIDs {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO alerts(channel_id, event, created_at, next_attempt, subject, body) VALUES(?,?,?,?,?,?)`,
-			id, event, now.Unix(), now.Unix(), m.Subject, m.Body); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO alerts(channel_id, event, created_at, next_attempt, subject, body, html) VALUES(?,?,?,?,?,?,?)`,
+			id, event, now.Unix(), now.Unix(), m.Subject, m.Body, m.HTML); err != nil {
 			tx.Rollback()
 			return err
 		}

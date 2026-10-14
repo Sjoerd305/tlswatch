@@ -247,15 +247,35 @@ func buildMessage(from string, to []string, m Message, now time.Time) []byte {
 	h("Date", now.Format(time.RFC1123Z))
 	h("Message-ID", MessageID(ref))
 	h("MIME-Version", "1.0")
-	h("Content-Type", "text/plain; charset=utf-8")
-	h("Content-Transfer-Encoding", "quoted-printable")
 	h("Auto-Submitted", "auto-generated")
+	if m.HTML == "" {
+		h("Content-Type", "text/plain; charset=utf-8")
+		h("Content-Transfer-Encoding", "quoted-printable")
+		b.WriteString("\r\n")
+		writeQP(&b, m.Body)
+		return b.Bytes()
+	}
+	// The plain text first, the preferred HTML last (RFC 2046).
+	boundary := "tlswatch-" + NewRef()
+	h("Content-Type", `multipart/alternative; boundary="`+boundary+`"`)
 	b.WriteString("\r\n")
-	qp := quotedprintable.NewWriter(&b)
-	body := strings.ReplaceAll(strings.ReplaceAll(m.Body, "\r\n", "\n"), "\n", "\r\n")
-	_, _ = qp.Write([]byte(body))
-	_ = qp.Close()
+	for _, part := range []struct{ typ, body string }{{"text/plain", m.Body}, {"text/html", m.HTML}} {
+		b.WriteString("--" + boundary + "\r\n")
+		h("Content-Type", part.typ+"; charset=utf-8")
+		h("Content-Transfer-Encoding", "quoted-printable")
+		b.WriteString("\r\n")
+		writeQP(&b, part.body)
+		b.WriteString("\r\n")
+	}
+	b.WriteString("--" + boundary + "--\r\n")
 	return b.Bytes()
+}
+
+// writeQP writes text quoted-printable with CRLF line ends.
+func writeQP(b *bytes.Buffer, text string) {
+	qp := quotedprintable.NewWriter(b)
+	_, _ = qp.Write([]byte(strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\n", "\r\n")))
+	_ = qp.Close()
 }
 
 // plainAuth is PLAIN without net/smtp's TLS check; Send only uses it on an

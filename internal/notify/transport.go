@@ -11,7 +11,8 @@ import (
 // Message is one notification: a subject line and a plain-text body.
 type Message struct {
 	Subject string
-	Body    string
+	Body    string // plain text, for every transport
+	HTML    string // HTML part for mail; empty sends plain text only
 	// Ref identifies this delivery; SMTP sends it as the Message-ID so
 	// the relay's logs can be matched with the alert log. Empty: random.
 	Ref string
