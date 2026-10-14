@@ -78,7 +78,8 @@ func (d *Dispatcher) Wake() {
 	}
 }
 
-// Run delivers alerts until ctx ends.
+// Run delivers alerts until ctx ends; a flush under way finishes recording
+// what it sent.
 func (d *Dispatcher) Run(ctx context.Context) {
 	d.init()
 	t := time.NewTicker(5 * time.Second)
@@ -197,6 +198,9 @@ func (d *Dispatcher) deliver(ctx context.Context, chID int64, delivered string, 
 	if ra := (*RetryAfterError)(nil); errors.As(sendErr, &ra) {
 		wait = ra.After
 	}
+	// Record the outcome even when shutdown cancelled ctx meanwhile, so a
+	// message that went out is not sent again.
+	ctx = context.WithoutCancel(ctx)
 	now := d.now()
 	var ids, gaveUp []int64
 	for _, p := range ps {

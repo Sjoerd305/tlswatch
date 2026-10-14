@@ -25,6 +25,6 @@ USER 65532:65532
 ENV TLSWATCH_LISTEN=0.0.0.0:8080 TLSWATCH_DB=/data/tlswatch.db
 EXPOSE 8080
 VOLUME ["/data"]
-HEALTHCHECK NONE
+HEALTHCHECK --interval=1m --timeout=10s --start-period=30s CMD ["/tlswatch", "healthcheck"]
 ENTRYPOINT ["/tlswatch"]
 CMD ["serve"]

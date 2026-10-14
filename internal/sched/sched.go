@@ -56,6 +56,7 @@ type Scheduler struct {
 	inflight map[int64]chan struct{}
 	fails    map[int64]int // consecutive checks that could not be stored
 	running  int
+	wg       sync.WaitGroup // checks and housekeeping started by Run
 	wake     chan struct{}
 	reload   chan struct{}
 	once     sync.Once
@@ -160,13 +161,19 @@ func (s *Scheduler) load(ctx context.Context, startup bool) error {
 	return nil
 }
 
-// Run processes the schedule until ctx ends.
+// Run processes the schedule until ctx ends, then waits for the checks it
+// started, which end early as their context is cancelled.
 func (s *Scheduler) Run(ctx context.Context) {
 	s.init()
+	defer s.wg.Wait()
 	if err := s.load(ctx, true); err != nil {
 		s.Log.Error("load schedule", "err", err)
 	}
-	go s.housekeeping(ctx)
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		s.housekeeping(ctx)
+	}()
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
 	refresh := time.NewTicker(time.Minute) // picks up targets added outside the UI, e.g. by seed
@@ -221,7 +228,11 @@ func (s *Scheduler) dispatch(ctx context.Context) {
 		s.inflight[it.id] = done
 		s.running++
 		s.mu.Unlock()
-		go s.run(ctx, it.id, done)
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			s.run(ctx, it.id, done)
+		}()
 	}
 }
 
@@ -367,6 +378,14 @@ func (s *Scheduler) CheckNow(ctx context.Context, id int64) (core.Target, error)
 		s.mu.Unlock()
 	}
 	return t, err
+}
+
+// CheckSoon queues one target to run now, through the pool: after it was
+// added, changed or enabled.
+func (s *Scheduler) CheckSoon(id int64) {
+	s.init()
+	s.runAt(id, s.now().Unix())
+	signal(s.wake)
 }
 
 // CheckAll queues every enabled target to run now, through the pool.

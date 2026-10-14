@@ -17,6 +17,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	_ "time/tzdata" // time zones in the scratch Docker image
@@ -44,6 +45,7 @@ Usage:
   tlswatch create-admin -email ADDR    create an admin and print a one-time password link
   tlswatch migrate                     apply database migrations (also done at start)
   tlswatch backup PATH                 write a consistent copy of the database
+  tlswatch healthcheck                 exit 0 when the running server's /healthz is OK
   tlswatch check HOST[:PORT] [flags]   probe one endpoint, print JSON, exit 0/1/2 by severity
   tlswatch seed                        add a few public demo targets
   tlswatch version                     print the version
@@ -51,7 +53,8 @@ Usage:
 Configuration is done in the web UI. Optional environment variables:
   TLSWATCH_LISTEN (127.0.0.1:8080), TLSWATCH_DB (./data/tlswatch.db),
   TLSWATCH_SECRET_KEY_FILE (next to the database, generated if missing),
-  TLSWATCH_LOG_JSON (true); overrides for UI settings are listed in docs/.
+  TLSWATCH_LOG_JSON (true), TLSWATCH_DEBUG (false: debug logging);
+  overrides for UI settings are listed in docs/.
 `
 
 func main() {
@@ -70,6 +73,8 @@ func main() {
 		err = migrate()
 	case "backup":
 		err = backup(args)
+	case "healthcheck":
+		err = healthcheck()
 	case "check":
 		os.Exit(checkCmd(args, os.Stdout, os.Stderr))
 	case "seed":
@@ -194,8 +199,10 @@ func serve(args []string) error {
 	if err != nil {
 		return err
 	}
-	go a.sched.Run(ctx)
-	go a.dispatch.Run(ctx)
+	var bg sync.WaitGroup
+	bg.Add(2)
+	go func() { defer bg.Done(); a.sched.Run(ctx) }()
+	go func() { defer bg.Done(); a.dispatch.Run(ctx) }()
 	a.log.Info("tlswatch listening", "addr", ln.Addr().String(), "version", version, "db", a.boot.DBPath)
 	errc := make(chan error, 1)
 	go func() { errc <- hs.Serve(ln) }()
@@ -209,7 +216,16 @@ func serve(args []string) error {
 	a.log.Info("shutting down")
 	sctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	return hs.Shutdown(sctx)
+	err = hs.Shutdown(sctx)
+	// Let running checks and deliveries finish before the database closes.
+	done := make(chan struct{})
+	go func() { bg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-sctx.Done():
+		a.log.Warn("shutdown: checks or deliveries still running; closing anyway")
+	}
+	return err
 }
 
 func createAdmin(args []string) error {
@@ -252,12 +268,36 @@ func migrate() error {
 	return nil
 }
 
+// healthcheck asks the server on TLSWATCH_LISTEN for /healthz, for the
+// container's HEALTHCHECK (the image has no curl).
+func healthcheck() error {
+	b := config.LoadBootstrap()
+	host, port, err := net.SplitHostPort(b.Listen)
+	if err != nil {
+		return err
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get("http://" + net.JoinHostPort(host, port) + "/healthz")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unhealthy (%s): %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
 func backup(args []string) error {
 	if len(args) != 1 {
 		return errors.New("usage: tlswatch backup PATH")
 	}
 	b := config.LoadBootstrap()
-	d, err := db.Open(b.DBPath)
+	d, err := db.OpenExisting(b.DBPath)
 	if err != nil {
 		return err
 	}

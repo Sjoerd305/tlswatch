@@ -30,13 +30,15 @@ Values are checked against the same ranges as the UI (retention 7 to 3650 days, 
 
 ## Backups and upgrades
 
-- `tlswatch backup /backups/tlswatch-$(date +%F).db` writes a consistent copy while the server runs (SQLite `VACUUM INTO`). Run it daily from cron.
+- `tlswatch backup /backups/tlswatch-$(date +%F).db` writes a consistent copy while the server runs (SQLite `VACUUM INTO`). Run it daily from cron. It does not migrate or otherwise change the database it copies.
 - Keep `secret.key` with the backups. Without it the database still works, but stored SMTP passwords, Telegram tokens and the Google secret must be entered again.
 - Upgrades are a binary swap. Migrations run at start, are forward only, and a binary refuses a database written by a newer version.
 
 ## Monitoring tlswatch
 
-`GET /healthz` answers 200 with JSON (`database`, `scheduler_running`, `last_check`, `backlog`, `overdue_s`) and 503 when the database is unreachable, the scheduler stalled, or the oldest due check has waited more than an hour (`overdue_s` > 3600: workers stuck or too few). Logs are JSON lines on stdout; set `TLSWATCH_LOG_JSON=false` for text.
+`GET /healthz` answers 200 with JSON (`database`, `scheduler_running`, `last_check`, `backlog`, `overdue_s`) and 503 when the database is unreachable, the scheduler stalled, or the oldest due check has waited more than an hour (`overdue_s` > 3600: workers stuck or too few). `tlswatch healthcheck` calls it on `TLSWATCH_LISTEN` and exits non-zero when it is not 200; the Docker image uses it as its `HEALTHCHECK`.
+
+Logs are JSON lines on stdout; set `TLSWATCH_LOG_JSON=false` for text and `TLSWATCH_DEBUG=true` for debug logging. Every response carries an `X-Request-ID`, which the log lines of that request repeat. Requests are logged at info level when they fail (status 400 or higher) or take more than 2 seconds, otherwise at debug level. On shutdown tlswatch waits up to 15 seconds for running checks and alert deliveries.
 
 ## Networks
 

@@ -31,9 +31,22 @@ type DB struct {
 	Path string
 }
 
-// Open opens (and creates) the database at path. The path ":memory:" opens a
-// private in-memory database shared by both pools, for tests.
-func Open(path string) (*DB, error) {
+// Open opens (and creates) the database at path and applies pending
+// migrations. The path ":memory:" opens a private in-memory database shared
+// by both pools, for tests.
+func Open(path string) (*DB, error) { return open(path, true) }
+
+// OpenExisting opens the database at path as it is: no migrations, and an
+// error when the file does not exist. For the backup command, which must
+// not change the database it copies.
+func OpenExisting(path string) (*DB, error) {
+	if _, err := os.Stat(path); err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+	return open(path, false)
+}
+
+func open(path string, migrate bool) (*DB, error) {
 	var dsnW, dsnR string
 	pragmas := "_pragma=foreign_keys(1)&_pragma=busy_timeout(10000)"
 	if path == ":memory:" {
@@ -58,9 +71,11 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 	d := &DB{W: w, Path: path}
-	if err := d.Migrate(context.Background()); err != nil {
-		w.Close()
-		return nil, err
+	if migrate {
+		if err := d.Migrate(context.Background()); err != nil {
+			w.Close()
+			return nil, err
+		}
 	}
 	r, err := sql.Open("sqlite", dsnR)
 	if err != nil {

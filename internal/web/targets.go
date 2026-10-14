@@ -520,13 +520,7 @@ func (s *Server) targetSave(w http.ResponseWriter, r *http.Request) {
 	s.Core.Audit(ctx, u.Email, action, fmt.Sprintf("target %d %s", id, f.T.HostPort()), targetAuditDetails(f.T))
 	s.Sched.Reload()
 	// Probe a new or changed target right away so the detail page has data.
-	go func() {
-		cctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		defer cancel()
-		if _, err := s.Sched.CheckNow(cctx, id); err != nil {
-			s.Log.Warn("first check", "target", id, "err", err)
-		}
-	}()
+	s.Sched.CheckSoon(id)
 	s.back(w, r, fmt.Sprintf("/targets/%d", id), fmt.Sprintf("Target %s %s; the first check is running.", f.T.Name, verb), "ok")
 }
 
@@ -664,11 +658,7 @@ func (s *Server) setEnabled(w http.ResponseWriter, r *http.Request, enabled bool
 	action, msg := "target.disable", "Target disabled; its open findings are closed and it is no longer checked."
 	if enabled {
 		action, msg = "target.enable", "Target enabled; it is checked now."
-		go func() {
-			cctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-			defer cancel()
-			_, _ = s.Sched.CheckNow(cctx, id)
-		}()
+		s.Sched.CheckSoon(id)
 	}
 	s.Core.Audit(r.Context(), user(r).Email, action, fmt.Sprintf("target %d", id), "")
 	s.Sched.Reload()

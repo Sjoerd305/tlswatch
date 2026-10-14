@@ -61,6 +61,7 @@ const (
 
 // reqInfo is per-request state set by the middleware.
 type reqInfo struct {
+	id       string // request ID, in the X-Request-ID header and the logs
 	session  *auth.Session
 	settings config.Settings
 	ip       string
@@ -138,17 +139,22 @@ func staticHandler(files http.Handler, version string, dev bool) http.Handler {
 func (s *Server) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := s.now()
+		ri := &reqInfo{id: randomString(6)}
+		lw := &statusWriter{ResponseWriter: w, status: 200}
+		w = lw
+		w.Header().Set("X-Request-ID", ri.id)
 		defer func() {
 			if v := recover(); v != nil {
-				s.Log.Error("panic", "method", r.Method, "path", r.URL.Path, "err", v, "stack", string(debug.Stack()))
+				s.Log.Error("panic", "request_id", ri.id, "method", r.Method, "path", r.URL.Path, "err", v, "stack", string(debug.Stack()))
 				http.Error(w, "Internal error", http.StatusInternalServerError)
 			}
+			s.logRequest(r, ri, lw.status, s.now().Sub(start))
 		}()
 		st, err := s.Settings.Get(r.Context())
 		if err != nil {
-			s.Log.Error("settings", "err", err)
+			s.Log.Error("settings", "request_id", ri.id, "err", err)
 		}
-		ri := &reqInfo{settings: st}
+		ri.settings = st
 		ri.ip, ri.https = clientInfo(r, st.General.BehindProxy)
 		if strings.HasPrefix(st.General.BaseURL, "https://") {
 			ri.https = true
@@ -180,7 +186,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 				s.clearCookie(w, sessionCookie, ri)
 			default:
 				// A database hiccup is not a sign-out: keep the cookie.
-				s.Log.Error("session lookup", "path", r.URL.Path, "err", err)
+				s.Log.Error("session lookup", "request_id", ri.id, "path", r.URL.Path, "err", err)
 				http.Error(w, "tlswatch is temporarily unavailable; try again shortly.", http.StatusServiceUnavailable)
 				return
 			}
@@ -207,12 +213,29 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 				return
 			}
 		}
-		lw := &statusWriter{ResponseWriter: w, status: 200}
-		next.ServeHTTP(lw, r)
-		if r.URL.Path != "/healthz" {
-			s.Log.Debug("http", "method", r.Method, "path", r.URL.Path, "status", lw.status, "ms", s.now().Sub(start).Milliseconds(), "ip", ri.ip)
-		}
+		next.ServeHTTP(w, r)
 	})
+}
+
+// slowRequest is the duration from which a request is logged at info level.
+const slowRequest = 2 * time.Second
+
+// logRequest logs every request at debug level, and failed or slow ones at
+// info level, so they show up in production logs.
+func (s *Server) logRequest(r *http.Request, ri *reqInfo, status int, d time.Duration) {
+	if r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/static/") && status < 400 {
+		return
+	}
+	level := slog.LevelDebug
+	if status >= 400 || d >= slowRequest {
+		level = slog.LevelInfo
+	}
+	user := ""
+	if ri.session != nil {
+		user = ri.session.User.Email
+	}
+	s.Log.Log(r.Context(), level, "http", "request_id", ri.id, "method", r.Method, "path", r.URL.Path, "status", status,
+		"ms", d.Milliseconds(), "ip", ri.ip, "user", user)
 }
 
 // bodyLimit is the largest request body accepted on path: CA bundles are
@@ -368,7 +391,7 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, status int, msg st
 }
 
 func (s *Server) serverError(w http.ResponseWriter, r *http.Request, err error) {
-	s.Log.Error("request failed", "path", r.URL.Path, "err", err)
+	s.Log.Error("request failed", "request_id", info(r).id, "method", r.Method, "path", r.URL.Path, "err", err)
 	s.fail(w, r, http.StatusInternalServerError, "Something went wrong. The error has been logged.")
 }
 

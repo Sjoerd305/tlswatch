@@ -191,3 +191,46 @@ func TestFailedCheckBacksOff(t *testing.T) {
 		t.Fatalf("success did not restore the slot: %d", s.nextOf(1))
 	}
 }
+
+// Run returns only after the checks it started have finished, so the
+// database is not closed under them.
+func TestRunWaitsForChecksOnShutdown(t *testing.T) {
+	s, _, _ := setup(t, 1)
+	started, finished := make(chan struct{}), make(chan struct{})
+	s.Probe = func(_ context.Context, req probe.Request) probe.Result {
+		close(started)
+		time.Sleep(200 * time.Millisecond)
+		close(finished)
+		return probe.Result{Host: req.Host, Port: req.Port, DNSError: "no such host"}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	returned := make(chan struct{})
+	go func() { s.Run(ctx); close(returned) }()
+	<-started
+	cancel()
+	<-returned
+	select {
+	case <-finished:
+	default:
+		t.Fatal("Run returned while a check was running")
+	}
+}
+
+func TestCheckSoon(t *testing.T) {
+	s, _, calls := setup(t, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if _, err := s.CheckNow(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+	go s.Run(ctx)
+	time.Sleep(100 * time.Millisecond)
+	s.CheckSoon(1)
+	deadline := time.Now().Add(5 * time.Second)
+	for atomic.LoadInt64(calls) < 2 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if n := atomic.LoadInt64(calls); n != 2 {
+		t.Fatalf("CheckSoon did not run the target: %d checks", n)
+	}
+}
