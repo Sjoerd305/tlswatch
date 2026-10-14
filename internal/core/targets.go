@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net"
+	"sort"
 	"strings"
 	"time"
 
@@ -387,4 +388,13 @@ func TagCounts(ts []Target) []TagCount {
 type TagCount struct {
 	Tag   string
 	Count int
+}
+
+func sortTagCounts(ts []TagCount) {
+	sort.Slice(ts, func(i, j int) bool {
+		if ts[i].Count != ts[j].Count {
+			return ts[i].Count > ts[j].Count
+		}
+		return ts[i].Tag < ts[j].Tag
+	})
 }

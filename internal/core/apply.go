@@ -17,39 +17,6 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/probe"
 )
 
-const certCols = `fingerprint, subject, subject_cn, issuer, issuer_cn, issuer_org, serial, not_before, not_after, sans,
-	key_type, key_bits, sig_alg, is_ca, self_signed, pem, first_seen, last_seen`
-
-func scanCert(r interface{ Scan(...any) error }) (Certificate, error) {
-	var c Certificate
-	var sans string
-	err := r.Scan(&c.Fingerprint, &c.Subject, &c.SubjectCN, &c.Issuer, &c.IssuerCN, &c.IssuerOrg, &c.Serial, &c.NotBefore, &c.NotAfter,
-		&sans, &c.KeyType, &c.KeyBits, &c.SigAlg, &c.IsCA, &c.SelfSigned, &c.PEM, &c.FirstSeen, &c.LastSeen)
-	if err == nil {
-		_ = json.Unmarshal([]byte(sans), &c.SANs)
-	}
-	return c, err
-}
-
-// Certificate returns one certificate by fingerprint.
-func (s *Service) Certificate(ctx context.Context, fp string) (Certificate, error) {
-	c, err := scanCert(s.DB.R.QueryRowContext(ctx, "SELECT "+certCols+" FROM certificates WHERE fingerprint = ?", strings.ToLower(fp)))
-	if errors.Is(err, sql.ErrNoRows) {
-		return c, ErrNotFound
-	}
-	return c, err
-}
-
-func storeCert(ctx context.Context, tx *sql.Tx, info probe.CertInfo, now int64) error {
-	sans, _ := json.Marshal(info.SANs)
-	_, err := tx.ExecContext(ctx, `INSERT INTO certificates(`+certCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(fingerprint) DO UPDATE SET last_seen = excluded.last_seen`,
-		info.Fingerprint, info.Subject, info.SubjectCN, info.Issuer, info.IssuerCN, info.IssuerOrg, info.Serial,
-		info.NotBefore.Unix(), info.NotAfter.Unix(), string(sans), info.KeyType, info.KeyBits, info.SigAlg,
-		info.IsCA, info.SelfSigned, info.PEM, now, now)
-	return err
-}
-
 // ProbeRequest builds the probe request for a target.
 func (s *Service) ProbeRequest(ctx context.Context, t Target, st config.Settings) (probe.Request, error) {
 	eff := t.Effective(st.Defaults)

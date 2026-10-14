@@ -8,7 +8,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"sync"
 
@@ -187,13 +186,4 @@ func (s *Service) BundlePool(ctx context.Context, id int64) (*x509.CertPool, err
 	s.bundles.pools[id] = p
 	s.bundles.mu.Unlock()
 	return p, nil
-}
-
-func sortTagCounts(ts []TagCount) {
-	sort.Slice(ts, func(i, j int) bool {
-		if ts[i].Count != ts[j].Count {
-			return ts[i].Count > ts[j].Count
-		}
-		return ts[i].Tag < ts[j].Tag
-	})
 }
