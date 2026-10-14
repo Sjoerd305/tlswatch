@@ -192,6 +192,9 @@ func (s *SMTPSender) send(ctx context.Context, m Message) error {
 	return c.Quit()
 }
 
+// MessageID is the Message-ID header value for a delivery reference.
+func MessageID(ref string) string { return "<" + ref + "@tlswatch>" }
+
 func buildMessage(from string, to []string, m Message, now time.Time) []byte {
 	ref := m.Ref
 	if ref == "" {
@@ -203,7 +206,7 @@ func buildMessage(from string, to []string, m Message, now time.Time) []byte {
 	h("To", strings.Join(to, ", "))
 	h("Subject", mime.QEncoding.Encode("utf-8", strings.NewReplacer("\r", " ", "\n", " ").Replace(m.Subject)))
 	h("Date", now.Format(time.RFC1123Z))
-	h("Message-ID", "<"+ref+"@tlswatch>")
+	h("Message-ID", MessageID(ref))
 	h("MIME-Version", "1.0")
 	h("Content-Type", "text/plain; charset=utf-8")
 	h("Content-Transfer-Encoding", "quoted-printable")

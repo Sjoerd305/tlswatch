@@ -32,10 +32,11 @@ type Sender interface {
 // PartialSender is a Sender with several recipients that are reached one
 // by one (Telegram chats). SendSkipping leaves out the recipients in done
 // and returns the ones it reached, also when others failed, so a retry
-// does not repeat the message to them.
+// does not repeat the message to them, with the transport's reference for
+// each delivery (for Telegram "chat:message_id").
 type PartialSender interface {
 	Sender
-	SendSkipping(ctx context.Context, m Message, done []string) (reached []string, err error)
+	SendSkipping(ctx context.Context, m Message, done []string) (reached, refs []string, err error)
 }
 
 // RetryAfterError is a delivery error from a transport that asked to wait

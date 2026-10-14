@@ -127,7 +127,7 @@ type AlertEntry struct {
 	Error       string
 	Subject     string
 	NextAttempt int64
-	Ref         string // the SMTP Message-ID it went out under
+	Ref         string // the SMTP Message-ID, or Telegram "chat:message_id" per chat
 }
 
 // Alerts returns the alert log of a finding or of all findings of a target.

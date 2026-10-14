@@ -6,7 +6,7 @@ Newest first, one line per change.
 
 - Settings › Defaults refuses text in a number field instead of saving it as 0. The findings page says "latest 1000 resolved" when the list is capped.
 - `tlswatch rotate-key` replaces the secret key: stored credentials are re-encrypted under a new key, and the old key file is kept next to the new one.
-- Each delivered alert records the reference it went out under; for SMTP that is the Message-ID, shown on the alert in the finding's timeline and in the delivery log, so a message can be traced in the mail relay's logs.
+- Each delivered alert records the reference it went out under: the SMTP Message-ID, or Telegram's message ID per chat. It is shown on the alert in the finding's timeline, so a message can be traced in the mail relay's logs or the chat.
 - Every check logs what it changed: the check ID, the status, the findings opened, escalated and resolved, failures held back by the debounce, alerts queued and alerts held back by a channel's severity floor. See "Why did (or didn't) an alert go out?" in docs/operations.md.
 - Database errors are no longer shown as "not found" pages or as raw text: they are logged and answered with a 500, and only messages meant for the user are shown. The overview's 24-hour summary and the navigation counts no longer hide query errors.
 - Sign-in: an e-mail address without an account now locks after five failures exactly like one with an account, so the lockout no longer reveals which addresses exist.

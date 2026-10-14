@@ -101,6 +101,7 @@ type pending struct {
 	id        int64
 	createdAt int64
 	attempts  int
+	ref       string // references of the chats already reached
 	msg       Message
 }
 
@@ -117,7 +118,7 @@ func (d *Dispatcher) Flush(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	now := d.now()
-	rows, err := d.DB.R.QueryContext(ctx, `SELECT id, channel_id, delivered, created_at, attempts, subject, body FROM alerts
+	rows, err := d.DB.R.QueryContext(ctx, `SELECT id, channel_id, delivered, ref, created_at, attempts, subject, body FROM alerts
 		WHERE state = 'pending' AND next_attempt <= ? ORDER BY id`, now.Unix())
 	if err != nil {
 		return err
@@ -127,7 +128,7 @@ func (d *Dispatcher) Flush(ctx context.Context) error {
 	for rows.Next() {
 		var p pending
 		var k batchKey
-		if err := rows.Scan(&p.id, &k.channel, &k.delivered, &p.createdAt, &p.attempts, &p.msg.Subject, &p.msg.Body); err != nil {
+		if err := rows.Scan(&p.id, &k.channel, &k.delivered, &p.ref, &p.createdAt, &p.attempts, &p.msg.Subject, &p.msg.Body); err != nil {
 			rows.Close()
 			return err
 		}
@@ -159,8 +160,12 @@ func (d *Dispatcher) Flush(ctx context.Context) error {
 	return nil
 }
 
+// deliver sends one batch to one channel and records the outcome on its
+// alerts. ref is what the alerts record: the SMTP Message-ID, or for a
+// Telegram channel "chat:message_id" of every chat reached so far.
 func (d *Dispatcher) deliver(ctx context.Context, chID int64, delivered string, ps []pending) {
-	ref := NewRef()
+	m := Message{Ref: NewRef()}
+	ref := ""
 	c, err := d.Channels.Get(ctx, chID)
 	var sendErr error
 	switch {
@@ -177,15 +182,20 @@ func (d *Dispatcher) deliver(ctx context.Context, chID int64, delivered string, 
 		if d.Link != nil && len(ps) > 1 {
 			link = d.Link(ctx)
 		}
-		m := Combine(msgs, link)
-		m.Ref = ref
+		combined := Combine(msgs, link)
+		combined.Ref = m.Ref
+		m = combined
 		sctx, cancel := context.WithTimeout(ctx, sendTimeout)
-		if ps, ok := d.sender(c).(PartialSender); ok {
-			var reached []string
-			reached, sendErr = ps.SendSkipping(sctx, m, splitList(delivered))
+		if partial, ok := d.sender(c).(PartialSender); ok {
+			var reached, refs []string
+			reached, refs, sendErr = partial.SendSkipping(sctx, m, splitList(delivered))
 			delivered = joinList(append(splitList(delivered), reached...))
+			ref = joinList(append(splitList(ps[0].ref), refs...))
 		} else {
 			sendErr = d.sender(c).Send(sctx, m)
+			if sendErr == nil {
+				ref = MessageID(m.Ref)
+			}
 		}
 		cancel()
 	}
@@ -210,8 +220,8 @@ func (d *Dispatcher) deliver(ctx context.Context, chID int64, delivered string, 
 				state = "failed"
 				gaveUp = append(gaveUp, p.id)
 			}
-			_, err = d.DB.W.ExecContext(ctx, "UPDATE alerts SET state=?, attempts=?, next_attempt=?, error=?, delivered=? WHERE id=?",
-				state, n, next.Unix(), sendErr.Error(), delivered, p.id)
+			_, err = d.DB.W.ExecContext(ctx, "UPDATE alerts SET state=?, attempts=?, next_attempt=?, error=?, delivered=?, ref=? WHERE id=?",
+				state, n, next.Unix(), sendErr.Error(), delivered, ref, p.id)
 		}
 		if err != nil {
 			d.Log.Error("update alert", "id", p.id, "err", err)
@@ -265,7 +275,13 @@ func (d *Dispatcher) SendTest(ctx context.Context, chID int64, link string) erro
 	m := TestMessage(c.Name, link)
 	m.Ref = NewRef()
 	sctx, cancel := context.WithTimeout(ctx, sendTimeout)
-	sendErr := d.sender(c).Send(sctx, m)
+	var refs []string
+	var sendErr error
+	if partial, ok := d.sender(c).(PartialSender); ok {
+		_, refs, sendErr = partial.SendSkipping(sctx, m, nil)
+	} else if sendErr = d.sender(c).Send(sctx, m); sendErr == nil {
+		refs = []string{MessageID(m.Ref)}
+	}
 	cancel()
 	now := d.now().Unix()
 	state, msg := "sent", ""
@@ -276,8 +292,9 @@ func (d *Dispatcher) SendTest(ctx context.Context, chID int64, link string) erro
 	if state == "sent" {
 		sent = now
 	}
+	ref := joinList(refs)
 	_, err = d.DB.W.ExecContext(ctx, `INSERT INTO alerts(channel_id, event, created_at, state, attempts, next_attempt, sent_at, error, subject, body, ref)
-		VALUES(?, 'test', ?, ?, 1, ?, ?, ?, ?, ?, ?)`, chID, now, state, now, sent, msg, m.Subject, m.Body, m.Ref)
+		VALUES(?, 'test', ?, ?, 1, ?, ?, ?, ?, ?, ?)`, chID, now, state, now, sent, msg, m.Subject, m.Body, ref)
 	if sendErr != nil {
 		return sendErr
 	}

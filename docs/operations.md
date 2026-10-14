@@ -43,7 +43,7 @@ Logs are JSON lines on stdout; set `TLSWATCH_LOG_JSON=false` for text and `TLSWA
 
 ### Why did (or didn't) an alert go out?
 
-Every check logs one `checked` line with the target, its `check_id` (also stored on the observations), the resulting `status`, and what changed: the findings `opened`, `escalated` and `resolved`, informational `events` (such as an automatic renewal), the kinds still `waiting` for the debounce, `alerts_queued`, the alerts held back because the finding is `below_floor` of a channel, and how many `channels` the target alerts to. Delivery logs `alert delivered`, `alert delivery failed, will retry` or, after 24 hours, `alert delivery given up`, each with the channel and the alert IDs.
+Every check logs one `checked` line with the target, its `check_id` (also stored on the observations), the resulting `status`, and what changed: the findings `opened`, `escalated` and `resolved`, informational `events` (such as an automatic renewal), the kinds still `waiting` for the debounce, `alerts_queued`, the alerts held back because the finding is `below_floor` of a channel, and how many `channels` the target alerts to. Delivery logs `alert delivered`, `alert delivery failed, will retry` or, after 24 hours, `alert delivery given up`, each with the channel and the alert IDs. A delivered alert records how it went out: the SMTP `Message-ID` (to find it in the relay's logs) or, for Telegram, `chat:message_id` per chat. The finding's timeline shows it when you hover the delivery state.
 
 ## Networks
 

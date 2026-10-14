@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"math/big"
@@ -510,7 +511,7 @@ func TestBatchCollapsesPerChannel(t *testing.T) {
 	}
 	// Every alert of the batch records the reference the message went out under.
 	var refs, n int
-	_ = e.svc.DB.R.QueryRow("SELECT COUNT(DISTINCT ref), COUNT(*) FROM alerts WHERE channel_id = ? AND ref = ?", e.chW, mail[0].Ref).Scan(&refs, &n)
+	_ = e.svc.DB.R.QueryRow("SELECT COUNT(DISTINCT ref), COUNT(*) FROM alerts WHERE channel_id = ? AND ref = ?", e.chW, notify.MessageID(mail[0].Ref)).Scan(&refs, &n)
 	if mail[0].Ref == "" || refs != 1 || n != 60 {
 		t.Fatalf("ref %q on %d alerts", mail[0].Ref, n)
 	}
@@ -631,7 +632,7 @@ func TestTelegramRetrySkipsReachedChats(t *testing.T) {
 			return
 		}
 		got[chat]++
-		_, _ = w.Write([]byte(`{"ok":true,"result":{}}`))
+		_, _ = fmt.Fprintf(w, `{"ok":true,"result":{"message_id":%d}}`, 100+got[chat])
 	}))
 	defer srv.Close()
 	tg, err := e.svc.Channels.Save(e.ctx, notify.Channel{Name: "ops", Kind: notify.KindTelegram, MinSeverity: "warning", Enabled: true,
@@ -663,6 +664,12 @@ func TestTelegramRetrySkipsReachedChats(t *testing.T) {
 	}
 	if got["-1001"] != 1 || got["-1002"] != 1 {
 		t.Fatalf("after retry: %v", got)
+	}
+	// The alert records Telegram's message ID for each chat.
+	var ref string
+	_ = e.svc.DB.R.QueryRow("SELECT ref FROM alerts WHERE channel_id = ?", tg).Scan(&ref)
+	if ref != "-1001:101,-1002:101" {
+		t.Fatalf("ref %q", ref)
 	}
 }
 
