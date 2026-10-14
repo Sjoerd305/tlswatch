@@ -13,6 +13,7 @@ import (
 
 	"github.com/sjoerd305/tlswatch/internal/authz"
 	"github.com/sjoerd305/tlswatch/internal/check"
+	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/core"
 )
 
@@ -50,84 +51,104 @@ func (s *Server) certificates(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	st := info(r).settings
-	now := s.now()
 	q := r.URL.Query()
-	win, issuer, key, open := q.Get("window"), q.Get("issuer"), q.Get("key"), q.Get("open")
-	text := strings.ToLower(strings.TrimSpace(q.Get("q")))
-	showAll := q.Get("all") == "1"
-	d := certsData{Query: q.Get("q"), ShowAll: showAll}
-	if showAll {
+	f := certFilterFrom(q)
+	d := certsData{Query: q.Get("q"), ShowAll: f.showAll, AllHref: chipHref(r, "all", "1")}
+	if f.showAll {
 		d.AllHref = chipHref(r, "all", "")
-	} else {
-		d.AllHref = chipHref(r, "all", "1")
 	}
 	issuers, keys := map[string]int{}, map[string]int{}
 	var w30, w90 int
 	targets := map[int64]bool{}
 	for _, it := range inv {
-		if len(it.Served) == 0 && !showAll {
+		if len(it.Served) == 0 && !f.showAll {
 			continue
 		}
-		row := certRow{InventoryItem: it, Days: check.DaysLeft(time.Unix(it.NotAfter, 0), now), KeyClass: it.KeyType}
-		var tokens []string
+		row := newCertRow(it, info(r).settings.Defaults.Manual, s.now())
+		row.Open = f.open != "" && strings.HasPrefix(it.Fingerprint, f.open)
+		if row.Open {
+			// Only the open row's chain is rendered; the others load when
+			// a row is expanded (apiCertChain).
+			row.Chain = s.Core.InventoryChain(ctx, it.Fingerprint)
+		}
+		row.Hidden = !f.matches(row)
+		if !row.Hidden {
+			d.Shown++
+		}
+		if row.Targets > 0 {
+			d.Served++
+		}
 		if row.Days < 30 {
-			tokens = append(tokens, "30")
 			w30++
 		}
 		if row.Days < 90 {
-			tokens = append(tokens, "90")
 			w90++
-		}
-		row.Window = strings.Join(tokens, " ")
-		switch {
-		case row.Days < st.Defaults.Manual.CritDays:
-			row.Status = "crit"
-		case row.Days < st.Defaults.Manual.WarnDays:
-			row.Status = "warn"
-		default:
-			row.Status = "ok"
-		}
-		row.Search = strings.ToLower(strings.Join(append([]string{it.SubjectCN, it.Subject, it.IssuerName(), it.Fingerprint, it.Serial}, it.SANs...), " "))
-		row.Open = open != "" && strings.HasPrefix(it.Fingerprint, strings.ToLower(open))
-		if row.Open {
-			row.Chain = s.Core.InventoryChain(ctx, it.Fingerprint)
 		}
 		issuers[it.IssuerName()]++
 		keys[it.KeyType]++
 		for _, sv := range it.Served {
 			targets[sv.TargetID] = true
 		}
-		row.Hidden = !(win == "" || strings.Contains(" "+row.Window+" ", " "+win+" ")) ||
-			(issuer != "" && it.IssuerName() != issuer) || (key != "" && it.KeyType != key) ||
-			(text != "" && !strings.Contains(row.Search, text))
-		if !row.Hidden {
-			d.Shown++
-		}
 		d.Items = append(d.Items, row)
 	}
-	// Only the open row's chain is rendered; the others load when a row is
-	// expanded (apiCertChain).
-	d.Total = len(d.Items)
-	for _, it := range d.Items {
-		if it.Targets > 0 {
-			d.Served++
-		}
-	}
-	d.Targets = len(targets)
+	d.Total, d.Targets = len(d.Items), len(targets)
 	d.Windows = []Chip{
-		{Key: "window", Value: "", Label: "All", Count: d.Total, On: win == ""},
-		{Key: "window", Value: "30", Label: "≤ 30 days", Count: w30, On: win == "30"},
-		{Key: "window", Value: "90", Label: "≤ 90 days", Count: w90, On: win == "90"},
+		{Key: "window", Value: "", Label: "All", Count: d.Total, On: f.window == ""},
+		{Key: "window", Value: "30", Label: "≤ 30 days", Count: w30, On: f.window == "30"},
+		{Key: "window", Value: "90", Label: "≤ 90 days", Count: w90, On: f.window == "90"},
 	}
-	d.Issuers = sortedChips("issuer", issuers, issuer)
-	d.Keys = sortedChips("key", keys, key)
+	d.Issuers = sortedChips("issuer", issuers, f.issuer)
+	d.Keys = sortedChips("key", keys, f.key)
 	for _, cs := range [][]Chip{d.Windows, d.Issuers, d.Keys} {
 		for i := range cs {
 			cs[i].Href = chipHref(r, cs[i].Key, cs[i].Value)
 		}
 	}
 	s.render(w, r, "certificates", &Page{Title: "Certificates", Nav: "certificates", Data: d, Live: true})
+}
+
+// certFilter is the certificates page's filter, from the URL.
+type certFilter struct {
+	window, issuer, key string
+	open                string // fingerprint prefix of the expanded row
+	text                string
+	showAll             bool // include certificates no longer served
+}
+
+func certFilterFrom(q url.Values) certFilter {
+	return certFilter{window: q.Get("window"), issuer: q.Get("issuer"), key: q.Get("key"), open: strings.ToLower(q.Get("open")),
+		text: strings.ToLower(strings.TrimSpace(q.Get("q"))), showAll: q.Get("all") == "1"}
+}
+
+// matches reports whether row passes the window, issuer, key and text
+// filters; the page hides the rest, so the live filter can show them again.
+func (f certFilter) matches(row certRow) bool {
+	return (f.window == "" || strings.Contains(" "+row.Window+" ", " "+f.window+" ")) &&
+		(f.issuer == "" || row.IssuerName() == f.issuer) && (f.key == "" || row.KeyType == f.key) &&
+		(f.text == "" || strings.Contains(row.Search, f.text))
+}
+
+// newCertRow builds a row: days left, the expiry windows it falls in, its
+// status by the manual thresholds, and the text the filter searches.
+func newCertRow(it core.InventoryItem, th config.Thresholds, now time.Time) certRow {
+	row := certRow{InventoryItem: it, Days: check.DaysLeft(time.Unix(it.NotAfter, 0), now), KeyClass: it.KeyType}
+	var tokens []string
+	for _, w := range []int{30, 90} {
+		if row.Days < w {
+			tokens = append(tokens, strconv.Itoa(w))
+		}
+	}
+	row.Window = strings.Join(tokens, " ")
+	switch {
+	case row.Days < th.CritDays:
+		row.Status = "crit"
+	case row.Days < th.WarnDays:
+		row.Status = "warn"
+	default:
+		row.Status = "ok"
+	}
+	row.Search = strings.ToLower(strings.Join(append([]string{it.SubjectCN, it.Subject, it.IssuerName(), it.Fingerprint, it.Serial}, it.SANs...), " "))
+	return row
 }
 
 func sortedChips(key string, m map[string]int, on string) []Chip {
@@ -296,35 +317,9 @@ func (s *Server) findings(w http.ResponseWriter, r *http.Request) {
 		list = done
 	}
 	sev, kind := q.Get("sev"), q.Get("kind")
-	text := strings.ToLower(strings.TrimSpace(d.Query))
-	sevCount, kindCount := map[string]int{}, map[string]int{}
-	for _, f := range list {
-		sevCount[string(f.Severity)]++
-		kindCount[string(f.Kind)]++
-		if (sev == "" || string(f.Severity) == sev) && (kind == "" || string(f.Kind) == kind) {
-			// Like the targets list, rows that miss the text filter are
-			// rendered hidden so the live filter can bring them back.
-			row := findingRow{Finding: f, Hidden: text != "" && !strings.Contains(findingSearch(f), text)}
-			if !row.Hidden {
-				d.Shown++
-			}
-			d.Items = append(d.Items, row)
-		}
-	}
-	d.State = []Chip{
-		{Key: "state", Value: "", Label: "Open", Count: len(open), On: !resolved},
-		{Key: "state", Value: "resolved", Label: "Resolved", Count: len(done), On: resolved},
-	}
-	for _, sv := range []string{"critical", "warning", "info"} {
-		if sevCount[sv] > 0 || sev == sv {
-			d.Sev = append(d.Sev, Chip{Key: "sev", Value: sv, Label: check.Severity(sv).Short(), Class: check.Severity(sv).Class(), Count: sevCount[sv], On: sev == sv})
-		}
-	}
-	for _, k := range check.Kinds {
-		if kindCount[string(k)] > 0 || kind == string(k) {
-			d.Kinds = append(d.Kinds, Chip{Key: "kind", Value: string(k), Label: k.Short(), Count: kindCount[string(k)], On: kind == string(k)})
-		}
-	}
+	var sevCount, kindCount map[string]int
+	d.Items, d.Shown, sevCount, kindCount = filterFindings(list, sev, kind, strings.ToLower(strings.TrimSpace(d.Query)))
+	d.State, d.Sev, d.Kinds = findingChips(len(open), len(done), resolved, sev, kind, sevCount, kindCount)
 	for _, cs := range [][]Chip{d.State, d.Sev, d.Kinds} {
 		for i := range cs {
 			cs[i].Href = findingsHref(r, cs[i].Key, cs[i].Value, cs[i].On)
@@ -337,6 +332,47 @@ func (s *Server) findings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.render(w, r, "findings", &Page{Title: "Findings", Nav: "findings", Data: d, Live: true})
+}
+
+// filterFindings returns the rows of list that match the severity and kind
+// chips, how many of them also match the text, and the counts per severity
+// and kind for the chips. Like the targets list, rows that miss the text
+// filter are returned hidden so the live filter can bring them back.
+func filterFindings(list []core.Finding, sev, kind, text string) (rows []findingRow, shown int, sevCount, kindCount map[string]int) {
+	sevCount, kindCount = map[string]int{}, map[string]int{}
+	for _, f := range list {
+		sevCount[string(f.Severity)]++
+		kindCount[string(f.Kind)]++
+		if (sev != "" && string(f.Severity) != sev) || (kind != "" && string(f.Kind) != kind) {
+			continue
+		}
+		row := findingRow{Finding: f, Hidden: text != "" && !strings.Contains(findingSearch(f), text)}
+		if !row.Hidden {
+			shown++
+		}
+		rows = append(rows, row)
+	}
+	return rows, shown, sevCount, kindCount
+}
+
+// findingChips builds the state, severity and kind chips (without links).
+// A severity or kind chip shows when the list has it or it is selected.
+func findingChips(open, resolvedN int, resolved bool, sev, kind string, sevCount, kindCount map[string]int) (state, sevs, kinds []Chip) {
+	state = []Chip{
+		{Key: "state", Value: "", Label: "Open", Count: open, On: !resolved},
+		{Key: "state", Value: "resolved", Label: "Resolved", Count: resolvedN, On: resolved},
+	}
+	for _, sv := range []check.Severity{check.Critical, check.Warning, check.Info} {
+		if sevCount[string(sv)] > 0 || sev == string(sv) {
+			sevs = append(sevs, Chip{Key: "sev", Value: string(sv), Label: sv.Short(), Class: sv.Class(), Count: sevCount[string(sv)], On: sev == string(sv)})
+		}
+	}
+	for _, k := range check.Kinds {
+		if kindCount[string(k)] > 0 || kind == string(k) {
+			kinds = append(kinds, Chip{Key: "kind", Value: string(k), Label: k.Short(), Count: kindCount[string(k)], On: kind == string(k)})
+		}
+	}
+	return state, sevs, kinds
 }
 
 // findingsHref toggles a chip: clicking an active severity or kind chip

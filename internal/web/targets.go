@@ -203,76 +203,104 @@ func (s *Server) targetDetail(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusNotFound, "No such target.")
 		return
 	}
-	ctx := r.Context()
-	t, err := s.Core.Target(ctx, id)
-	if errors.Is(err, core.ErrNotFound) {
-		s.fail(w, r, http.StatusNotFound, "No such target.")
+	t, err := s.Core.Target(r.Context(), id)
+	if err != nil {
+		s.failErr(w, r, err, "No such target.")
 		return
-	} else if err != nil {
+	}
+	d, err := s.loadTargetDetail(r.Context(), t, info(r).settings)
+	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
-	st := info(r).settings
+	s.render(w, r, "target", &Page{Title: t.Name, Nav: "targets", Data: d, Live: true})
+}
+
+// loadTargetDetail gathers what the target page shows.
+func (s *Server) loadTargetDetail(ctx context.Context, t core.Target, st config.Settings) (targetDetail, error) {
 	d := targetDetail{T: t, Eff: t.Effective(st.Defaults)}
-	if d.Last, err = s.Core.LastCheck(ctx, id); err != nil {
-		s.serverError(w, r, err)
-		return
+	var err error
+	if d.Last, err = s.Core.LastCheck(ctx, t.ID); err != nil {
+		return d, err
 	}
 	for _, o := range d.Last {
 		if o.LeafFP == t.CurrentFP && len(o.Chain) > 0 {
-			d.Chain = s.Core.Chain(ctx, o)
-			d.ChainOK = o.Verified
-			d.ChainNote = o.VerifyError
+			d.Chain, d.ChainOK, d.ChainNote = s.Core.Chain(ctx, o), o.Verified, o.VerifyError
 			break
 		}
 	}
 	if d.History, err = s.Core.History(ctx, t); err != nil {
-		s.serverError(w, r, err)
-		return
+		return d, err
 	}
-	open, err := s.Core.Findings(ctx, core.FindingFilter{TargetID: id})
+	if d.Findings, d.OpenMain, err = s.targetFindings(ctx, t.ID); err != nil {
+		return d, err
+	}
+	if d.Alerts, err = s.Core.Alerts(ctx, 0, t.ID, 8); err != nil {
+		return d, err
+	}
+	if d.AlsoOn, err = s.alsoServedOn(ctx, t); err != nil {
+		return d, err
+	}
+	chans, err := s.Core.Channels.List(ctx)
 	if err != nil {
-		s.serverError(w, r, err)
-		return
+		return d, err
 	}
-	resolved, err := s.Core.Findings(ctx, core.FindingFilter{TargetID: id, Resolved: true, Limit: 8})
-	if err != nil {
-		s.serverError(w, r, err)
-		return
-	}
-	d.Findings = append(open, resolved...)
-	if len(open) > 0 {
-		d.OpenMain = &open[0]
-	}
-	if d.Alerts, err = s.Core.Alerts(ctx, 0, id, 8); err != nil {
-		s.serverError(w, r, err)
-		return
-	}
-	if t.CurrentFP != "" {
-		served, err := s.Core.ServedOn(ctx, t.CurrentFP)
-		if err != nil {
-			s.serverError(w, r, err)
-			return
-		}
-		seen := map[int64]bool{id: true}
-		for _, sv := range served {
-			if !seen[sv.TargetID] {
-				seen[sv.TargetID] = true
-				d.AlsoOn = append(d.AlsoOn, sv)
-			}
-		}
-	}
-	chans, _ := s.Core.Channels.List(ctx)
 	for _, c := range chans {
 		if t.AllChannels || hasInt(t.ChannelIDs, c.ID) {
 			d.Channels = append(d.Channels, c.Name)
 		}
 	}
-	slot := core.Slot(id, time.Duration(d.Eff.IntervalS)*time.Second)
-	if d.Eff.IntervalS == 86400 {
-		d.Slot = fmt.Sprintf("%02d:%02d UTC", int(slot.Hours()), int(slot.Minutes())%60)
+	d.Slot = slotLabel(t.ID, d.Eff.IntervalS)
+	return d, nil
+}
+
+// targetFindings returns the open findings, then the last 8 resolved, and
+// the open finding the page leads with.
+func (s *Server) targetFindings(ctx context.Context, id int64) ([]core.Finding, *core.Finding, error) {
+	open, err := s.Core.Findings(ctx, core.FindingFilter{TargetID: id})
+	if err != nil {
+		return nil, nil, err
 	}
-	s.render(w, r, "target", &Page{Title: t.Name, Nav: "targets", Data: d, Live: true})
+	resolved, err := s.Core.Findings(ctx, core.FindingFilter{TargetID: id, Resolved: true, Limit: 8})
+	if err != nil {
+		return nil, nil, err
+	}
+	var main *core.Finding
+	if len(open) > 0 {
+		main = &open[0]
+	}
+	return append(open, resolved...), main, nil
+}
+
+// alsoServedOn lists the other targets serving t's current certificate,
+// one entry per target.
+func (s *Server) alsoServedOn(ctx context.Context, t core.Target) ([]core.Served, error) {
+	if t.CurrentFP == "" {
+		return nil, nil
+	}
+	served, err := s.Core.ServedOn(ctx, t.CurrentFP)
+	if err != nil {
+		return nil, err
+	}
+	var out []core.Served
+	seen := map[int64]bool{t.ID: true}
+	for _, sv := range served {
+		if !seen[sv.TargetID] {
+			seen[sv.TargetID] = true
+			out = append(out, sv)
+		}
+	}
+	return out, nil
+}
+
+// slotLabel is the daily check time of a target on a 24-hour interval, or
+// "" for other intervals.
+func slotLabel(id int64, intervalS int) string {
+	if intervalS != 86400 {
+		return ""
+	}
+	slot := core.Slot(id, 24*time.Hour)
+	return fmt.Sprintf("%02d:%02d UTC", int(slot.Hours()), int(slot.Minutes())%60)
 }
 
 func hasInt(ids []int64, id int64) bool {
