@@ -331,14 +331,17 @@ func (s *Scheduler) check(ctx context.Context, id int64) (core.Target, error) {
 	if ctx.Err() != nil {
 		return t, ctx.Err()
 	}
-	if err := s.Core.Apply(ctx, t, r); err != nil {
+	sum, err := s.Core.Apply(ctx, t, r)
+	if err != nil {
 		return t, err
 	}
 	s.statMu.Lock()
 	s.lastCheck = s.now()
 	s.checks++
 	s.statMu.Unlock()
-	s.Log.Info("checked", "target", t.Name, "endpoint", t.HostPort(), "addresses", len(r.Addresses), "dns_error", r.DNSError, "ms", r.Duration.Milliseconds())
+	attrs := append([]any{"target_id", t.ID, "target", t.Name, "endpoint", t.HostPort(), "addresses", len(r.Addresses),
+		"dns_error", r.DNSError, "ms", r.Duration.Milliseconds()}, sum.LogAttrs()...)
+	s.Log.Info("checked", attrs...)
 	return s.Core.Target(ctx, id)
 }
 

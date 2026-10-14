@@ -568,26 +568,7 @@ func (s *Server) testProbe(ctx context.Context, t core.Target) testResult {
 		res.Err = err.Error()
 	}
 	res.Findings = o.Open
-	worst := 0
-	unreachable := false
-	for _, f := range o.Open {
-		if f.Kind.Network() {
-			unreachable = true
-		}
-		if f.Severity.Rank() > worst {
-			worst = f.Severity.Rank()
-		}
-	}
-	switch {
-	case unreachable:
-		res.Status = core.StatusUnreachable
-	case worst == check.Critical.Rank():
-		res.Status = core.StatusCritical
-	case worst == check.Warning.Rank():
-		res.Status = core.StatusWarning
-	default:
-		res.Status = core.StatusHealthy
-	}
+	res.Status = core.StatusOf(true, true, !o.Answered, o.Open)
 	if o.Leaf != nil {
 		ci := probe.Describe(o.Leaf)
 		res.Cert = &ci

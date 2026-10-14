@@ -40,6 +40,10 @@ Values are checked against the same ranges as the UI (retention 7 to 3650 days, 
 
 Logs are JSON lines on stdout; set `TLSWATCH_LOG_JSON=false` for text and `TLSWATCH_DEBUG=true` for debug logging. Every response carries an `X-Request-ID`, which the log lines of that request repeat. Requests are logged at info level when they fail (status 400 or higher) or take more than 2 seconds, otherwise at debug level. On shutdown tlswatch waits up to 15 seconds for running checks and alert deliveries.
 
+### Why did (or didn't) an alert go out?
+
+Every check logs one `checked` line with the target, its `check_id` (also stored on the observations), the resulting `status`, and what changed: the findings `opened`, `escalated` and `resolved`, informational `events` (such as an automatic renewal), the kinds still `waiting` for the debounce, `alerts_queued`, the alerts held back because the finding is `below_floor` of a channel, and how many `channels` the target alerts to. Delivery logs `alert delivered`, `alert delivery failed, will retry` or, after 24 hours, `alert delivery given up`, each with the channel and the alert IDs.
+
 ## Networks
 
 tlswatch probes from where it runs. Internal addresses must be reachable from that host; for an isolated network, run a second instance inside it. Hosts without an IPv6 route skip AAAA records (noted on the target, not reported as unreachable).

@@ -225,6 +225,9 @@ type Outcome struct {
 	DNSOk          int
 	Addresses      map[string]AddressOutcome
 	Error          string // summary error when nothing answered
+	// Waiting lists network kinds that failed this check but are not open
+	// yet: the debounce wants more consecutive failures.
+	Waiting []Kind
 }
 
 // DaysLeft counts whole days remaining; a certificate expiring in 29 days
@@ -303,7 +306,9 @@ func (e *evaluation) keepAllBut(except ...Kind) {
 func (e *evaluation) failing(k Kind, streak int, details string) {
 	if e.prev.Open[k] || streak >= e.debounce {
 		e.open(Finding{Kind: k, Severity: Critical, Details: details})
+		return
 	}
+	e.out.Waiting = append(e.out.Waiting, k)
 }
 
 // recovering keeps a debounced finding open until streak consecutive checks

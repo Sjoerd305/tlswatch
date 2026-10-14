@@ -263,6 +263,9 @@ func TestUnreachableDebounce(t *testing.T) {
 	up := result(okAddr("192.0.2.1", leafCert(t, iss, 60, "a.example")))
 
 	o := Evaluate(manual, Previous{OkStreak: 5, Open: open(Expiring)}, down, now)
+	if !slices.Equal(o.Waiting, []Kind{Unreachable}) {
+		t.Fatalf("waiting: %v", o.Waiting)
+	}
 	if len(o.Open) != 0 || o.FailStreak != 1 || o.OkStreak != 0 || o.Answered {
 		t.Fatalf("first failure: open %v streaks %d/%d", kindsOf(o.Open), o.FailStreak, o.OkStreak)
 	}

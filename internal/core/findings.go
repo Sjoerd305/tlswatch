@@ -195,7 +195,7 @@ func (s *Service) Acknowledge(ctx context.Context, id int64, user string, until 
 		user, now, untilU, strings.TrimSpace(comment), resolved, id); err != nil {
 		return f, err
 	}
-	if err := s.refreshStatusTx(ctx, tx, f.TargetID); err != nil {
+	if _, err := s.refreshStatusTx(ctx, tx, f.TargetID); err != nil {
 		return f, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -253,37 +253,20 @@ func (s *Service) Remind(ctx context.Context) (int, error) {
 		if err != nil {
 			return queued, err
 		}
-		d := notify.AlertData{
-			Event: notify.EventRemind, Severity: string(f.Severity), Kind: string(f.Kind), KindLabel: f.Kind.Label(),
-			TargetName: t.Name, HostPort: t.HostPort(), Details: f.Details, DaysLeft: f.DaysLeft, Fingerprint: f.Fingerprint,
-			Link: s.TargetLink(st, t.ID), OpenedAt: time.Unix(f.OpenedAt, 0), Loc: st.Location(),
+		if f.Kind == check.Expiring && t.NotAfter > 0 {
+			days := check.DaysLeft(time.Unix(t.NotAfter, 0), now) // as of now, not of the last check
+			f.DaysLeft = &days
 		}
-		if t.Cert != nil {
-			d.SubjectCN, d.IssuerCN = t.Cert.SubjectCN, t.Cert.IssuerCN
-		}
-		if t.NotAfter > 0 {
-			d.NotAfter = time.Unix(t.NotAfter, 0)
-			days := check.DaysLeft(d.NotAfter, now)
-			if f.Kind == check.Expiring {
-				d.DaysLeft = &days
-			}
-		}
-		m := notify.Render(d)
 		tx, err := s.DB.W.BeginTx(ctx, nil)
 		if err != nil {
 			return queued, err
 		}
-		for _, c := range chans {
-			floor, _ := check.ParseSeverity(c.MinSeverity)
-			if !f.Severity.Meets(floor) {
-				continue
-			}
-			if err := notify.Enqueue(ctx, tx, f.ID, c.ID, notify.EventRemind, m, now); err != nil {
-				tx.Rollback()
-				return queued, err
-			}
-			queued++
+		al := s.newAlerter(tx, st, t, chans, now)
+		if err := al.send(ctx, f, notify.EventRemind); err != nil {
+			tx.Rollback()
+			return queued, err
 		}
+		queued += al.queued
 		if _, err := tx.ExecContext(ctx, "UPDATE findings SET last_alert_at = ? WHERE id = ?", now.Unix(), f.ID); err != nil {
 			tx.Rollback()
 			return queued, err

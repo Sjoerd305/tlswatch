@@ -14,6 +14,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -165,7 +166,7 @@ func (e *env) apply(id int64, r probe.Result) Target {
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	if err := e.svc.Apply(e.ctx, t, r); err != nil {
+	if _, err := e.svc.Apply(e.ctx, t, r); err != nil {
 		e.t.Fatal(err)
 	}
 	t, _ = e.svc.Target(e.ctx, id)
@@ -584,7 +585,7 @@ func TestApplyDiscardsStaleTarget(t *testing.T) {
 	if err := e.svc.SetEnabled(e.ctx, tg.ID, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.svc.Apply(e.ctx, tg, expiring); !errors.Is(err, ErrStale) {
+	if _, err := e.svc.Apply(e.ctx, tg, expiring); !errors.Is(err, ErrStale) {
 		t.Fatalf("disabled meanwhile: %v", err)
 	}
 	if len(e.open(tg.ID)) != 0 {
@@ -597,7 +598,7 @@ func TestApplyDiscardsStaleTarget(t *testing.T) {
 	if _, err := e.svc.SaveTarget(e.ctx, moved, "test"); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.svc.Apply(e.ctx, tg, expiring); !errors.Is(err, ErrStale) {
+	if _, err := e.svc.Apply(e.ctx, tg, expiring); !errors.Is(err, ErrStale) {
 		t.Fatalf("host changed meanwhile: %v", err)
 	}
 	if got, _ := e.svc.Target(e.ctx, tg.ID); got.CurrentFP != "" {
@@ -769,6 +770,57 @@ func TestStampChanges(t *testing.T) {
 	}
 	if stamp() != s4 {
 		t.Fatal("stamp moved without a change")
+	}
+}
+
+func TestStatusOf(t *testing.T) {
+	f := func(k check.Kind, sev check.Severity) check.Finding { return check.Finding{Kind: k, Severity: sev} }
+	cases := []struct {
+		name             string
+		enabled, checked bool
+		failing          bool
+		open             []check.Finding
+		want             string
+	}{
+		{"disabled", false, true, false, nil, StatusDisabled},
+		{"never checked", true, false, false, nil, StatusPending},
+		{"healthy", true, true, false, nil, StatusHealthy},
+		{"failing before the finding opens", true, true, true, nil, StatusUnreachable},
+		{"critical outranks unreachable", true, true, false, []check.Finding{f(check.Unreachable, check.Critical), f(check.Expired, check.Critical)}, StatusCritical},
+		{"change only", true, true, false, []check.Finding{f(check.CertificateChanged, check.Warning)}, StatusChanged},
+		{"change and expiring", true, true, false, []check.Finding{f(check.CertificateChanged, check.Warning), f(check.Expiring, check.Warning)}, StatusWarning},
+		{"info only", true, true, false, []check.Finding{f(check.CertificateChanged, check.Info)}, StatusHealthy},
+	}
+	for _, c := range cases {
+		if got := StatusOf(c.enabled, c.checked, c.failing, c.open); got != c.want {
+			t.Errorf("%s: %s, want %s", c.name, got, c.want)
+		}
+	}
+}
+
+// Apply reports what it changed, for the check log.
+func TestApplySummary(t *testing.T) {
+	e := newEnv(t)
+	ca := newCA(t, "Sectigo")
+	now := e.clock.Now()
+	tg := e.target(func(t *Target) { t.AllChannels = false; t.ChannelIDs = []int64{e.chC} })
+	c := ca.leaf(t, now.Add(-days(360)), now.Add(days(20)), "portal.example.nl")
+	sum, err := e.svc.Apply(e.ctx, tg, result(served("192.0.2.1", c, ca.cert)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A warning to a channel with a critical floor: opened, not queued.
+	if sum.CheckID == "" || sum.Status != StatusWarning || !slices.Equal(sum.Opened, []check.Kind{check.Expiring}) ||
+		sum.Queued != 0 || sum.BelowFloor != 1 || sum.Channels != 1 {
+		t.Fatalf("summary: %+v", sum)
+	}
+	tg, _ = e.svc.Target(e.ctx, tg.ID)
+	sum, err = e.svc.Apply(e.ctx, tg, result(failed("192.0.2.1")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(sum.Waiting, []check.Kind{check.Unreachable}) || sum.Status != StatusUnreachable {
+		t.Fatalf("debounced failure: %+v", sum)
 	}
 }
 

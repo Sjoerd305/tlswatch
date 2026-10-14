@@ -248,7 +248,7 @@ func (s *Service) SaveTarget(ctx context.Context, t Target, user string) (int64,
 			}
 		}
 	}
-	if err := s.refreshStatusTx(ctx, tx, t.ID); err != nil {
+	if _, err := s.refreshStatusTx(ctx, tx, t.ID); err != nil {
 		return 0, err
 	}
 	return t.ID, tx.Commit()
@@ -284,7 +284,7 @@ func (s *Service) SetEnabled(ctx context.Context, id int64, enabled bool) error 
 			return err
 		}
 	}
-	if err := s.refreshStatusTx(ctx, tx, id); err != nil {
+	if _, err := s.refreshStatusTx(ctx, tx, id); err != nil {
 		return err
 	}
 	return tx.Commit()

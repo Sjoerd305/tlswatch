@@ -68,28 +68,6 @@ func (s *Service) ProbeRequest(ctx context.Context, t Target, st config.Settings
 	return req, nil
 }
 
-// CheckTarget probes a target and applies the result.
-func (s *Service) CheckTarget(ctx context.Context, id int64) (Target, probe.Result, error) {
-	t, err := s.Target(ctx, id)
-	if err != nil {
-		return t, probe.Result{}, err
-	}
-	st := s.CurrentSettings(ctx)
-	req, err := s.ProbeRequest(ctx, t, st)
-	if err != nil {
-		return t, probe.Result{}, err
-	}
-	r := probe.Probe(ctx, req)
-	if ctx.Err() != nil {
-		return t, r, ctx.Err()
-	}
-	if err := s.Apply(ctx, t, r); err != nil {
-		return t, r, err
-	}
-	t, err = s.Target(ctx, id)
-	return t, r, err
-}
-
 // Evaluate runs the checks for a target against a probe result without
 // storing anything; Apply and the "Test without saving" preview share it.
 func (s *Service) Evaluate(ctx context.Context, t Target, r probe.Result, st config.Settings) (check.Outcome, error) {
@@ -164,42 +142,88 @@ func (s *Service) TargetLink(st config.Settings, id int64) string {
 	return fmt.Sprintf("%s/targets/%d", st.General.BaseURL, id)
 }
 
+// CheckSummary is what one Apply changed, for the check log: it answers
+// "why did (or didn't) this alert".
+type CheckSummary struct {
+	CheckID   string
+	Status    string
+	Opened    []check.Kind
+	Escalated []check.Kind
+	Resolved  []check.Kind
+	Events    []check.Kind
+	Waiting   []check.Kind // failing, held back by the debounce
+	Queued    int          // alerts queued
+	// BelowFloor counts alerts not queued to a channel because the
+	// finding's severity is under the channel's floor.
+	BelowFloor int
+	Channels   int // channels the target alerts to
+}
+
+// LogAttrs returns the summary as log attributes.
+func (c CheckSummary) LogAttrs() []any {
+	return []any{"check_id", c.CheckID, "status", c.Status, "opened", c.Opened, "escalated", c.Escalated, "resolved", c.Resolved,
+		"events", c.Events, "waiting", c.Waiting, "alerts_queued", c.Queued, "below_floor", c.BelowFloor, "channels", c.Channels}
+}
+
 // Apply stores one probe result: certificates, observations, finding
 // transitions with their alerts, and the target's new state.
-func (s *Service) Apply(ctx context.Context, t Target, r probe.Result) error {
+func (s *Service) Apply(ctx context.Context, t Target, r probe.Result) (CheckSummary, error) {
 	st := s.CurrentSettings(ctx)
 	out, err := s.Evaluate(ctx, t, r, st)
 	if err != nil {
-		return err
+		return CheckSummary{}, err
 	}
 	chans, err := s.recipients(ctx, t)
 	if err != nil {
-		return err
+		return CheckSummary{}, err
 	}
 	now := s.now()
-	nowU := now.Unix()
-	checkedAt := r.StartedAt.Unix()
-	if r.StartedAt.IsZero() {
-		checkedAt = nowU
+	sum := CheckSummary{CheckID: newCheckID(), Waiting: out.Waiting, Channels: len(chans)}
+	checkedAt := r.StartedAt
+	if checkedAt.IsZero() {
+		checkedAt = now
 	}
-	checkID := newCheckID()
 
 	tx, err := s.DB.W.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return sum, err
 	}
 	defer tx.Rollback()
 	if err := unchangedTx(ctx, tx, t); err != nil {
-		return err
+		return sum, err
 	}
+	if err := storeObservationsTx(ctx, tx, t.ID, sum.CheckID, r, out, checkedAt.Unix(), now.Unix()); err != nil {
+		return sum, err
+	}
+	al := s.outcomeAlerter(tx, st, t, chans, out, now)
+	if err := applyFindingsTx(ctx, tx, t.ID, out, al, &sum, now.Unix()); err != nil {
+		return sum, err
+	}
+	sum.Queued, sum.BelowFloor = al.queued, al.belowFloor
+	if err := updateTargetTx(ctx, tx, t, r, out, st, sum.CheckID, checkedAt.Unix(), now); err != nil {
+		return sum, err
+	}
+	if sum.Status, err = s.refreshStatusTx(ctx, tx, t.ID); err != nil {
+		return sum, err
+	}
+	if err := tx.Commit(); err != nil {
+		return sum, err
+	}
+	if sum.Queued > 0 {
+		s.wake()
+	}
+	return sum, nil
+}
 
-	// Certificates and observations.
+// storeObservationsTx stores the certificates seen and one observation per
+// address (and per skipped IPv6 address, or one for a DNS failure).
+func storeObservationsTx(ctx context.Context, tx *sql.Tx, targetID int64, checkID string, r probe.Result, out check.Outcome, checkedAt, now int64) error {
 	for _, a := range r.Addresses {
 		var chain []string
 		leafFP := ""
 		for i, c := range a.Chain {
 			info := probe.Describe(c)
-			if err := storeCert(ctx, tx, info, nowU); err != nil {
+			if err := storeCert(ctx, tx, info, now); err != nil {
 				return err
 			}
 			chain = append(chain, info.Fingerprint)
@@ -212,7 +236,7 @@ func (s *Service) Apply(ctx context.Context, t Target, r probe.Result) error {
 		if len(a.VerifiedChain) > len(a.Chain) {
 			root := a.VerifiedChain[len(a.VerifiedChain)-1]
 			info := probe.Describe(root)
-			if err := storeCert(ctx, tx, info, nowU); err != nil {
+			if err := storeCert(ctx, tx, info, now); err != nil {
 				return err
 			}
 			chain = append(chain, "root:"+info.Fingerprint)
@@ -228,68 +252,32 @@ func (s *Service) Apply(ctx context.Context, t Target, r probe.Result) error {
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO observations(target_id, check_id, address, checked_at, status, tls_version, cipher,
 			leaf_fp, chain, verified, verify_error, error, duration_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			t.ID, checkID, a.IP, checkedAt, status, a.TLSVersion, a.Cipher, leafFP, string(cj), a.Verified, a.VerifyError,
+			targetID, checkID, a.IP, checkedAt, status, a.TLSVersion, a.Cipher, leafFP, string(cj), a.Verified, a.VerifyError,
 			errText, a.Duration.Milliseconds()); err != nil {
 			return err
 		}
 	}
 	for _, ip := range r.SkippedIPv6 {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO observations(target_id, check_id, address, checked_at, status, error)
-			VALUES(?,?,?,?,'skipped','no IPv6 route from this host')`, t.ID, checkID, ip, checkedAt); err != nil {
+			VALUES(?,?,?,?,'skipped','no IPv6 route from this host')`, targetID, checkID, ip, checkedAt); err != nil {
 			return err
 		}
 	}
 	if r.DNSError != "" && len(r.Addresses) == 0 {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO observations(target_id, check_id, address, checked_at, status, error)
-			VALUES(?,?,'',?,'error',?)`, t.ID, checkID, checkedAt, "DNS: "+r.DNSError); err != nil {
+			VALUES(?,?,'',?,'error',?)`, targetID, checkID, checkedAt, "DNS: "+r.DNSError); err != nil {
 			return err
 		}
 	}
+	return nil
+}
 
-	var leafInfo *probe.CertInfo
-	if out.Leaf != nil {
-		li := probe.Describe(out.Leaf)
-		leafInfo = &li
-	}
-	failing := failingAddresses(out)
-	alerts := 0
-	alertData := func(f Finding, event string) notify.AlertData {
-		d := notify.AlertData{
-			Event: event, Severity: string(f.Severity), Kind: string(f.Kind), KindLabel: f.Kind.Label(),
-			TargetName: t.Name, HostPort: t.HostPort(), Details: f.Details, DaysLeft: f.DaysLeft,
-			Fingerprint: f.Fingerprint, Address: failing, Link: s.TargetLink(st, t.ID),
-			OpenedAt: time.Unix(f.OpenedAt, 0), Loc: st.Location(),
-		}
-		if leafInfo != nil {
-			d.SubjectCN, d.IssuerCN = leafInfo.SubjectCN, leafInfo.IssuerCN
-			if d.Fingerprint == "" {
-				d.Fingerprint = leafInfo.Fingerprint
-			}
-		}
-		if !out.NotAfter.IsZero() {
-			d.NotAfter = out.NotAfter
-		} else if t.NotAfter > 0 {
-			d.NotAfter = time.Unix(t.NotAfter, 0)
-		}
-		return d
-	}
-	send := func(f Finding, event string) error {
-		m := notify.Render(alertData(f, event))
-		for _, c := range chans {
-			floor, _ := check.ParseSeverity(c.MinSeverity)
-			if !f.Severity.Meets(floor) {
-				continue
-			}
-			if err := notify.Enqueue(ctx, tx, f.ID, c.ID, event, m, now); err != nil {
-				return err
-			}
-			alerts++
-		}
-		return nil
-	}
-
-	// Finding transitions.
-	open, err := openFindingsTx(ctx, tx, t.ID)
+// applyFindingsTx moves the target's findings to the outcome: opens new
+// ones, updates (and on a higher severity escalates) open ones, resolves
+// the ones neither opened nor kept, and records events as resolved
+// findings. Alerts go through al; sum records the transitions.
+func applyFindingsTx(ctx context.Context, tx *sql.Tx, targetID int64, out check.Outcome, al *alerter, sum *CheckSummary, now int64) error {
+	open, err := openFindingsTx(ctx, tx, targetID)
 	if err != nil {
 		return err
 	}
@@ -299,76 +287,81 @@ func (s *Service) Apply(ctx context.Context, t Target, r probe.Result) error {
 	}
 	expiredNow := false
 	for _, f := range out.Open {
-		if f.Kind == check.Expired {
-			expiredNow = true
-		}
+		want[f.Kind] = true
+		expiredNow = expiredNow || f.Kind == check.Expired
 	}
 	for _, cf := range out.Open {
-		want[cf.Kind] = true
-		var days any
-		if cf.DaysLeft != nil {
-			days = *cf.DaysLeft
-		}
 		if old, ok := open[cf.Kind]; ok {
 			if _, err := tx.ExecContext(ctx, "UPDATE findings SET severity=?, details=?, fingerprint=?, days_left=? WHERE id=?",
-				string(cf.Severity), cf.Details, cf.Fingerprint, days, old.ID); err != nil {
+				string(cf.Severity), cf.Details, cf.Fingerprint, nullInt(cf.DaysLeft), old.ID); err != nil {
 				return err
 			}
 			if cf.Severity.Rank() > old.Severity.Rank() {
 				old.Severity, old.Details, old.DaysLeft = cf.Severity, cf.Details, cf.DaysLeft
-				if err := send(old, notify.EventEscalate); err != nil {
+				if err := al.send(ctx, old, notify.EventEscalate); err != nil {
 					return err
 				}
-				if _, err := tx.ExecContext(ctx, "UPDATE findings SET last_alert_at=? WHERE id=?", nowU, old.ID); err != nil {
+				if _, err := tx.ExecContext(ctx, "UPDATE findings SET last_alert_at=? WHERE id=?", now, old.ID); err != nil {
 					return err
 				}
+				sum.Escalated = append(sum.Escalated, cf.Kind)
 			}
 			continue
 		}
-		res, err := tx.ExecContext(ctx, `INSERT INTO findings(target_id, kind, severity, opened_at, details, fingerprint, days_left, last_alert_at)
-			VALUES(?,?,?,?,?,?,?,?)`, t.ID, string(cf.Kind), string(cf.Severity), nowU, cf.Details, cf.Fingerprint, days, nowU)
+		nf, err := insertFindingTx(ctx, tx, targetID, cf, now, 0)
 		if err != nil {
 			return err
 		}
-		nf := Finding{Kind: cf.Kind, Severity: cf.Severity, Details: cf.Details, Fingerprint: cf.Fingerprint, DaysLeft: cf.DaysLeft, OpenedAt: nowU}
-		nf.ID, _ = res.LastInsertId()
-		if err := send(nf, notify.EventOpen); err != nil {
+		if err := al.send(ctx, nf, notify.EventOpen); err != nil {
 			return err
 		}
+		sum.Opened = append(sum.Opened, cf.Kind)
 	}
 	for kind, f := range open {
 		if want[kind] {
 			continue
 		}
-		if _, err := tx.ExecContext(ctx, "UPDATE findings SET resolved_at=? WHERE id=?", nowU, f.ID); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE findings SET resolved_at=? WHERE id=?", now, f.ID); err != nil {
 			return err
 		}
+		sum.Resolved = append(sum.Resolved, kind)
 		// An expiring certificate that has now expired is not a recovery.
 		if kind == check.Expiring && expiredNow {
 			continue
 		}
-		if err := s.recoverTx(ctx, tx, f, alertData(f, notify.EventRecover), now); err != nil {
+		if err := al.recover(ctx, f); err != nil {
 			return err
 		}
 	}
 	for _, ev := range out.Events {
-		var days any
-		if ev.DaysLeft != nil {
-			days = *ev.DaysLeft
-		}
-		res, err := tx.ExecContext(ctx, `INSERT INTO findings(target_id, kind, severity, opened_at, resolved_at, details, fingerprint, days_left)
-			VALUES(?,?,?,?,?,?,?,?)`, t.ID, string(ev.Kind), string(ev.Severity), nowU, nowU, ev.Details, ev.Fingerprint, days)
+		nf, err := insertFindingTx(ctx, tx, targetID, ev, now, now)
 		if err != nil {
 			return err
 		}
-		nf := Finding{Kind: ev.Kind, Severity: ev.Severity, Details: ev.Details, Fingerprint: ev.Fingerprint, OpenedAt: nowU}
-		nf.ID, _ = res.LastInsertId()
-		if err := send(nf, notify.EventOpen); err != nil {
+		if err := al.send(ctx, nf, notify.EventOpen); err != nil {
 			return err
 		}
+		sum.Events = append(sum.Events, ev.Kind)
 	}
+	return nil
+}
 
-	// Target state.
+// insertFindingTx stores a new finding; resolved is 0 for an open one.
+func insertFindingTx(ctx context.Context, tx *sql.Tx, targetID int64, cf check.Finding, now, resolved int64) (Finding, error) {
+	res, err := tx.ExecContext(ctx, `INSERT INTO findings(target_id, kind, severity, opened_at, resolved_at, details, fingerprint, days_left, last_alert_at)
+		VALUES(?,?,?,?,?,?,?,?,?)`, targetID, string(cf.Kind), string(cf.Severity), now, resolved, cf.Details, cf.Fingerprint, nullInt(cf.DaysLeft), now)
+	if err != nil {
+		return Finding{}, err
+	}
+	f := Finding{TargetID: targetID, Kind: cf.Kind, Severity: cf.Severity, Details: cf.Details, Fingerprint: cf.Fingerprint,
+		DaysLeft: cf.DaysLeft, OpenedAt: now, ResolvedAt: resolved}
+	f.ID, err = res.LastInsertId()
+	return f, err
+}
+
+// updateTargetTx stores the target's new state: streaks, next slot and,
+// when an address answered, the current certificate.
+func updateTargetTx(ctx context.Context, tx *sql.Tx, t Target, r probe.Result, out check.Outcome, st config.Settings, checkID string, checkedAt int64, now time.Time) error {
 	eff := t.Effective(st.Defaults)
 	next := NextCheck(t.ID, time.Duration(eff.IntervalS)*time.Second, now)
 	set := []string{"last_check=?", "last_check_id=?", "fail_streak=?", "ok_streak=?", "dns_fail_streak=?", "dns_ok_streak=?", "next_check=?", "last_error=?", "address_count=?"}
@@ -386,19 +379,8 @@ func (s *Service) Apply(ctx context.Context, t Target, r probe.Result) error {
 		args = append(args, out.PinFP)
 	}
 	args = append(args, t.ID)
-	if _, err := tx.ExecContext(ctx, "UPDATE targets SET "+strings.Join(set, ", ")+" WHERE id=?", args...); err != nil {
-		return err
-	}
-	if err := s.refreshStatusTx(ctx, tx, t.ID); err != nil {
-		return err
-	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	if alerts > 0 {
-		s.wake()
-	}
-	return nil
+	_, err := tx.ExecContext(ctx, "UPDATE targets SET "+strings.Join(set, ", ")+" WHERE id=?", args...)
+	return err
 }
 
 // unchangedTx returns ErrStale when the target was disabled or edited since
@@ -425,48 +407,6 @@ func unchangedTx(ctx context.Context, tx *sql.Tx, t Target) error {
 	return nil
 }
 
-func failingAddresses(out check.Outcome) string {
-	var bad []string
-	for ip, a := range out.Addresses {
-		if a.Status != "ok" {
-			bad = append(bad, ip)
-		}
-	}
-	if len(bad) > 4 {
-		bad = append(bad[:4], fmt.Sprintf("+%d", len(bad)-4))
-	}
-	return strings.Join(bad, ", ")
-}
-
-// recoverTx queues recovery notices to the channels that received the
-// finding's open or escalation alert.
-func (s *Service) recoverTx(ctx context.Context, tx *sql.Tx, f Finding, d notify.AlertData, now time.Time) error {
-	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT channel_id FROM alerts WHERE finding_id = ? AND event IN ('open','escalate') AND state != 'failed'`, f.ID)
-	if err != nil {
-		return err
-	}
-	var ids []int64
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return err
-		}
-		ids = append(ids, id)
-	}
-	rows.Close()
-	if len(ids) == 0 {
-		return nil
-	}
-	m := notify.Render(d)
-	for _, id := range ids {
-		if err := notify.Enqueue(ctx, tx, f.ID, id, notify.EventRecover, m, now); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func openFindingsTx(ctx context.Context, tx *sql.Tx, targetID int64) (map[check.Kind]Finding, error) {
 	rows, err := tx.QueryContext(ctx, "SELECT "+findingCols+" FROM findings f WHERE f.target_id = ? AND f.resolved_at = 0", targetID)
 	if err != nil {
@@ -484,59 +424,72 @@ func openFindingsTx(ctx context.Context, tx *sql.Tx, targetID int64) (map[check.
 	return m, rows.Err()
 }
 
-// refreshStatusTx recomputes a target's status from its open findings.
-func (s *Service) refreshStatusTx(ctx context.Context, tx *sql.Tx, id int64) error {
+// refreshStatusTx recomputes and stores a target's status from its state
+// and open findings.
+func (s *Service) refreshStatusTx(ctx context.Context, tx *sql.Tx, id int64) (string, error) {
 	var enabled bool
 	var lastCheck int64
 	var failStreak, dnsFail int
 	if err := tx.QueryRowContext(ctx, "SELECT enabled, last_check, fail_streak, dns_fail_streak FROM targets WHERE id = ?", id).Scan(&enabled, &lastCheck, &failStreak, &dnsFail); err != nil {
-		return err
+		return "", err
 	}
-	status := StatusHealthy
-	switch {
-	case !enabled:
-		status = StatusDisabled
-	case lastCheck == 0:
-		status = StatusPending
-	default:
+	var open []check.Finding
+	if enabled && lastCheck > 0 {
 		rows, err := tx.QueryContext(ctx, "SELECT kind, severity FROM findings WHERE target_id = ? AND resolved_at = 0", id)
 		if err != nil {
-			return err
+			return "", err
 		}
-		// The last check reaching no address makes the target unreachable
-		// right away; only the finding and its alert wait for the debounce.
-		worst, changeOnly, unreachable := 0, true, failStreak > 0 || dnsFail > 0
 		for rows.Next() {
-			var k, sev string
-			if err := rows.Scan(&k, &sev); err != nil {
+			var f check.Finding
+			if err := rows.Scan(&f.Kind, &f.Severity); err != nil {
 				rows.Close()
-				return err
+				return "", err
 			}
-			kind := check.Kind(k)
-			if kind.Network() {
-				unreachable = true
-				continue
-			}
-			r := check.Severity(sev).Rank()
-			if r >= check.Warning.Rank() && kind != check.CertificateChanged && kind != check.IssuerChanged {
-				changeOnly = false
-			}
-			if r > worst {
-				worst = r
-			}
+			open = append(open, f)
 		}
 		rows.Close()
-		switch {
-		case worst == check.Critical.Rank():
-			status = StatusCritical
-		case unreachable:
-			status = StatusUnreachable
-		case worst == check.Warning.Rank() && changeOnly:
-			status = StatusChanged
-		case worst == check.Warning.Rank():
-			status = StatusWarning
+		if err := rows.Err(); err != nil {
+			return "", err
 		}
 	}
+	status := StatusOf(enabled, lastCheck > 0, failStreak > 0 || dnsFail > 0, open)
 	_, err := tx.ExecContext(ctx, "UPDATE targets SET status = ? WHERE id = ?", status, id)
-	return err
+	return status, err
+}
+
+// StatusOf derives a target's status. failing is whether the last check
+// reached no address: the target shows unreachable right away, while the
+// finding and its alert wait for the debounce. Critical certificate
+// findings outrank unreachable; a warning that is only a certificate or
+// issuer change is "changed".
+func StatusOf(enabled, checked, failing bool, open []check.Finding) string {
+	switch {
+	case !enabled:
+		return StatusDisabled
+	case !checked:
+		return StatusPending
+	}
+	worst, changeOnly, unreachable := 0, true, failing
+	for _, f := range open {
+		if f.Kind.Network() {
+			unreachable = true
+			continue
+		}
+		r := f.Severity.Rank()
+		if r >= check.Warning.Rank() && f.Kind != check.CertificateChanged && f.Kind != check.IssuerChanged {
+			changeOnly = false
+		}
+		worst = max(worst, r)
+	}
+	switch {
+	case worst == check.Critical.Rank():
+		return StatusCritical
+	case unreachable:
+		return StatusUnreachable
+	case worst == check.Warning.Rank() && changeOnly:
+		return StatusChanged
+	case worst == check.Warning.Rank():
+		return StatusWarning
+	}
+	return StatusHealthy
 }

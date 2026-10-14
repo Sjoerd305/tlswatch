@@ -4,6 +4,7 @@ Newest first, one line per change.
 
 ## Unreleased
 
+- Every check logs what it changed: the check ID, the status, the findings opened, escalated and resolved, failures held back by the debounce, alerts queued and alerts held back by a channel's severity floor. See "Why did (or didn't) an alert go out?" in docs/operations.md.
 - Database errors are no longer shown as "not found" pages or as raw text: they are logged and answered with a 500, and only messages meant for the user are shown. The overview's 24-hour summary and the navigation counts no longer hide query errors.
 - Sign-in: an e-mail address without an account now locks after five failures exactly like one with an account, so the lockout no longer reveals which addresses exist.
 - STARTTLS: a server may send at most 4 KiB per line and 100 lines per reply before the handshake.
