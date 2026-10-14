@@ -159,6 +159,7 @@ var protected = []route{
 	{"POST", "/settings/users/1", authz.ManageUsers},
 	{"POST", "/settings/users/1/link", authz.ManageUsers},
 	{"POST", "/settings/users/1/unlock", authz.ManageUsers},
+	{"POST", "/settings/users/99/password", authz.ManageUsers},
 	{"POST", "/settings/users/99/delete", authz.ManageUsers},
 	{"GET", "/settings/audit", authz.ViewAudit},
 	{"GET", "/settings/audit.csv", authz.ViewAudit},
@@ -644,5 +645,62 @@ func TestStampPollIsPassive(t *testing.T) {
 	hs.do(authz.Viewer, "GET", "/targets", nil, false)
 	if lastSeen() == old {
 		t.Fatal("a normal page view did not count as activity")
+	}
+}
+
+func TestAdminSetsPasswordWithoutMail(t *testing.T) {
+	hs := newHarness(t)
+	ctx := context.Background()
+	page := hs.do(authz.Admin, "GET", "/settings/users", nil, false).Body.String()
+	if !strings.Contains(page, `value="local-set" selected`) || !strings.Contains(page, "Add a user") {
+		t.Fatal("without SMTP the form does not default to a password set by the admin")
+	}
+	pw := "correct horse battery staple 77"
+	add := url.Values{"email": {"new@example.test"}, "name": {"New"}, "role": {"viewer"}, "method": {"local-set"}, "password": {pw}, "password2": {"different horse battery staple"}}
+	if rec := hs.do(authz.Admin, "POST", "/settings/users", add, true); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "do not match") {
+		t.Fatalf("mismatch: %d", rec.Code)
+	}
+	add.Set("password2", pw)
+	if rec := hs.do(authz.Admin, "POST", "/settings/users", add, true); rec.Code != http.StatusSeeOther {
+		t.Fatalf("add user: %d %s", rec.Code, rec.Body.String())
+	}
+	u, err := hs.srv.Auth.Login(ctx, "new@example.test", pw, "192.0.2.1")
+	if err != nil {
+		t.Fatalf("sign in with the admin-set password: %v", err)
+	}
+
+	// An existing user gets a new password; their sessions end.
+	raw, _, err := hs.srv.Auth.NewSession(ctx, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pw2 := "another horse battery staple 78"
+	set := url.Values{"password": {pw2}, "password2": {pw2}}
+	if rec := hs.do(authz.Admin, "POST", fmt.Sprintf("/settings/users/%d/password", u.ID), set, true); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/settings/users" {
+		t.Fatalf("set password: %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+	if _, err := hs.srv.Auth.Session(ctx, raw); err == nil {
+		t.Fatal("session survived an admin password reset")
+	}
+	if _, err := hs.srv.Auth.Login(ctx, "new@example.test", pw2, "192.0.2.1"); err != nil {
+		t.Fatalf("sign in with the new password: %v", err)
+	}
+
+	// With an SMTP channel, users choose their own password from an e-mailed link.
+	ch := url.Values{"kind": {"smtp"}, "name": {"Ops mailbox"}, "min_severity": {"warning"}, "host": {"smtp.example.nl"}, "port": {"587"},
+		"encryption": {"starttls"}, "from": {"tlswatch@example.nl"}, "recipients": {"ops@example.nl"}, "enabled": {"1"}}
+	if rec := hs.do(authz.Admin, "POST", "/settings/channels", ch, true); rec.Code != http.StatusSeeOther {
+		t.Fatalf("save channel: %d", rec.Code)
+	}
+	page = hs.do(authz.Admin, "GET", "/settings/users", nil, false).Body.String()
+	if strings.Contains(page, `value="local-set"`) || !strings.Contains(page, "invite link by e-mail") {
+		t.Fatal("with SMTP the admin can still set passwords")
+	}
+	add.Set("email", "other@example.test")
+	if rec := hs.do(authz.Admin, "POST", "/settings/users", add, true); rec.Code != http.StatusBadRequest {
+		t.Fatalf("set-by-admin with SMTP: %d", rec.Code)
+	}
+	if rec := hs.do(authz.Admin, "POST", fmt.Sprintf("/settings/users/%d/password", u.ID), set, true); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") == "/settings/users" {
+		t.Fatalf("password reset with SMTP: %d %s", rec.Code, rec.Header().Get("Location"))
 	}
 }

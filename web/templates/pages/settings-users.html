@@ -35,16 +35,27 @@
       <div class="form-foot">
         <button type="submit" class="btn btn-primary">Save</button>
         <a href="/settings/users" class="btn">Cancel</a>
-        {{- if eq $u.Method "local"}}<button type="submit" form="user-link" class="btn cancel">New password link</button>{{end}}
+        {{- if eq $u.Method "local"}}<button type="submit" form="user-link" class="btn cancel">{{if $d.Mail}}E-mail a new password link{{else}}New password link{{end}}</button>{{end}}
         {{- if ne $u.ID $d.Self}}<button type="submit" form="user-delete" class="btn-link danger{{if ne $u.Method "local"}} cancel{{end}}">Delete user</button>{{end}}
       </div>
     </form>
     {{- if eq $u.Method "local"}}<form id="user-link" method="post" action="/settings/users/{{$u.ID}}/link" hidden>{{template "csrf" $p.CSRF}}</form>{{end}}
+    {{- if and (eq $u.Method "local") (not $d.Mail)}}
+    <form class="card form" method="post" action="/settings/users/{{$u.ID}}/password" autocomplete="off">
+      {{template "csrf" $p.CSRF}}
+      <h3 class="h3">Set a new password for {{$u.Email}}</h3>
+      <div class="fgrid c2">
+        <div class="field"><label class="label" for="spw">New password</label><input id="spw" name="password" type="password" class="input" autocomplete="new-password" minlength="12" required><span class="help">At least 12 characters, not a known leaked password.</span></div>
+        <div class="field"><label class="label" for="spw2">Repeat</label><input id="spw2" name="password2" type="password" class="input" autocomplete="new-password" minlength="12" required></div>
+      </div>
+      <div class="form-foot"><button type="submit" class="btn btn-primary">Set password</button><span class="help">No SMTP channel is set up to e-mail a link. Their sessions are signed out; pass the password on securely.</span></div>
+    </form>
+    {{- end}}
     {{- if ne $u.ID $d.Self}}<form id="user-delete" method="post" action="/settings/users/{{$u.ID}}/delete" data-confirm="Delete {{$u.Email}}? They are signed out and can no longer sign in. The audit log keeps their entries." hidden>{{template "csrf" $p.CSRF}}</form>{{end}}
     {{- end}}
     <form class="card form" method="post" action="/settings/users">
       {{template "csrf" $p.CSRF}}
-      <h3 class="h3">Invite a user</h3>
+      <h3 class="h3">{{if $d.Mail}}Invite a user{{else}}Add a user{{end}}</h3>
       {{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
       <div class="fgrid c2">
         <div class="field"><label class="label" for="ne">E-mail</label><input id="ne" name="email" type="email" class="input" value="{{$d.Form.Email}}" required></div>
@@ -52,10 +63,20 @@
       </div>
       <div class="fgrid c2">
         <div class="field"><label class="label" for="nr">Role</label><select id="nr" name="role" class="input">{{range roles}}<option value="{{.}}"{{if eq . $d.Form.Role}} selected{{end}}>{{.}}</option>{{end}}</select></div>
-        <div class="field"><label class="label" for="nm">Login method</label><select id="nm" name="method" class="input"><option value="local"{{if eq $d.Form.Method "local"}} selected{{end}}>password, one-time link valid 7 days</option><option value="google"{{if eq $d.Form.Method "google"}} selected{{end}}>Google{{if not $d.Google}} (not configured yet){{end}}</option></select></div>
+        <div class="field"><label class="label" for="nm">Login method</label><select id="nm" name="method" class="input">
+          {{- if not $d.Mail}}<option value="local-set"{{if eq $d.Form.Method "local-set"}} selected{{end}}>password, set by you</option>{{end}}
+          <option value="local"{{if eq $d.Form.Method "local"}} selected{{end}}>{{if $d.Mail}}password, invite link by e-mail{{else}}password, one-time link you pass on{{end}}</option><option value="google"{{if eq $d.Form.Method "google"}} selected{{end}}>Google{{if not $d.Google}} (not configured yet){{end}}</option></select></div>
       </div>
-      <span class="help">A password user receives a one-time link to set a password; it is e-mailed through the first SMTP channel when there is one, and always shown here.</span>
-      <div class="form-foot"><button type="submit" class="btn btn-primary">Invite</button></div>
+      {{- if not $d.Mail}}
+      <div class="fgrid c2 setpw">
+        <div class="field"><label class="label" for="npw">Password</label><input id="npw" name="password" type="password" class="input" autocomplete="new-password" minlength="12"><span class="help">At least 12 characters, not a known leaked password.</span></div>
+        <div class="field"><label class="label" for="npw2">Repeat</label><input id="npw2" name="password2" type="password" class="input" autocomplete="new-password" minlength="12"></div>
+      </div>
+      <span class="help">No SMTP channel is set up, so tlswatch cannot e-mail an invite. Set the first password and pass it on securely (the user can change it under Account), or create a one-time link to pass on. Add an SMTP channel under Channels to send invites instead.</span>
+      {{- else}}
+      <span class="help">A password user receives a one-time link by e-mail to choose their own password; it is valid for 7 days and also shown here.</span>
+      {{- end}}
+      <div class="form-foot"><button type="submit" class="btn btn-primary">{{if $d.Mail}}Invite{{else}}Add user{{end}}</button></div>
     </form>
   </div>
 </div>

@@ -524,6 +524,10 @@ input[type="file"].input{padding:5px 8px;height:auto}
 .or::before,.or::after{content:"";flex-grow:1;height:1px;background:var(--line)}
 .login-foot{text-align:center;font-size:12px;color:var(--muted)}
 
+/* The invite form's password fields show only for "set by you". */
+.fgrid.setpw{display:none}
+.form:has(select[name="method"] option[value="local-set"]:checked) .fgrid.setpw{display:grid}
+
 /* ---------- Bulk selection ----------
    A bar above a table acts on the rows whose checkbox (form="bulk-…") is
    checked; it shows only while at least one is. */

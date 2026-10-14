@@ -361,6 +361,38 @@ type usersData struct {
 	Form   auth.User
 	Google bool
 	Self   int64
+	// Mail is true when an enabled SMTP channel can carry invite links;
+	// without one, an admin sets the first password.
+	Mail bool
+}
+
+// methodSetPassword is the invite form's choice for a password user whose
+// first password the admin sets, offered when no SMTP channel is set up.
+const methodSetPassword = "local-set"
+
+// mailReady reports whether an enabled SMTP channel exists to e-mail
+// invite and password links.
+func (s *Server) mailReady(ctx context.Context) bool {
+	chans, err := s.Core.Channels.Enabled(ctx)
+	if err != nil {
+		return false
+	}
+	for _, c := range chans {
+		if c.Kind == notify.KindSMTP {
+			return true
+		}
+	}
+	return false
+}
+
+// newUserForm is the empty invite form: an e-mailed link when mail works,
+// otherwise a password the admin sets.
+func newUserForm(mail bool) auth.User {
+	f := auth.User{Role: authz.Viewer, Method: auth.MethodLocal}
+	if !mail {
+		f.Method = methodSetPassword
+	}
+	return f
 }
 
 func (s *Server) settingsUsers(w http.ResponseWriter, r *http.Request) {
@@ -369,7 +401,8 @@ func (s *Server) settingsUsers(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	d := usersData{Users: us, Google: info(r).settings.GoogleEnabled(), Self: user(r).ID, Form: auth.User{Role: authz.Viewer, Method: auth.MethodLocal}}
+	mail := s.mailReady(r.Context())
+	d := usersData{Users: us, Google: info(r).settings.GoogleEnabled(), Self: user(r).ID, Form: newUserForm(mail), Mail: mail}
 	if id, err := strconv.ParseInt(r.URL.Query().Get("edit"), 10, 64); err == nil {
 		for i := range us {
 			if us[i].ID == id {
@@ -385,23 +418,56 @@ func (s *Server) userCreate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	role, rerr := authz.ParseRole(r.PostFormValue("role"))
 	method := r.PostFormValue("method")
+	mail := s.mailReady(ctx)
 	f := auth.User{Email: strings.TrimSpace(r.PostFormValue("email")), Name: strings.TrimSpace(r.PostFormValue("name")), Role: role, Method: method}
 	fail := func(msg string) {
 		us, _ := s.Auth.ListUsers(ctx)
-		s.settingsPage(w, r, http.StatusBadRequest, "settings-users", "users", "Settings", usersData{Users: us, Form: f, Error: msg, Google: info(r).settings.GoogleEnabled(), Self: user(r).ID})
+		s.settingsPage(w, r, http.StatusBadRequest, "settings-users", "users", "Settings", usersData{Users: us, Form: f, Error: msg, Google: info(r).settings.GoogleEnabled(), Self: user(r).ID, Mail: mail})
 	}
 	if rerr != nil {
 		fail("Choose a role")
 		return
+	}
+	setPassword := method == methodSetPassword
+	pw := r.PostFormValue("password")
+	if setPassword {
+		if mail {
+			fail("An SMTP channel is set up, so new users get an invite link by e-mail and choose their own password.")
+			return
+		}
+		method = auth.MethodLocal
+		if pw != r.PostFormValue("password2") {
+			fail("The passwords do not match.")
+			return
+		}
+		if err := s.Auth.CheckPasswordPolicy(pw, f.Email); err != nil {
+			fail(userError(err))
+			return
+		}
 	}
 	u, err := s.Auth.CreateUser(ctx, f.Email, f.Name, role, method)
 	if err != nil {
 		fail(userError(err))
 		return
 	}
-	s.Core.Audit(ctx, user(r).Email, "user.create", "user "+u.Email, fmt.Sprintf("role=%s method=%s", u.Role, u.Method))
+	if setPassword {
+		if err := s.Auth.SetPassword(ctx, u.ID, pw); err != nil {
+			_ = s.Auth.DeleteUser(ctx, u.ID)
+			fail(userError(err))
+			return
+		}
+	}
+	detail := fmt.Sprintf("role=%s method=%s", u.Role, u.Method)
+	if setPassword {
+		detail += " password=set-by-admin"
+	}
+	s.Core.Audit(ctx, user(r).Email, "user.create", "user "+u.Email, detail)
 	if u.Method == auth.MethodGoogle {
 		s.back(w, r, "/settings/users", u.Email+" can now sign in with Google.", "ok")
+		return
+	}
+	if setPassword {
+		s.back(w, r, "/settings/users", u.Email+" can sign in with the password you set. Pass it on securely; they can change it under Account.", "ok")
 		return
 	}
 	link, sent, err := s.inviteLink(r, u)
@@ -448,7 +514,8 @@ func (s *Server) inviteLink(r *http.Request, u auth.User) (string, bool, error) 
 
 func (s *Server) showLink(w http.ResponseWriter, r *http.Request, u auth.User, link string, sent bool) {
 	us, _ := s.Auth.ListUsers(r.Context())
-	d := usersData{Users: us, Link: link, Google: info(r).settings.GoogleEnabled(), Self: user(r).ID, Form: auth.User{Role: authz.Viewer, Method: auth.MethodLocal}}
+	mail := s.mailReady(r.Context())
+	d := usersData{Users: us, Link: link, Google: info(r).settings.GoogleEnabled(), Self: user(r).ID, Form: newUserForm(mail), Mail: mail}
 	text := "Send this one-time link to " + u.Email + "; it is valid for 7 days."
 	if sent {
 		text = "A one-time link was e-mailed to " + u.Email + ". You can also pass it on yourself; it is valid for 7 days."
@@ -513,6 +580,41 @@ func (s *Server) userLink(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Core.Audit(r.Context(), user(r).Email, "user.link", "user "+u.Email, "new one-time password link")
 	s.showLink(w, r, u, link, sent)
+}
+
+// userPassword lets an admin set a local user's password when no SMTP
+// channel can mail a link. It ends the user's sessions and clears a lockout.
+func (s *Server) userPassword(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		s.fail(w, r, http.StatusNotFound, "No such user.")
+		return
+	}
+	u, err := s.Auth.UserByID(r.Context(), id)
+	if err != nil || u.Method != auth.MethodLocal {
+		s.fail(w, r, http.StatusNotFound, "No such local user.")
+		return
+	}
+	back := fmt.Sprintf("/settings/users?edit=%d", id)
+	if s.mailReady(r.Context()) {
+		s.back(w, r, back, "An SMTP channel is set up: send a new password link instead, so the user chooses their own password.", "crit")
+		return
+	}
+	pw := r.PostFormValue("password")
+	if pw != r.PostFormValue("password2") {
+		s.back(w, r, back, "The passwords do not match.", "crit")
+		return
+	}
+	if err := s.Auth.SetPassword(r.Context(), id, pw); err != nil {
+		s.back(w, r, back, userError(err), "crit")
+		return
+	}
+	if err := s.Auth.DeleteUserSessions(r.Context(), id); err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	s.Core.Audit(r.Context(), user(r).Email, "user.password", "user "+u.Email, "password set by admin; sessions ended")
+	s.back(w, r, "/settings/users", "New password set for "+u.Email+"; their sessions were signed out. Pass it on securely.", "ok")
 }
 
 func (s *Server) userUnlock(w http.ResponseWriter, r *http.Request) {

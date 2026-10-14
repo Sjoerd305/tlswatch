@@ -73,6 +73,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /settings/users", users(s.userCreate))
 	mux.HandleFunc("POST /settings/users/{id}", users(s.userUpdate))
 	mux.HandleFunc("POST /settings/users/{id}/link", users(s.userLink))
+	mux.HandleFunc("POST /settings/users/{id}/password", users(s.userPassword))
 	mux.HandleFunc("POST /settings/users/{id}/unlock", users(s.userUnlock))
 	mux.HandleFunc("POST /settings/users/{id}/delete", users(s.userDelete))
 	mux.HandleFunc("GET /settings/audit", audit(s.settingsAudit))

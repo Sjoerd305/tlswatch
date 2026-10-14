@@ -165,7 +165,7 @@ The UI is an operations console: the home screen answers "what needs attention n
 | Settings: Sign-in | admin | Google client ID, client secret, Workspace domain, redirect URI to register. |
 | Settings: CA bundles | admin | Upload PEM, list of the certificates inside with validity; replace a bundle; delete one no target uses, after a confirmation. |
 | Settings: Defaults | admin | The global thresholds table, digest schedule and channels, "Send digest now", probe concurrency, retention. |
-| Settings: Users | admin | Table: name, e-mail, login method, role, status (active, disabled, or locked until a time after failed sign-ins), last sign-in. Invite by e-mail, edit, new password link, unlock, disable, delete. |
+| Settings: Users | admin | Table: name, e-mail, login method, role, status (active, disabled, or locked until a time after failed sign-ins), last sign-in. Add or invite a user: with an SMTP channel by an e-mailed one-time link, without one by a password the admin sets (or a link to pass on). Edit, new password link (or, without SMTP, set a new password), unlock, disable, delete. |
 | Settings: Audit log | admin | Who changed what, filterable, export CSV. |
 | Account | all | Name, theme (system, light, dark), change password for local accounts. |
 
@@ -185,10 +185,10 @@ Three roles, one per user, no organisations or tenants: the tool is single-tenan
 | Add, edit, disable, delete targets; check now | | yes | yes |
 | Acknowledge findings, one by one or in bulk | | yes | yes |
 | Settings: general, sign-in, channels, CA bundles, defaults, digest | | | yes |
-| Users and roles: invite, edit, unlock, disable, delete | | | yes |
+| Users and roles: add or invite, edit, set a password (without SMTP), unlock, disable, delete | | | yes |
 | Audit log | | | yes |
 
-**Local login**: e-mail and password. An admin creates the account; the user receives a one-time link (7 days valid) to set a password of at least 12 characters, checked against a local list of leaked passwords. Password hashes use Argon2id. Five failed attempts block the account for 15 minutes; the error message does not reveal whether the e-mail exists. Admins see a locked account in the user list and can unlock it; setting a new password through a one-time link also clears the lock.
+**Local login**: e-mail and password. An admin creates the account. When an enabled SMTP channel exists, the user receives a one-time link (7 days valid) by e-mail and chooses their own password; the link is also shown to the admin in case the mail does not arrive. Without an SMTP channel, the admin sets the first password in the form (or creates a one-time link to pass on), and can later set a new one for a local user; that also ends the user's sessions and clears a lockout. With SMTP, admins cannot set passwords: they send a new link instead. Users change their own password under Account. Every password is at least 12 characters, checked against a local list of leaked passwords. Password hashes use Argon2id. Five failed attempts block the account for 15 minutes; the error message does not reveal whether the e-mail exists. Admins see a locked account in the user list and can unlock it; setting a new password through a one-time link also clears the lock.
 
 **Google sign-in**: OpenID Connect with Authorization Code and PKCE, implemented against the standard library plus `golang.org/x/oauth2`. Sign-in is only possible for an e-mail address an admin has already added (allowlist); there is no self-registration. Optionally restricted to one Workspace domain. The login method is per user: a Google user has no password.
 
