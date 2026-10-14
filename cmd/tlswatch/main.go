@@ -4,8 +4,6 @@ package main
 
 import (
 	"context"
-	"crypto/x509"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -15,7 +13,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -24,7 +21,6 @@ import (
 
 	"github.com/sjoerd305/tlswatch/internal/auth"
 	"github.com/sjoerd305/tlswatch/internal/authz"
-	"github.com/sjoerd305/tlswatch/internal/check"
 	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/core"
 	"github.com/sjoerd305/tlswatch/internal/db"
@@ -423,161 +419,3 @@ func seed() error {
 }
 
 // checkResult is the JSON printed by the check subcommand.
-type checkResult struct {
-	Target     string         `json:"target"`
-	Protocol   string         `json:"protocol"`
-	ServerName string         `json:"servername,omitempty"`
-	Status     string         `json:"status"`
-	DaysLeft   *int           `json:"days_left,omitempty"`
-	NotAfter   string         `json:"not_after,omitempty"`
-	Subject    string         `json:"subject,omitempty"`
-	Issuer     string         `json:"issuer,omitempty"`
-	SANs       []string       `json:"sans,omitempty"`
-	SHA256     string         `json:"sha256,omitempty"`
-	Addresses  []checkAddress `json:"addresses"`
-	Findings   []checkFinding `json:"findings"`
-	DNSError   string         `json:"dns_error,omitempty"`
-}
-
-type checkAddress struct {
-	Address    string `json:"address"`
-	OK         bool   `json:"ok"`
-	TLSVersion string `json:"tls_version,omitempty"`
-	Cipher     string `json:"cipher,omitempty"`
-	SHA256     string `json:"sha256,omitempty"`
-	Verified   bool   `json:"verified"`
-	Error      string `json:"error,omitempty"`
-	DurationMS int64  `json:"duration_ms"`
-}
-
-type checkFinding struct {
-	Kind     string `json:"kind"`
-	Severity string `json:"severity"`
-	Details  string `json:"details"`
-}
-
-// reorder moves flags before positional arguments so "check host -protocol
-// smtp" works with the flag package.
-func reorder(args []string, valued map[string]bool) []string {
-	var flags, pos []string
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if strings.HasPrefix(a, "-") && a != "-" {
-			flags = append(flags, a)
-			name := strings.TrimLeft(a, "-")
-			if valued[name] && !strings.Contains(a, "=") && i+1 < len(args) {
-				i++
-				flags = append(flags, args[i])
-			}
-			continue
-		}
-		pos = append(pos, a)
-	}
-	return append(flags, pos...)
-}
-
-func checkCmd(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("check", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	protocol := fs.String("protocol", "tls", "tls, smtp, imap, pop3, ftp or postgres")
-	servername := fs.String("servername", "", "server name for SNI and verification (default: the host when it is a DNS name)")
-	caFile := fs.String("ca-file", "", "PEM bundle to verify against instead of the system store")
-	insecure := fs.Bool("insecure", false, "do not verify the chain (self-signed endpoints)")
-	warn := fs.Int("warn", 30, "warning threshold in days")
-	crit := fs.Int("crit", 7, "critical threshold in days")
-	timeout := fs.Duration("timeout", 10*time.Second, "connect and handshake timeout")
-	first := fs.Bool("first", false, "probe only the first resolved address")
-	allowLocal := fs.Bool("allow-local", true, "allow loopback and link-local addresses")
-	if err := fs.Parse(reorder(args, map[string]bool{"protocol": true, "servername": true, "ca-file": true, "warn": true, "crit": true, "timeout": true})); err != nil {
-		return 2
-	}
-	if fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "usage: tlswatch check HOST[:PORT] [-protocol P] [-servername N] [-ca-file F] [-insecure]")
-		return 2
-	}
-	proto, err := probe.ParseProtocol(*protocol)
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 2
-	}
-	host, port := fs.Arg(0), probe.DefaultPort(proto)
-	if h, p, err := net.SplitHostPort(host); err == nil {
-		host = h
-		if port, err = strconv.Atoi(p); err != nil || port < 1 || port > 65535 {
-			fmt.Fprintln(stderr, "invalid port", p)
-			return 2
-		}
-	}
-	host = strings.TrimSuffix(strings.Trim(host, "[]"), ".")
-	if err := probe.ValidateHost(host); err != nil {
-		fmt.Fprintln(stderr, err)
-		return 2
-	}
-	sni := *servername
-	if sni == "" && net.ParseIP(host) == nil {
-		sni = host
-	}
-	req := probe.Request{Host: host, Port: port, Protocol: proto, ServerName: sni, Trust: probe.TrustSystem,
-		Timeout: *timeout, Retries: 1, FirstOnly: *first, AllowLocal: *allowLocal}
-	if *insecure {
-		req.Trust = probe.TrustSelfSigned
-	}
-	if *caFile != "" {
-		b, err := os.ReadFile(*caFile)
-		if err != nil {
-			fmt.Fprintln(stderr, err)
-			return 2
-		}
-		certs, err := core.ParseBundle(string(b))
-		if err != nil {
-			fmt.Fprintln(stderr, err)
-			return 2
-		}
-		pool := x509.NewCertPool()
-		for _, c := range certs {
-			pool.AddCert(c)
-		}
-		req.Trust, req.Roots = probe.TrustBundle, pool
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	r := probe.Probe(ctx, req)
-	th := check.Thresholds{Warn: *warn, Crit: *crit}
-	out := check.Evaluate(check.Target{Trust: req.Trust, ServerName: sni, Warn: warn, Crit: crit, Manual: th, Managed: th, RenewalSet: true, Debounce: 1},
-		check.Previous{Open: map[check.Kind]bool{}}, r, time.Now())
-
-	res := checkResult{Target: net.JoinHostPort(host, strconv.Itoa(port)), Protocol: string(proto), ServerName: sni, DNSError: r.DNSError,
-		Addresses: []checkAddress{}, Findings: []checkFinding{}}
-	for _, a := range r.Addresses {
-		ca := checkAddress{Address: a.IP, OK: a.OK, TLSVersion: a.TLSVersion, Cipher: a.Cipher, Verified: a.Verified, Error: a.Error, DurationMS: a.Duration.Milliseconds()}
-		if a.OK {
-			ca.SHA256 = probe.Fingerprint(a.Chain[0])
-		}
-		res.Addresses = append(res.Addresses, ca)
-	}
-	if out.Leaf != nil {
-		ci := probe.Describe(out.Leaf)
-		d := check.DaysLeft(out.NotAfter, time.Now())
-		res.DaysLeft, res.NotAfter = &d, out.NotAfter.UTC().Format(time.RFC3339)
-		res.Subject, res.Issuer, res.SANs, res.SHA256 = ci.SubjectCN, ci.IssuerCN, ci.SANs, ci.Fingerprint
-	}
-	worst := 0
-	for _, f := range out.Open {
-		res.Findings = append(res.Findings, checkFinding{Kind: string(f.Kind), Severity: string(f.Severity), Details: f.Details})
-		if f.Severity.Rank() > worst {
-			worst = f.Severity.Rank()
-		}
-	}
-	code := 0
-	res.Status = "ok"
-	switch {
-	case worst >= check.Critical.Rank():
-		res.Status, code = "critical", 2
-	case worst >= check.Warning.Rank():
-		res.Status, code = "warning", 1
-	}
-	enc := json.NewEncoder(stdout)
-	enc.SetIndent("", "  ")
-	_ = enc.Encode(res)
-	return code
-}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sjoerd305/tlswatch/internal/check"
+	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/core"
 	"github.com/sjoerd305/tlswatch/internal/notify"
 	"github.com/sjoerd305/tlswatch/internal/probe"
@@ -492,7 +493,7 @@ func (s *Server) targetSave(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.PostFormValue("action") == "test" {
 		if len(f.Errors) == 0 {
-			res := s.testProbe(ctx, f.T)
+			res := s.testProbe(ctx, info(r).settings, f.T)
 			f.Result = &res
 		}
 		s.render(w, r, "target-form", &Page{Title: title, Nav: "targets", Data: f})
@@ -549,8 +550,8 @@ type testResult struct {
 	Err      string
 }
 
-func (s *Server) testProbe(ctx context.Context, t core.Target) testResult {
-	st, _ := s.Settings.Get(ctx)
+// testProbe probes t without storing anything, for Test without saving.
+func (s *Server) testProbe(ctx context.Context, st config.Settings, t core.Target) testResult {
 	req, err := s.Core.ProbeRequest(ctx, t, st)
 	if err != nil {
 		return testResult{Err: err.Error(), Status: core.StatusUnreachable}
@@ -781,7 +782,7 @@ func (s *Server) apiTargetTest(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusBadRequest, strings.Join(msgs, ". "))
 		return
 	}
-	res := s.testProbe(r.Context(), f.T)
+	res := s.testProbe(r.Context(), info(r).settings, f.T)
 	html, err := s.fragment(r, "test-result", frag{P: s.fragPage(r), Item: res})
 	if err != nil {
 		s.serverError(w, r, err)

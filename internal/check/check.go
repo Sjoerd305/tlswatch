@@ -133,6 +133,17 @@ func (s Severity) Class() string {
 	return "info"
 }
 
+// Worst returns the highest severity among fs, or "" when fs is empty.
+func Worst(fs []Finding) Severity {
+	var w Severity
+	for _, f := range fs {
+		if f.Severity.Rank() > w.Rank() {
+			w = f.Severity
+		}
+	}
+	return w
+}
+
 // Meets reports whether s is at or above floor.
 func (s Severity) Meets(floor Severity) bool { return s.Rank() >= floor.Rank() }
 
