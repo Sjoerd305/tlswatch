@@ -129,6 +129,34 @@ func TestLoginLockout(t *testing.T) {
 	}
 }
 
+// An address without an account locks after the same number of failures,
+// so the lockout does not reveal which addresses exist.
+func TestLockoutDoesNotRevealAccounts(t *testing.T) {
+	s, c := newService(t)
+	ctx := context.Background()
+	mkLocal(t, s, "op@example.nl", authz.Operator)
+	for _, email := range []string{"op@example.nl", "nobody@example.nl"} {
+		var errs []error
+		for i := 0; i < maxFailures+1; i++ {
+			_, err := s.Login(ctx, email, "wrong", "")
+			errs = append(errs, err)
+		}
+		for i, err := range errs {
+			want := ErrInvalidCredentials
+			if i >= maxFailures-1 {
+				want = ErrLocked
+			}
+			if !errors.Is(err, want) {
+				t.Fatalf("%s attempt %d: %v, want %v", email, i+1, err, want)
+			}
+		}
+	}
+	c.add(lockDuration + time.Second)
+	if _, err := s.Login(ctx, "nobody@example.nl", "wrong", ""); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("after the lock: %v", err)
+	}
+}
+
 func TestLoginNeutralErrors(t *testing.T) {
 	s, _ := newService(t)
 	ctx := context.Background()

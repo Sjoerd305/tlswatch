@@ -85,6 +85,15 @@ type Service struct {
 
 	mu      sync.Mutex
 	ipFails map[string][]int64
+	phantom map[string]phantomLock // lockout of e-mail addresses without a local account
+}
+
+// phantomLock mirrors users.failed_count and locked_until for an address
+// that has no local account, so the lockout does not reveal which
+// addresses exist.
+type phantomLock struct {
+	failed      int
+	lockedUntil int64
 }
 
 // New returns a service with defaults.
@@ -344,7 +353,7 @@ func (s *Service) Login(ctx context.Context, email, pw, ip string) (User, error)
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && (u.Method != MethodLocal || hash == "")) {
 		VerifyPassword(dummyHash(), pw)
 		s.ipFail(ip, now)
-		return User{}, ErrInvalidCredentials
+		return User{}, s.phantomFail(email, now)
 	}
 	if err != nil {
 		return User{}, err
@@ -379,6 +388,38 @@ func (s *Service) Login(ctx context.Context, email, pw, ip string) (User, error)
 		return User{}, err
 	}
 	return u, nil
+}
+
+// phantomFail counts a failed sign-in for an address without a local
+// account exactly as Login does for an account, and returns the error an
+// account would get.
+func (s *Service) phantomFail(email string, now int64) error {
+	key := strings.ToLower(strings.TrimSpace(email))
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.phantom == nil {
+		s.phantom = map[string]phantomLock{}
+	}
+	p := s.phantom[key]
+	if p.lockedUntil > now {
+		return ErrLocked
+	}
+	p.failed++
+	if p.failed >= maxFailures {
+		p = phantomLock{lockedUntil: now + int64(lockDuration/time.Second)}
+	}
+	s.phantom[key] = p
+	if len(s.phantom) > 10000 { // bound memory under a spray of addresses
+		for k, v := range s.phantom {
+			if v.lockedUntil <= now {
+				delete(s.phantom, k)
+			}
+		}
+	}
+	if p.lockedUntil > now {
+		return ErrLocked
+	}
+	return ErrInvalidCredentials
 }
 
 func (s *Service) ipBlocked(ip string, now int64) bool {
