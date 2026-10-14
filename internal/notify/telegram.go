@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -58,19 +59,48 @@ type TelegramSender struct {
 	BaseURL string // default "https://api.telegram.org"
 }
 
-// Send posts m as plain text to every chat; it stops at the first failure.
+// Send posts m as plain text to every chat.
 func (t *TelegramSender) Send(ctx context.Context, m Message) error {
+	_, err := t.SendSkipping(ctx, m, nil)
+	return err
+}
+
+// SendSkipping posts m to every chat not in done, also after one fails,
+// and returns the chats it reached. The error joins the failures; it is a
+// *RetryAfterError when Telegram asked to slow down.
+func (t *TelegramSender) SendSkipping(ctx context.Context, m Message, done []string) ([]string, error) {
 	text := m.Subject + "\n\n" + m.Body
 	if utf8.RuneCountInString(text) > maxTGChars {
 		r := []rune(text)
 		text = string(r[:maxTGChars-1]) + "…"
 	}
+	var reached []string
+	var errs []error
+	var wait time.Duration
 	for _, chat := range t.S.ChatIDs {
-		if err := t.sendOne(ctx, chat, text); err != nil {
-			return redactErr(err, t.S.Token, url.PathEscape(t.S.Token))
+		if slices.Contains(done, chat) {
+			continue
 		}
+		err := t.sendOne(ctx, chat, text)
+		if err == nil {
+			reached = append(reached, chat)
+			continue
+		}
+		var ra *RetryAfterError
+		if errors.As(err, &ra) {
+			wait = max(wait, ra.After)
+		}
+		errs = append(errs, err)
 	}
-	return nil
+	err := errors.Join(errs...)
+	if err == nil {
+		return reached, nil
+	}
+	err = redactErr(err, t.S.Token, url.PathEscape(t.S.Token))
+	if wait > 0 {
+		err = &RetryAfterError{Err: err, After: wait}
+	}
+	return reached, err
 }
 
 func (t *TelegramSender) sendOne(ctx context.Context, chat, text string) error {
@@ -101,6 +131,9 @@ func (t *TelegramSender) sendOne(ctx context.Context, chat, text string) error {
 	var r struct {
 		OK          bool   `json:"ok"`
 		Description string `json:"description"`
+		Parameters  struct {
+			RetryAfter int `json:"retry_after"`
+		} `json:"parameters"`
 	}
 	_ = json.Unmarshal(body, &r)
 	if resp.StatusCode/100 != 2 || !r.OK {
@@ -108,7 +141,11 @@ func (t *TelegramSender) sendOne(ctx context.Context, chat, text string) error {
 		if desc == "" {
 			desc = resp.Status
 		}
-		return fmt.Errorf("telegram chat %s: %s", chat, desc)
+		err := fmt.Errorf("telegram chat %s: %s", chat, desc)
+		if r.Parameters.RetryAfter > 0 {
+			return &RetryAfterError{Err: err, After: time.Duration(r.Parameters.RetryAfter) * time.Second}
+		}
+		return err
 	}
 	return nil
 }

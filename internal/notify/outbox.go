@@ -3,7 +3,9 @@ package notify
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -101,48 +103,62 @@ type pending struct {
 	msg       Message
 }
 
+// batchKey groups due alerts into one message: per channel, and per set of
+// recipients already reached, so a retry skips exactly those.
+type batchKey struct {
+	channel   int64
+	delivered string
+}
+
 // Flush sends every due alert, collapsed per channel; channels are served
 // in parallel so one that is down does not hold up another.
 func (d *Dispatcher) Flush(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	now := d.now()
-	rows, err := d.DB.R.QueryContext(ctx, `SELECT id, channel_id, created_at, attempts, subject, body FROM alerts
+	rows, err := d.DB.R.QueryContext(ctx, `SELECT id, channel_id, delivered, created_at, attempts, subject, body FROM alerts
 		WHERE state = 'pending' AND next_attempt <= ? ORDER BY id`, now.Unix())
 	if err != nil {
 		return err
 	}
-	byChannel := map[int64][]pending{}
-	var order []int64
+	batches := map[batchKey][]pending{}
+	var order []batchKey
 	for rows.Next() {
 		var p pending
-		var ch int64
-		if err := rows.Scan(&p.id, &ch, &p.createdAt, &p.attempts, &p.msg.Subject, &p.msg.Body); err != nil {
+		var k batchKey
+		if err := rows.Scan(&p.id, &k.channel, &k.delivered, &p.createdAt, &p.attempts, &p.msg.Subject, &p.msg.Body); err != nil {
 			rows.Close()
 			return err
 		}
-		if _, ok := byChannel[ch]; !ok {
-			order = append(order, ch)
+		if _, ok := batches[k]; !ok {
+			order = append(order, k)
 		}
-		byChannel[ch] = append(byChannel[ch], p)
+		batches[k] = append(batches[k], p)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	// Channels are served in parallel; the batches of one channel in turn.
+	byChannel := map[int64][]batchKey{}
+	for _, k := range order {
+		byChannel[k.channel] = append(byChannel[k.channel], k)
+	}
 	var wg sync.WaitGroup
-	for _, ch := range order {
+	for ch, keys := range byChannel {
 		wg.Add(1)
-		go func(ch int64, ps []pending) {
+		go func() {
 			defer wg.Done()
-			d.deliver(ctx, ch, ps)
-		}(ch, byChannel[ch])
+			for _, k := range keys {
+				d.deliver(ctx, ch, k.delivered, batches[k])
+			}
+		}()
 	}
 	wg.Wait()
 	return nil
 }
 
-func (d *Dispatcher) deliver(ctx context.Context, chID int64, ps []pending) {
+func (d *Dispatcher) deliver(ctx context.Context, chID int64, delivered string, ps []pending) {
 	c, err := d.Channels.Get(ctx, chID)
 	var sendErr error
 	switch {
@@ -165,11 +181,21 @@ func (d *Dispatcher) deliver(ctx context.Context, chID int64, ps []pending) {
 			sender = d.Senders(c)
 		}
 		sctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-		sendErr = sender.Send(sctx, m)
+		if ps, ok := sender.(PartialSender); ok {
+			var reached []string
+			reached, sendErr = ps.SendSkipping(sctx, m, splitList(delivered))
+			delivered = joinList(append(splitList(delivered), reached...))
+		} else {
+			sendErr = sender.Send(sctx, m)
+		}
 		cancel()
 		if sendErr != nil {
 			sendErr = redactErr(sendErr, c.Secrets()...)
 		}
+	}
+	var wait time.Duration
+	if ra := (*RetryAfterError)(nil); errors.As(sendErr, &ra) {
+		wait = ra.After
 	}
 	now := d.now()
 	var ids, gaveUp []int64
@@ -179,13 +205,14 @@ func (d *Dispatcher) deliver(ctx context.Context, chID int64, ps []pending) {
 			_, err = d.DB.W.ExecContext(ctx, "UPDATE alerts SET state='sent', sent_at=?, attempts=attempts+1, error='' WHERE id=?", now.Unix(), p.id)
 		} else {
 			n := p.attempts + 1
-			next := now.Add(backoff(n))
+			next := now.Add(max(backoff(n), wait))
 			state := "pending"
 			if sendErr == errDisabled || next.After(time.Unix(p.createdAt, 0).Add(GiveUpAfter)) {
 				state = "failed"
 				gaveUp = append(gaveUp, p.id)
 			}
-			_, err = d.DB.W.ExecContext(ctx, "UPDATE alerts SET state=?, attempts=?, next_attempt=?, error=? WHERE id=?", state, n, next.Unix(), sendErr.Error(), p.id)
+			_, err = d.DB.W.ExecContext(ctx, "UPDATE alerts SET state=?, attempts=?, next_attempt=?, error=?, delivered=? WHERE id=?",
+				state, n, next.Unix(), sendErr.Error(), delivered, p.id)
 		}
 		if err != nil {
 			d.Log.Error("update alert", "id", p.id, "err", err)
@@ -201,6 +228,15 @@ func (d *Dispatcher) deliver(ctx context.Context, chID int64, ps []pending) {
 		log.Warn("alert delivery failed, will retry", "attempt", ps[0].attempts+1, "err", sendErr)
 	}
 }
+
+func splitList(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, ",")
+}
+
+func joinList(l []string) string { return strings.Join(l, ",") }
 
 type disabledError struct{}
 

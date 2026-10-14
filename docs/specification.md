@@ -145,7 +145,7 @@ One message per finding; a run that opens many findings at once (a new bundle of
 
 **Message content**: target name and `host:port`, finding kind and severity, days left and the expiry date, issuer and subject CN, fingerprint (short), the address that failed, and a link to the target in the UI. Telegram messages are plain text with the same fields on separate lines. The subject line starts with the severity in brackets so mail rules can route it: `[critical] portal.example.nl:443 expires in 6 days`.
 
-**Delivery** is queued in SQLite and retried with backoff (1 min, 5 min, 30 min, then hourly for 24 hours); a channel that is down does not block another. A test button per channel sends a sample message. Every delivery and its result is kept in the alert log for 180 days.
+**Delivery** is queued in SQLite and retried with backoff (1 min, 5 min, 30 min, then hourly for 24 hours), or later when the transport asks for it (a Telegram rate limit); after 24 hours the alert is marked failed and logged as given up. A channel that is down does not block another. A Telegram channel with several chats tries every chat; a retry goes only to the chats that did not get the message yet. A test button per channel sends a sample message. Every delivery and its result is kept in the alert log for 180 days.
 
 ## Inventory and user interface
 

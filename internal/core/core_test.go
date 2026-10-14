@@ -11,6 +11,8 @@ import (
 	"io"
 	"log/slog"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -599,6 +601,60 @@ func TestApplyDiscardsStaleTarget(t *testing.T) {
 	}
 	if got, _ := e.svc.Target(e.ctx, tg.ID); got.CurrentFP != "" {
 		t.Fatal("old endpoint's certificate stored as current")
+	}
+}
+
+// A Telegram chat that fails does not make the retry repeat the message to
+// the chats that got it, and a rate limit's retry_after is honoured.
+func TestTelegramRetrySkipsReachedChats(t *testing.T) {
+	e := newEnv(t)
+	var mu sync.Mutex
+	got := map[string]int{}
+	limited := true
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		mu.Lock()
+		defer mu.Unlock()
+		chat := r.Form.Get("chat_id")
+		if chat == "-1002" && limited {
+			limited = false
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"ok":false,"description":"Too Many Requests: retry after 120","parameters":{"retry_after":120}}`))
+			return
+		}
+		got[chat]++
+		_, _ = w.Write([]byte(`{"ok":true,"result":{}}`))
+	}))
+	defer srv.Close()
+	tg, err := e.svc.Channels.Save(e.ctx, notify.Channel{Name: "ops", Kind: notify.KindTelegram, MinSeverity: "warning", Enabled: true,
+		Telegram: notify.TelegramSettings{Token: "123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ", ChatIDs: []string{"-1001", "-1002"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.disp.Senders = func(ch notify.Channel) notify.Sender {
+		return &notify.TelegramSender{S: ch.Telegram, BaseURL: srv.URL}
+	}
+	ca := newCA(t, "Sectigo")
+	now := e.clock.Now()
+	target := e.target(func(t *Target) { t.AllChannels = false; t.ChannelIDs = []int64{tg} })
+	e.apply(target.ID, result(served("192.0.2.1", ca.leaf(t, now.Add(-days(360)), now.Add(days(3)), "portal.example.nl"), ca.cert)))
+
+	e.flush()
+	var delivered string
+	var next int64
+	_ = e.svc.DB.R.QueryRow("SELECT delivered, next_attempt FROM alerts WHERE channel_id = ?", tg).Scan(&delivered, &next)
+	if delivered != "-1001" || got["-1001"] != 1 || got["-1002"] != 0 {
+		t.Fatalf("first attempt: delivered %q, got %v", delivered, got)
+	}
+	if wait := next - e.clock.Now().Unix(); wait < 119 {
+		t.Fatalf("retry in %d s, retry_after was 120", wait)
+	}
+	e.clock.Add(2 * time.Minute)
+	if err := e.disp.Flush(e.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got["-1001"] != 1 || got["-1002"] != 1 {
+		t.Fatalf("after retry: %v", got)
 	}
 }
 
