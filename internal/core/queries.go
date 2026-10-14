@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -23,16 +24,22 @@ type NavCounts struct {
 	NextCheck    int64
 }
 
-// Nav returns the navigation counts.
+// Nav returns the navigation counts. They decorate every page, so an error
+// is logged and the page renders without them.
 func (s *Service) Nav(ctx context.Context) NavCounts {
 	var n NavCounts
-	_ = s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(MAX(last_check), 0),
-		COALESCE((SELECT MIN(next_check) FROM targets WHERE enabled = 1 AND next_check > 0), 0) FROM targets`).Scan(&n.Targets, &n.LastCheck, &n.NextCheck)
-	_ = s.DB.R.QueryRowContext(ctx, `SELECT COUNT(DISTINCT o.leaf_fp) FROM targets t
-		JOIN observations o ON o.check_id = t.last_check_id AND o.target_id = t.id WHERE o.leaf_fp != ''`).Scan(&n.Certificates)
 	var crit int
-	_ = s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(severity = 'critical'), 0) FROM findings f JOIN targets t ON t.id = f.target_id
-		WHERE f.resolved_at = 0 AND t.enabled = 1`).Scan(&n.Findings, &crit)
+	err := errors.Join(
+		s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(MAX(last_check), 0),
+			COALESCE((SELECT MIN(next_check) FROM targets WHERE enabled = 1 AND next_check > 0), 0) FROM targets`).Scan(&n.Targets, &n.LastCheck, &n.NextCheck),
+		s.DB.R.QueryRowContext(ctx, `SELECT COUNT(DISTINCT o.leaf_fp) FROM targets t
+			JOIN observations o ON o.check_id = t.last_check_id AND o.target_id = t.id WHERE o.leaf_fp != ''`).Scan(&n.Certificates),
+		s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(severity = 'critical'), 0) FROM findings f JOIN targets t ON t.id = f.target_id
+			WHERE f.resolved_at = 0 AND t.enabled = 1`).Scan(&n.Findings, &crit),
+	)
+	if err != nil && ctx.Err() == nil && s.Log != nil {
+		s.Log.Warn("navigation counts", "err", err)
+	}
 	n.Critical = crit > 0
 	return n
 }
@@ -174,10 +181,16 @@ func (s *Service) Summary(ctx context.Context, from, to int64) (RunSummary, erro
 	if err != nil {
 		return r, err
 	}
-	_ = s.DB.R.QueryRowContext(ctx, `SELECT COALESCE(SUM(kind = 'unreachable'), 0), COALESCE(SUM(kind = 'dns_failed'), 0) FROM findings
+	err = s.DB.R.QueryRowContext(ctx, `SELECT COALESCE(SUM(kind = 'unreachable'), 0), COALESCE(SUM(kind = 'dns_failed'), 0) FROM findings
 		WHERE resolved_at = 0 AND kind IN ('unreachable', 'dns_failed')`).Scan(&r.Unreachable, &r.DNSFailed)
-	_ = s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(GROUP_CONCAT(DISTINCT c.name), '') FROM alerts a JOIN channels c ON c.id = a.channel_id
+	if err != nil {
+		return r, err
+	}
+	err = s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(GROUP_CONCAT(DISTINCT c.name), '') FROM alerts a JOIN channels c ON c.id = a.channel_id
 		WHERE a.state = 'sent' AND a.sent_at >= ? AND a.event != 'test'`, from).Scan(&r.Alerts, &r.AlertVia)
+	if err != nil {
+		return r, err
+	}
 	if r.From == 0 {
 		r.From = from
 	}

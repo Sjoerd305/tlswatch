@@ -341,7 +341,7 @@ func seed() error {
 			return fmt.Errorf("%s: %v", t.Host, errs)
 		}
 		if _, err := a.core.SaveTarget(ctx, t, "seed"); err != nil {
-			if strings.Contains(err.Error(), "already exists") {
+			if errors.Is(err, core.ErrTargetExists) {
 				continue
 			}
 			return err

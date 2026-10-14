@@ -362,7 +362,7 @@ func (s *Server) targetEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	t, err := s.Core.Target(r.Context(), id)
 	if err != nil {
-		s.fail(w, r, http.StatusNotFound, "No such target.")
+		s.failErr(w, r, err, "No such target.")
 		return
 	}
 	f := formFromTarget(t)
@@ -475,7 +475,7 @@ func (s *Server) targetSave(w http.ResponseWriter, r *http.Request) {
 		}
 		t, err := s.Core.Target(ctx, id)
 		if err != nil {
-			s.fail(w, r, http.StatusNotFound, "No such target.")
+			s.failErr(w, r, err, "No such target.")
 			return
 		}
 		existing = &t
@@ -505,7 +505,7 @@ func (s *Server) targetSave(w http.ResponseWriter, r *http.Request) {
 	u := user(r)
 	id, err := s.Core.SaveTarget(ctx, f.T, u.Email)
 	if err != nil {
-		if strings.Contains(err.Error(), "already exists") {
+		if errors.Is(err, core.ErrTargetExists) {
 			f.Errors["host"] = err.Error()
 			s.renderStatus(w, r, http.StatusBadRequest, "target-form", &Page{Title: title, Nav: "targets", Data: f})
 			return
@@ -686,7 +686,7 @@ func (s *Server) targetDeletePage(w http.ResponseWriter, r *http.Request) {
 	}
 	t, err := s.Core.Target(r.Context(), id)
 	if err != nil {
-		s.fail(w, r, http.StatusNotFound, "No such target.")
+		s.failErr(w, r, err, "No such target.")
 		return
 	}
 	impact, err := s.Core.TargetDeleteImpact(r.Context(), id)
@@ -705,7 +705,7 @@ func (s *Server) targetDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	t, err := s.Core.Target(r.Context(), id)
 	if err != nil {
-		s.fail(w, r, http.StatusNotFound, "No such target.")
+		s.failErr(w, r, err, "No such target.")
 		return
 	}
 	if r.PostFormValue("confirm") != "yes" {

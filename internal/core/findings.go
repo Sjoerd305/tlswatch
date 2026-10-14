@@ -166,13 +166,13 @@ func (s *Service) Acknowledge(ctx context.Context, id int64, user string, until 
 		return f, err
 	}
 	if !f.Open() {
-		return f, errors.New("The finding is already resolved")
+		return f, &InputError{"The finding is already resolved"}
 	}
 	now := s.now().Unix()
 	var untilU int64
 	if !until.IsZero() {
 		if until.Unix() <= now {
-			return f, errors.New("The until date must be in the future")
+			return f, &InputError{"The until date must be in the future"}
 		}
 		untilU = until.Unix()
 	}

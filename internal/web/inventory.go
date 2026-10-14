@@ -400,7 +400,7 @@ func (s *Server) apiFindingPanel(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := s.findingPanel(r, id)
 	if err != nil {
-		s.fail(w, r, http.StatusNotFound, "No such finding.")
+		s.failErr(w, r, err, "No such finding.")
 		return
 	}
 	// The list the panel was opened from, without the selection.
@@ -438,11 +438,12 @@ func (s *Server) findingAck(w http.ResponseWriter, r *http.Request) {
 	u := user(r)
 	f, err := s.Core.Acknowledge(r.Context(), id, u.DisplayName(), until, comment)
 	if err != nil {
-		if errors.Is(err, core.ErrNotFound) {
-			s.fail(w, r, http.StatusNotFound, "No such finding.")
+		var ie *core.InputError
+		if !errors.As(err, &ie) {
+			s.failErr(w, r, err, "No such finding.")
 			return
 		}
-		s.back(w, r, fmt.Sprintf("/findings?sel=%d", id), err.Error(), "crit")
+		s.back(w, r, fmt.Sprintf("/findings?sel=%d", id), ie.Msg, "crit")
 		return
 	}
 	s.Core.Audit(r.Context(), u.Email, "finding.ack", fmt.Sprintf("finding %d %s on %s", id, f.Kind, f.HostPort()), ackDetail(until, comment))
@@ -482,9 +483,14 @@ func (s *Server) findingAckBulk(w http.ResponseWriter, r *http.Request) {
 	acked, confirmed, failed := 0, 0, 0
 	for _, id := range ids {
 		f, err := s.Core.Acknowledge(r.Context(), id, u.DisplayName(), until, comment)
-		if err != nil {
-			failed++
+		var ie *core.InputError
+		switch {
+		case errors.Is(err, core.ErrNotFound) || errors.As(err, &ie):
+			failed++ // resolved or gone meanwhile
 			continue
+		case err != nil:
+			s.serverError(w, r, err)
+			return
 		}
 		if f.Kind.AckResolves() {
 			confirmed++
@@ -540,7 +546,7 @@ func (s *Server) findingUnack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Core.Unacknowledge(r.Context(), id); err != nil {
-		s.fail(w, r, http.StatusNotFound, "No such open finding.")
+		s.failErr(w, r, err, "No such open finding.")
 		return
 	}
 	s.Core.Audit(r.Context(), user(r).Email, "finding.unack", fmt.Sprintf("finding %d", id), "")

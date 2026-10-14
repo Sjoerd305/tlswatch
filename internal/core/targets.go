@@ -217,10 +217,14 @@ func (s *Service) SaveTarget(ctx context.Context, t Target, user string) (int64,
 		t.ID, _ = res.LastInsertId()
 	} else {
 		var oldTrust, oldHost, oldSNI string
-		if err := tx.QueryRowContext(ctx, "SELECT trust_mode, host, servername FROM targets WHERE id = ?", t.ID).Scan(&oldTrust, &oldHost, &oldSNI); err != nil {
+		err := tx.QueryRowContext(ctx, "SELECT trust_mode, host, servername FROM targets WHERE id = ?", t.ID).Scan(&oldTrust, &oldHost, &oldSNI)
+		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
 		}
-		_, err := tx.ExecContext(ctx, `UPDATE targets SET name=?, host=?, port=?, protocol=?, servername=?, trust_mode=?, bundle_id=?,
+		if err != nil {
+			return 0, err
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE targets SET name=?, host=?, port=?, protocol=?, servername=?, trust_mode=?, bundle_id=?,
 			renewal_managed=?, renewal_set=?, expected_issuer=?, warn_days=?, crit_days=?, interval_s=?, timeout_s=?, retries=?, debounce=?,
 			remind_warn_s=?, remind_crit_s=?, all_addresses=?, all_channels=?, tags=?, notes=?, enabled=?, updated_at=? WHERE id = ?`,
 			append(args, t.ID)...)
@@ -252,7 +256,7 @@ func (s *Service) SaveTarget(ctx context.Context, t Target, user string) (int64,
 
 func uniqueTarget(err error) error {
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
-		return errors.New("A target with this host, port, protocol and server name already exists")
+		return ErrTargetExists
 	}
 	return err
 }

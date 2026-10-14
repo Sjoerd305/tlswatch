@@ -395,6 +395,20 @@ func (s *Server) serverError(w http.ResponseWriter, r *http.Request, err error) 
 	s.fail(w, r, http.StatusInternalServerError, "Something went wrong. The error has been logged.")
 }
 
+// failErr answers an error from core: 404 with notFound for ErrNotFound,
+// 400 with the message for an InputError, and a logged 500 otherwise.
+func (s *Server) failErr(w http.ResponseWriter, r *http.Request, err error, notFound string) {
+	var ie *core.InputError
+	switch {
+	case errors.Is(err, core.ErrNotFound):
+		s.fail(w, r, http.StatusNotFound, notFound)
+	case errors.As(err, &ie):
+		s.fail(w, r, http.StatusBadRequest, ie.Msg)
+	default:
+		s.serverError(w, r, err)
+	}
+}
+
 type errorPage struct {
 	Status  int
 	Message string
