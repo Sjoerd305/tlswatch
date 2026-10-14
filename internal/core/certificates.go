@@ -13,6 +13,11 @@ import (
 const certCols = `fingerprint, subject, subject_cn, issuer, issuer_cn, issuer_org, serial, not_before, not_after, sans,
 	key_type, key_bits, sig_alg, is_ca, self_signed, pem, first_seen, last_seen`
 
+// certListCols are certCols without the PEM, for lists: only the download
+// needs it, and it is most of a row's size.
+const certListCols = `fingerprint, subject, subject_cn, issuer, issuer_cn, issuer_org, serial, not_before, not_after, sans,
+	key_type, key_bits, sig_alg, is_ca, self_signed, '' AS pem, first_seen, last_seen`
+
 func scanCert(r interface{ Scan(...any) error }) (Certificate, error) {
 	var c Certificate
 	var sans string
@@ -232,7 +237,7 @@ func (s *Service) Inventory(ctx context.Context) ([]InventoryItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	crow, err := s.DB.R.QueryContext(ctx, "SELECT "+certCols+" FROM certificates WHERE fingerprint IN (SELECT DISTINCT leaf_fp FROM observations WHERE leaf_fp != '') ORDER BY not_after")
+	crow, err := s.DB.R.QueryContext(ctx, "SELECT "+certListCols+" FROM certificates WHERE fingerprint IN (SELECT DISTINCT leaf_fp FROM observations WHERE leaf_fp != '') ORDER BY not_after")
 	if err != nil {
 		return nil, err
 	}

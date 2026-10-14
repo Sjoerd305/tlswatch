@@ -79,7 +79,7 @@ func (s *Service) Targets(ctx context.Context) ([]Target, error) {
 }
 
 func (s *Service) currentCerts(ctx context.Context) (map[string]Certificate, error) {
-	rows, err := s.DB.R.QueryContext(ctx, "SELECT "+certCols+" FROM certificates WHERE fingerprint IN (SELECT current_fp FROM targets)")
+	rows, err := s.DB.R.QueryContext(ctx, "SELECT "+certListCols+" FROM certificates WHERE fingerprint IN (SELECT current_fp FROM targets)")
 	if err != nil {
 		return nil, err
 	}
