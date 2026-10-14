@@ -39,6 +39,7 @@
 //   "/" key                            focuses the page's filter field
 //   details.menu                       closes on outside click and Escape
 import { $, $$, api, ApiError, messages, onReady } from "./common.js";
+import { loadInto } from "./load.js";
 // ---------- Notices ----------
 function showNotice(text, kind = "crit") {
     const page = $(".page");
@@ -220,23 +221,7 @@ function toggleRow(row) {
     }
     if (open) {
         for (const el of $$("[data-load-url]", detail))
-            void loadInto(el);
-    }
-}
-// loadInto fills an element of a detail row from its data-load-url, once.
-async function loadInto(el) {
-    const url = el.dataset["loadUrl"];
-    if (url === undefined)
-        return;
-    delete el.dataset["loadUrl"];
-    try {
-        const reply = await api("GET", url);
-        el.innerHTML = reply.html ?? "";
-        el.classList.remove("muted");
-    }
-    catch {
-        el.textContent = "could not be loaded";
-        el.dataset["loadUrl"] = url;
+            void loadInto(el, (url) => api("GET", url));
     }
 }
 // ---------- API forms, panels, test probe ----------

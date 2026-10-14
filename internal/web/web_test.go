@@ -1,7 +1,9 @@
 package web
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -293,6 +295,39 @@ func TestTemplateActionsExist(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Failed requests are logged at info level with the request ID the response
+// carries; successful ones only at debug level.
+func TestRequestLogging(t *testing.T) {
+	hs := newHarness(t)
+	var buf bytes.Buffer
+	hs.srv.Log = slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	rec := hs.do(authz.Viewer, "GET", "/targets/999", nil, false)
+	id := rec.Header().Get("X-Request-ID")
+	if rec.Code != http.StatusNotFound || id == "" {
+		t.Fatalf("%d, request ID %q", rec.Code, id)
+	}
+	var line struct {
+		Msg, Level, Path, User string
+		RequestID              string `json:"request_id"`
+		Status                 int
+	}
+	if err := json.Unmarshal(buf.Bytes(), &line); err != nil {
+		t.Fatalf("log: %v: %s", err, buf.String())
+	}
+	if line.Msg != "http" || line.Level != "INFO" || line.RequestID != id || line.Status != 404 || line.Path != "/targets/999" || line.User != "viewer@example.test" {
+		t.Fatalf("log line: %+v", line)
+	}
+
+	buf.Reset()
+	if rec := hs.do(authz.Viewer, "GET", "/targets", nil, false); rec.Code != http.StatusOK {
+		t.Fatalf("targets: %d", rec.Code)
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("successful request logged at info: %s", buf.String())
 	}
 }
 

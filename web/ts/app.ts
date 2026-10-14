@@ -40,6 +40,7 @@
 //   details.menu                       closes on outside click and Escape
 
 import { $, $$, api, ApiError, messages, onReady } from "./common.js";
+import { loadInto } from "./load.js";
 
 interface ApiReply {
   html?: string;
@@ -226,22 +227,7 @@ function toggleRow(row: HTMLTableRowElement): void {
     window.history.replaceState(null, "", url.toString());
   }
   if (open) {
-    for (const el of $$<HTMLElement>("[data-load-url]", detail)) void loadInto(el);
-  }
-}
-
-// loadInto fills an element of a detail row from its data-load-url, once.
-async function loadInto(el: HTMLElement): Promise<void> {
-  const url = el.dataset["loadUrl"];
-  if (url === undefined) return;
-  delete el.dataset["loadUrl"];
-  try {
-    const reply = await api<ApiReply>("GET", url);
-    el.innerHTML = reply.html ?? "";
-    el.classList.remove("muted");
-  } catch {
-    el.textContent = "could not be loaded";
-    el.dataset["loadUrl"] = url;
+    for (const el of $$<HTMLElement>("[data-load-url]", detail)) void loadInto(el, (url) => api<ApiReply>("GET", url));
   }
 }
 
