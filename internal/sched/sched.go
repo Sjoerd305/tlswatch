@@ -19,9 +19,10 @@ import (
 )
 
 type item struct {
-	id   int64
-	next int64
-	idx  int
+	id     int64
+	next   int64 // when to run
+	stored int64 // next_check in the database when next was set; -1: unknown
+	idx    int
 }
 
 type queue []*item
@@ -50,6 +51,7 @@ type Scheduler struct {
 	q        queue
 	byID     map[int64]*item
 	inflight map[int64]chan struct{}
+	fails    map[int64]int // consecutive checks that could not be stored
 	running  int
 	wake     chan struct{}
 	reload   chan struct{}
@@ -65,6 +67,7 @@ func (s *Scheduler) init() {
 	s.once.Do(func() {
 		s.byID = map[int64]*item{}
 		s.inflight = map[int64]chan struct{}{}
+		s.fails = map[int64]int{}
 		s.wake = make(chan struct{}, 1)
 		s.reload = make(chan struct{}, 1)
 	})
@@ -91,7 +94,8 @@ func (s *Scheduler) Reload() { s.init(); signal(s.reload) }
 type Status struct {
 	LastLoop  time.Time
 	LastCheck time.Time
-	Backlog   int
+	Backlog   int           // targets due and not yet started
+	Overdue   time.Duration // how long the oldest of them has waited
 	Running   int
 	Checks    int64
 }
@@ -107,16 +111,24 @@ func (s *Scheduler) Status() Status {
 			backlog++
 		}
 	}
+	var overdue time.Duration
+	if len(s.q) > 0 && s.q[0].next > 0 && s.q[0].next < now {
+		overdue = time.Duration(now-s.q[0].next) * time.Second
+	}
 	running := s.running
 	s.mu.Unlock()
 	s.statMu.Lock()
 	defer s.statMu.Unlock()
-	return Status{LastLoop: s.lastLoop, LastCheck: s.lastCheck, Backlog: backlog, Running: running, Checks: s.checks}
+	return Status{LastLoop: s.lastLoop, LastCheck: s.lastCheck, Backlog: backlog, Overdue: overdue, Running: running, Checks: s.checks}
 }
 
-// load rebuilds the queue. Overdue targets that were already checked once
-// are spread over the next few minutes, so a restart does not fire every
-// probe at once; never-checked targets run right away.
+// load merges the database schedule into the queue. A queued target keeps
+// its time unless its next_check changed in the database (it was edited,
+// or checked elsewhere), so a reload does not undo Check all, the startup
+// spread or a retry delay. Targets no longer enabled are dropped. At
+// startup, overdue targets that were already checked once are spread over
+// the next few minutes, so a restart does not fire every probe at once;
+// never-checked targets run right away.
 func (s *Scheduler) load(ctx context.Context, startup bool) error {
 	sched, err := s.Core.Schedule(ctx)
 	if err != nil {
@@ -125,20 +137,22 @@ func (s *Scheduler) load(ctx context.Context, startup bool) error {
 	now := s.now().Unix()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.q = s.q[:0]
-	s.byID = map[int64]*item{}
-	n := len(sched)
-	spread := int64(300)
-	if n > 300 {
-		spread = int64(n) // at least one second per target
+	spread := max(int64(300), int64(len(sched))) // at least one second per target
+	for id, it := range s.byID {
+		if _, ok := sched[id]; !ok {
+			heap.Remove(&s.q, it.idx)
+			delete(s.byID, id)
+		}
 	}
-	for id, next := range sched {
+	for id, stored := range sched {
+		if it, ok := s.byID[id]; ok && it.stored == stored {
+			continue
+		}
+		next := stored
 		if startup && next != 0 && next < now {
 			next = now + rand.Int64N(spread) // #nosec G404 -- schedule jitter, not a secret
 		}
-		it := &item{id: id, next: next}
-		s.byID[id] = it
-		heap.Push(&s.q, it)
+		s.setLocked(id, next, stored)
 	}
 	return nil
 }
@@ -209,31 +223,73 @@ func (s *Scheduler) dispatch(ctx context.Context) {
 }
 
 func (s *Scheduler) run(ctx context.Context, id int64, done chan struct{}) {
-	_, err := s.check(ctx, id)
+	t, err := s.check(ctx, id)
 	if err != nil && ctx.Err() == nil && !errors.Is(err, core.ErrNotFound) {
-		s.Log.Error("check failed", "target", id, "err", err)
+		s.Log.Error("check failed", "target_id", id, "target", t.Name, "err", err)
 	}
 	s.mu.Lock()
 	s.running--
 	delete(s.inflight, id)
 	s.mu.Unlock()
 	close(done)
-	// Re-queue with the next slot the check stored.
-	if t, err := s.Core.Target(ctx, id); err == nil && t.Enabled {
-		s.push(id, t.NextCheck)
+	if ctx.Err() != nil {
+		return
 	}
+	s.requeue(ctx, id, err)
 	signal(s.wake)
 }
 
-func (s *Scheduler) push(id, next int64) {
+// maxRetryDelay caps the delay before a check that could not be stored is
+// tried again.
+const maxRetryDelay = time.Hour
+
+// retryDelay is the wait after n consecutive checks that could not be
+// stored: 1, 2, 4 … minutes, up to maxRetryDelay.
+func retryDelay(n int) time.Duration {
+	if n > 7 {
+		return maxRetryDelay
+	}
+	return min(time.Minute<<(n-1), maxRetryDelay)
+}
+
+// requeue puts a target back after a check: at the slot the check stored,
+// or, when the check could not be stored (the slot did not move), after a
+// growing delay so a persistent error does not re-probe in a loop.
+func (s *Scheduler) requeue(ctx context.Context, id int64, checkErr error) {
+	t, err := s.Core.Target(ctx, id)
+	if err != nil || !t.Enabled {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if checkErr == nil {
+		delete(s.fails, id)
+		s.setLocked(id, t.NextCheck, t.NextCheck)
+		return
+	}
+	s.fails[id]++
+	s.setLocked(id, s.now().Add(retryDelay(s.fails[id])).Unix(), t.NextCheck)
+}
+
+// runAt queues a target to run at next, keeping what is known of its
+// stored slot.
+func (s *Scheduler) runAt(id, next int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	stored := int64(-1)
 	if it, ok := s.byID[id]; ok {
-		it.next = next
+		stored = it.stored
+	}
+	s.setLocked(id, next, stored)
+}
+
+func (s *Scheduler) setLocked(id, next, stored int64) {
+	if it, ok := s.byID[id]; ok {
+		it.next, it.stored = next, stored
 		heap.Fix(&s.q, it.idx)
 		return
 	}
-	it := &item{id: id, next: next}
+	it := &item{id: id, next: next, stored: stored}
 	s.byID[id] = it
 	heap.Push(&s.q, it)
 }
@@ -294,7 +350,10 @@ func (s *Scheduler) CheckNow(ctx context.Context, id int64) (core.Target, error)
 	}()
 	t, err := s.check(ctx, id)
 	if err == nil && t.Enabled {
-		s.push(id, t.NextCheck)
+		s.mu.Lock()
+		delete(s.fails, id)
+		s.setLocked(id, t.NextCheck, t.NextCheck)
+		s.mu.Unlock()
 	}
 	return t, err
 }
@@ -308,7 +367,7 @@ func (s *Scheduler) CheckAll(ctx context.Context) (int, error) {
 	}
 	now := s.now().Unix()
 	for id := range sched {
-		s.push(id, now)
+		s.runAt(id, now)
 	}
 	signal(s.wake)
 	return len(sched), nil

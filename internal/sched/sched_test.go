@@ -2,6 +2,7 @@ package sched
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"sync/atomic"
@@ -94,5 +95,99 @@ func TestCheckNow(t *testing.T) {
 	}
 	if _, err := s.CheckNow(context.Background(), 99); err == nil {
 		t.Fatal("unknown target checked")
+	}
+}
+
+func (s *Scheduler) nextOf(id int64) int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if it, ok := s.byID[id]; ok {
+		return it.next
+	}
+	return -1
+}
+
+// The periodic reload merges with the queue: Check all and the startup
+// spread survive it, a changed target is picked up.
+func TestReloadKeepsQueuedTimes(t *testing.T) {
+	s, c, _ := setup(t, 3)
+	ctx := context.Background()
+	s.init()
+	for id := int64(1); id <= 3; id++ {
+		if _, err := s.CheckNow(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Now().Unix()
+	if _, err := s.CheckAll(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.load(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	for id := int64(1); id <= 3; id++ {
+		if n := s.nextOf(id); n > now+1 {
+			t.Fatalf("target %d moved back to %d after reload", id, n)
+		}
+	}
+
+	// Startup spread: overdue targets are spread, and stay spread.
+	if _, err := c.DB.W.Exec("UPDATE targets SET next_check = ?", now-3600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.load(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	spread := map[int64]int64{}
+	for id := int64(1); id <= 3; id++ {
+		spread[id] = s.nextOf(id)
+		if spread[id] < now {
+			t.Fatalf("target %d not spread: %d", id, spread[id])
+		}
+	}
+	if err := s.load(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	for id := int64(1); id <= 3; id++ {
+		if s.nextOf(id) != spread[id] {
+			t.Fatalf("target %d spread undone by reload", id)
+		}
+	}
+
+	// An edited target (next_check reset) and a disabled one are picked up.
+	if _, err := c.DB.W.Exec("UPDATE targets SET next_check = 0 WHERE id = 1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.DB.W.Exec("UPDATE targets SET enabled = 0 WHERE id = 2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.load(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	if s.nextOf(1) != 0 || s.nextOf(2) != -1 {
+		t.Fatalf("edited %d, disabled %d", s.nextOf(1), s.nextOf(2))
+	}
+}
+
+// A check that could not be stored is retried after a growing delay, not
+// straight away.
+func TestFailedCheckBacksOff(t *testing.T) {
+	s, c, _ := setup(t, 1)
+	ctx := context.Background()
+	s.init()
+	fail := errors.New("disk full")
+	for n, want := range []time.Duration{time.Minute, 2 * time.Minute, 4 * time.Minute} {
+		s.requeue(ctx, 1, fail)
+		if got := s.nextOf(1) - time.Now().Unix(); got < int64(want/time.Second)-1 || got > int64(want/time.Second) {
+			t.Fatalf("failure %d: retry in %d s, want %v", n+1, got, want)
+		}
+	}
+	if retryDelay(20) != maxRetryDelay {
+		t.Fatal("retry delay not capped")
+	}
+	tg, _ := c.Target(ctx, 1)
+	s.requeue(ctx, 1, nil)
+	if s.nextOf(1) != tg.NextCheck || s.fails[1] != 0 {
+		t.Fatalf("success did not restore the slot: %d", s.nextOf(1))
 	}
 }

@@ -232,8 +232,10 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	st := s.Sched.Status()
 	ok := s.Core.DB.Ping(r.Context()) == nil
 	stalled := !st.LastLoop.IsZero() && s.now().Sub(st.LastLoop) > 2*time.Minute
+	// The scheduler runs but cannot keep up: workers are stuck or too few.
+	behind := st.Overdue > maxOverdue
 	status := http.StatusOK
-	if !ok || stalled {
+	if !ok || stalled || behind {
 		status = http.StatusServiceUnavailable
 	}
 	last := ""
@@ -241,10 +243,15 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		last = st.LastCheck.UTC().Format(time.RFC3339)
 	}
 	writeJSON(w, status, map[string]any{
-		"ok": ok && !stalled, "database": ok, "scheduler_running": !stalled && !st.LastLoop.IsZero(),
-		"last_check": last, "backlog": st.Backlog, "running": st.Running, "checks": st.Checks, "version": s.Version,
+		"ok": ok && !stalled && !behind, "database": ok, "scheduler_running": !stalled && !st.LastLoop.IsZero(),
+		"last_check": last, "backlog": st.Backlog, "overdue_s": int64(st.Overdue / time.Second), "running": st.Running,
+		"checks": st.Checks, "version": s.Version,
 	})
 }
+
+// maxOverdue is how long a due check may wait before /healthz reports the
+// scheduler as behind.
+const maxOverdue = time.Hour
 
 const faviconSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#2f6fd1" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 4 5.5v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10v-6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>`
 

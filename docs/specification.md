@@ -307,7 +307,7 @@ Settings pages added for this: **General** (base URL, proxy trust, local targets
 
 **Subcommands**: `serve`, `create-admin -email`, `migrate` (also runs at start), `backup <path>` (SQLite `VACUUM INTO`, safe while running), `check <host[:port]> [-protocol -servername -ca-file -insecure]` for scripts and CI, exit code 0/1/2 by severity.
 
-**Operations**: `/healthz` reports database reachability and scheduler progress (last run, backlog); structured logs; a daily backup is the `backup` subcommand on a cron. Upgrades are a binary swap; migrations are forward-only and refuse to run a database written by a newer version.
+**Operations**: `/healthz` reports database reachability and scheduler progress (last run, backlog, how long the oldest due check has waited); structured logs; a daily backup is the `backup` subcommand on a cron. Upgrades are a binary swap; migrations are forward-only and refuse to run a database written by a newer version.
 
 **Development**: `make build`, `make test`, `make frontend`, `make run` with a throw-away database; a seed subcommand that adds a few public targets (expired.badssl.com, self-signed.badssl.com, a Let's Encrypt site) so the UI shows every state immediately.
 

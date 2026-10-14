@@ -34,7 +34,7 @@ Only `TLSWATCH_LISTEN`, `TLSWATCH_DB`, `TLSWATCH_SECRET_KEY_FILE` and `TLSWATCH_
 
 ## Monitoring tlswatch
 
-`GET /healthz` answers 200 with JSON (`database`, `scheduler_running`, `last_check`, `backlog`) and 503 when the database is unreachable or the scheduler stalled. Logs are JSON lines on stdout; set `TLSWATCH_LOG_JSON=false` for text.
+`GET /healthz` answers 200 with JSON (`database`, `scheduler_running`, `last_check`, `backlog`, `overdue_s`) and 503 when the database is unreachable, the scheduler stalled, or the oldest due check has waited more than an hour (`overdue_s` > 3600: workers stuck or too few). Logs are JSON lines on stdout; set `TLSWATCH_LOG_JSON=false` for text.
 
 ## Networks
 
