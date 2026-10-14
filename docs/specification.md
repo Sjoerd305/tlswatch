@@ -18,7 +18,7 @@ In scope for version 1:
 - Users with the roles admin, operator and viewer; local login and Google sign-in.
 - A daily check per target by default, 180 days of history.
 
-Out of scope for version 1 (listed under open points as candidates for later): certificate issuance or renewal, remote probe agents inside customer networks, a public REST API, Prometheus metrics, bulk import, OCSP and CRL checks, Certificate Transparency monitoring, TLS configuration grading, and uptime monitoring.
+Out of scope for version 1 (listed under open points as candidates for later): certificate issuance or renewal, remote probe agents inside customer networks, a public REST API, bulk import, OCSP and CRL checks, Certificate Transparency monitoring, TLS configuration grading, and uptime monitoring.
 
 The tool does not manage certificates. It only observes what is served and reports on it.
 
@@ -297,17 +297,18 @@ Secrets entered in the UI (SMTP passwords, Telegram bot tokens, the Google clien
 | `TLSWATCH_BASE_URL` | empty | Settings › General | Public URL for links in alerts and the OIDC redirect; while empty, derived from the request and a notice bar asks an admin to set it |
 | `TLSWATCH_BEHIND_PROXY` | `false` | Settings › General | Trust `X-Forwarded-For` and `X-Forwarded-Proto` from one hop |
 | `TLSWATCH_ALLOW_LOCAL` | `false` | Settings › General | Allow loopback and link-local targets |
+| `TLSWATCH_METRICS` | `false` | Settings › General | Serve Prometheus metrics at `/metrics` |
 | `TLSWATCH_WORKERS` | `8` | Settings › Defaults | Concurrent probes |
 | `TLSWATCH_RETENTION_DAYS` | `180` | Settings › Defaults | History retention |
 | `TLSWATCH_GOOGLE_CLIENT_ID` / `_SECRET_FILE` / `_DOMAIN` | empty | Settings › Sign-in | Google sign-in; off while no client ID is set |
 
-Settings pages added for this: **General** (base URL, proxy trust, local targets) and **Sign-in** (Google client ID, secret, domain, with the redirect URI to register shown read-only). Channels gain the SMTP encryption choice (STARTTLS, implicit TLS, none) and username/password as in the mockup; Telegram channels take the bot token and one or more chat IDs. Every change is audited, secrets redacted.
+Settings pages added for this: **General** (base URL, proxy trust, local targets, metrics) and **Sign-in** (Google client ID, secret, domain, with the redirect URI to register shown read-only). Channels gain the SMTP encryption choice (STARTTLS, implicit TLS, none) and username/password as in the mockup; Telegram channels take the bot token and one or more chat IDs. Every change is audited, secrets redacted.
 
 **Packaging**: `go build` produces one static binary with the frontend embedded via `embed`; releases ship binaries for linux/amd64, linux/arm64 and darwin/arm64, plus a Docker image from `scratch` with CA certificates, published to GitHub Container Registry. The compose file in the repository runs the image with one volume for `data/`; TLS termination is left to the user's proxy.
 
-**Subcommands**: `serve`, `create-admin -email`, `migrate` (also runs at start), `backup <path>` (SQLite `VACUUM INTO`, safe while running), `check <host[:port]> [-protocol -servername -ca-file -insecure]` for scripts and CI, exit code 0/1/2 by severity.
+**Subcommands**: `serve`, `create-admin -email`, `migrate` (also runs at start), `backup <path>` (SQLite `VACUUM INTO`, safe while running, never migrates), `healthcheck` (for the container), `rotate-key` (re-encrypts stored secrets under a new key; server stopped), `check <host[:port]> [-protocol -servername -ca-file -insecure]` for scripts and CI, exit code 0/1/2 by severity.
 
-**Operations**: `/healthz` reports database reachability and scheduler progress (last run, backlog, how long the oldest due check has waited); structured logs; a daily backup is the `backup` subcommand on a cron. Upgrades are a binary swap; migrations are forward-only and refuse to run a database written by a newer version.
+**Operations**: `/healthz` reports database reachability and scheduler progress (last run, backlog, how long the oldest due check has waited); when enabled under Settings › General, `/metrics` serves Prometheus gauges without sign-in (targets by status, open findings by severity, alerts pending and given up, each target's certificate expiry, scheduler backlog and checks); structured logs with request IDs and one line per check; a daily backup is the `backup` subcommand on a cron. Upgrades are a binary swap; migrations are forward-only and refuse to run a database written by a newer version.
 
 **Development**: `make build`, `make test`, `make frontend`, `make run` with a throw-away database; a seed subcommand that adds a few public targets (expired.badssl.com, self-signed.badssl.com, a Let's Encrypt site) so the UI shows every state immediately.
 
@@ -390,4 +391,4 @@ Where the requirements said "not sure" or "what do you recommend", this document
 - [ ] Whether `info` findings (expected ACME renewals) should appear in the weekly digest.
 - [ ] Which public hosts to use in the seed data and README screenshot.
 
-**Later versions**, in rough priority: Prometheus `/metrics`; a public REST API with tokens; bulk import and export of targets as YAML; remote probe agents for isolated networks; OCSP and CRL checks; Certificate Transparency monitoring for own domains; TLS configuration grading; webhook and ntfy channels; ticket creation in a service desk on critical findings.
+**Later versions**, in rough priority: a public REST API with tokens; bulk import and export of targets as YAML; remote probe agents for isolated networks; OCSP and CRL checks; Certificate Transparency monitoring for own domains; TLS configuration grading; webhook and ntfy channels; ticket creation in a service desk on critical findings.

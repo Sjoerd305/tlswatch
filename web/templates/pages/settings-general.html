@@ -19,6 +19,8 @@
       {{if $s.Locked "behind_proxy"}}{{template "env-note" (index $s.Env "behind_proxy")}}{{if $d.G.BehindProxy}}<input type="hidden" name="behind_proxy" value="1">{{end}}{{else}}<span class="help lift">Only enable this when tlswatch is reachable through the proxy alone; otherwise clients can spoof their address.</span>{{end}}
       <label class="check"><input type="checkbox" name="allow_local" value="1"{{if $d.G.AllowLocal}} checked{{end}}{{if $s.Locked "allow_local"}} disabled{{end}}> Allow loopback and link-local addresses as targets</label>
       {{if $s.Locked "allow_local"}}{{template "env-note" (index $s.Env "allow_local")}}{{if $d.G.AllowLocal}}<input type="hidden" name="allow_local" value="1">{{end}}{{else}}<span class="help lift">Private ranges are always allowed. Loopback and link-local are refused by default so the probe cannot be pointed at the host itself.</span>{{end}}
+      <label class="check"><input type="checkbox" name="metrics" value="1"{{if $d.G.Metrics}} checked{{end}}{{if $s.Locked "metrics"}} disabled{{end}}> Serve Prometheus metrics at /metrics</label>
+      {{if $s.Locked "metrics"}}{{template "env-note" (index $s.Env "metrics")}}{{if $d.G.Metrics}}<input type="hidden" name="metrics" value="1">{{end}}{{else}}<span class="help lift">Without sign-in, like /healthz. The metrics name every target and its expiry date; allow only your monitoring system to reach them.</span>{{end}}
       <div class="form-foot"><button type="submit" class="btn btn-primary">Save</button></div>
     </form>
   </div>

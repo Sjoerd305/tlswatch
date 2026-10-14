@@ -48,12 +48,13 @@ func (s *Server) settingsGeneralSave(w http.ResponseWriter, r *http.Request) {
 		BehindProxy: r.PostFormValue("behind_proxy") == "1",
 		AllowLocal:  r.PostFormValue("allow_local") == "1",
 		TimeZone:    strings.TrimSpace(r.PostFormValue("time_zone")),
+		Metrics:     r.PostFormValue("metrics") == "1",
 	}
 	if err := s.Settings.SaveGeneral(r.Context(), g); err != nil {
 		s.settingsPage(w, r, http.StatusBadRequest, "settings-general", "general", "Settings", generalData{G: g, Derived: s.baseURL(r), Error: err.Error(), Zones: commonZones})
 		return
 	}
-	s.Core.Audit(r.Context(), user(r).Email, "settings.general", "general", fmt.Sprintf("base_url=%s behind_proxy=%v allow_local=%v time_zone=%s", g.BaseURL, g.BehindProxy, g.AllowLocal, g.TimeZone))
+	s.Core.Audit(r.Context(), user(r).Email, "settings.general", "general", fmt.Sprintf("base_url=%s behind_proxy=%v allow_local=%v time_zone=%s metrics=%v", g.BaseURL, g.BehindProxy, g.AllowLocal, g.TimeZone, g.Metrics))
 	s.back(w, r, "/settings/general", "General settings saved.", "ok")
 }
 

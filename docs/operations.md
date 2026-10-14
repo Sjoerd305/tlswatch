@@ -21,6 +21,7 @@ Only `TLSWATCH_LISTEN`, `TLSWATCH_DB`, `TLSWATCH_SECRET_KEY_FILE` and `TLSWATCH_
 | `TLSWATCH_BASE_URL` | General › Public URL |
 | `TLSWATCH_BEHIND_PROXY` | General › Behind a reverse proxy |
 | `TLSWATCH_ALLOW_LOCAL` | General › Allow loopback and link-local targets |
+| `TLSWATCH_METRICS` | General › Serve Prometheus metrics |
 | `TZ` | General › Time zone |
 | `TLSWATCH_WORKERS` | Defaults › Concurrent probes |
 | `TLSWATCH_RETENTION_DAYS` | Defaults › History retention |
@@ -38,6 +39,8 @@ Values are checked against the same ranges as the UI (retention 7 to 3650 days, 
 ## Monitoring tlswatch
 
 `GET /healthz` answers 200 with JSON (`database`, `scheduler_running`, `last_check`, `backlog`, `overdue_s`) and 503 when the database is unreachable, the scheduler stalled, or the oldest due check has waited more than an hour (`overdue_s` > 3600: workers stuck or too few). `tlswatch healthcheck` calls it on `TLSWATCH_LISTEN` and exits non-zero when it is not 200; the Docker image uses it as its `HEALTHCHECK`.
+
+With *Serve Prometheus metrics* on (Settings › General, or `TLSWATCH_METRICS=true`), `GET /metrics` returns `tlswatch_targets{status}`, `tlswatch_findings_open{severity}`, `tlswatch_alerts{state}`, `tlswatch_certificate_not_after_seconds{target,endpoint}`, `tlswatch_checks_total`, `tlswatch_scheduler_backlog`, `tlswatch_scheduler_overdue_seconds`, `tlswatch_scheduler_running`, `tlswatch_last_check_seconds` and `tlswatch_build_info{version}`. Like `/healthz` it needs no sign-in, and it names every target, so let only the monitoring system reach it. Example alert: `tlswatch_alerts{state="failed"} > 0` (a channel gave up).
 
 Logs are JSON lines on stdout; set `TLSWATCH_LOG_JSON=false` for text and `TLSWATCH_DEBUG=true` for debug logging. Every response carries an `X-Request-ID`, which the log lines of that request repeat. Requests are logged at info level when they fail (status 400 or higher) or take more than 2 seconds, otherwise at debug level. On shutdown tlswatch waits up to 15 seconds for running checks and alert deliveries.
 

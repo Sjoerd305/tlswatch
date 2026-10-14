@@ -76,6 +76,9 @@ type General struct {
 	BehindProxy bool   `json:"behind_proxy"`
 	AllowLocal  bool   `json:"allow_local"`
 	TimeZone    string `json:"time_zone"`
+	// Metrics serves /metrics in the Prometheus text format, without
+	// sign-in; it names every target.
+	Metrics bool `json:"metrics"`
 }
 
 // SignIn holds the Google sign-in settings. The secret is stored encrypted.
@@ -416,6 +419,7 @@ var envVars = []envVar{
 	}},
 	{"behind_proxy", "TLSWATCH_BEHIND_PROXY", boolVar(func(st *Settings) *bool { return &st.General.BehindProxy })},
 	{"allow_local", "TLSWATCH_ALLOW_LOCAL", boolVar(func(st *Settings) *bool { return &st.General.AllowLocal })},
+	{"metrics", "TLSWATCH_METRICS", boolVar(func(st *Settings) *bool { return &st.General.Metrics })},
 	{"time_zone", "TZ", func(st *Settings, v string) error {
 		if _, err := time.LoadLocation(v); err != nil {
 			return fmt.Errorf("unknown time zone %q", v)

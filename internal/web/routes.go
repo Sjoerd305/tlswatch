@@ -16,6 +16,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	own := func(h http.HandlerFunc) http.HandlerFunc { return s.require(authz.ManageOwnAccount, h) }
 
 	mux.HandleFunc("GET /healthz", s.health)
+	mux.HandleFunc("GET /metrics", s.metrics)
 	mux.HandleFunc("GET /favicon.ico", s.favicon)
 
 	// Signed out.

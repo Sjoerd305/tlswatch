@@ -866,6 +866,25 @@ func TestReencryptChannels(t *testing.T) {
 	}
 }
 
+func TestMetrics(t *testing.T) {
+	e := newEnv(t)
+	ca := newCA(t, "Sectigo")
+	now := e.clock.Now()
+	tg := e.target(nil)
+	c := ca.leaf(t, now.Add(-days(360)), now.Add(days(3)), "portal.example.nl")
+	e.apply(tg.ID, result(served("192.0.2.1", c, ca.cert)))
+	m, err := e.svc.Metrics(e.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.TargetsByStatus[StatusCritical] != 1 || m.OpenBySeverity["critical"] != 1 || m.AlertsByState["pending"] != 2 {
+		t.Fatalf("counts: %+v", m)
+	}
+	if len(m.CertificateTimes) != 1 || m.CertificateTimes[0].Endpoint != "portal.example.nl:443" || m.CertificateTimes[0].NotAfter != c.NotAfter.Unix() {
+		t.Fatalf("expiry: %+v", m.CertificateTimes)
+	}
+}
+
 func TestParseBundleRejectsKeys(t *testing.T) {
 	if _, err := ParseBundle("-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n"); err == nil {
 		t.Fatal("private key accepted")

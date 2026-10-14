@@ -4,6 +4,7 @@ Newest first, one line per change.
 
 ## Unreleased
 
+- Prometheus metrics at `/metrics`, off by default: switch them on under Settings › General (or `TLSWATCH_METRICS=true`). They cover targets by status, open findings, the outbox, every target's certificate expiry and the scheduler.
 - Settings › Defaults refuses text in a number field instead of saving it as 0. The findings page says "latest 1000 resolved" when the list is capped.
 - `tlswatch rotate-key` replaces the secret key: stored credentials are re-encrypted under a new key, and the old key file is kept next to the new one.
 - Each delivered alert records the reference it went out under: the SMTP Message-ID, or Telegram's message ID per chat. It is shown on the alert in the finding's timeline, so a message can be traced in the mail relay's logs or the chat.

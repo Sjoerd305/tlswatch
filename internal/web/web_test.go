@@ -331,6 +331,36 @@ func TestRequestLogging(t *testing.T) {
 	}
 }
 
+// /metrics is off until enabled under Settings › General, then serves the
+// Prometheus text format without sign-in.
+func TestMetrics(t *testing.T) {
+	hs := newHarness(t)
+	if rec := hs.do("", "GET", "/metrics", nil, false); rec.Code != http.StatusNotFound {
+		t.Fatalf("metrics while disabled: %d", rec.Code)
+	}
+	st := hs.srv.Core.CurrentSettings(context.Background())
+	g := st.General
+	g.Metrics = true
+	if err := hs.srv.Settings.SaveGeneral(context.Background(), g); err != nil {
+		t.Fatal(err)
+	}
+	rec := hs.do("", "GET", "/metrics", nil, false)
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/plain; version=0.0.4") {
+		t.Fatalf("%d %s", rec.Code, rec.Header().Get("Content-Type"))
+	}
+	for _, want := range []string{
+		`tlswatch_build_info{version="test"} 1`,
+		`tlswatch_targets{status="pending"} 1`,
+		`# TYPE tlswatch_checks_total counter`,
+		`tlswatch_alerts{state="failed"} 0`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q in\n%s", want, body)
+		}
+	}
+}
+
 func TestSecurityHeaders(t *testing.T) {
 	hs := newHarness(t)
 	rec := hs.do(authz.Viewer, "GET", "/", nil, false)
