@@ -199,6 +199,23 @@ func TestUntrustedChain(t *testing.T) {
 	}
 }
 
+func TestClientOnlyCertificateNotTrusted(t *testing.T) {
+	p := newPKI(t)
+	client := newCert(t, &x509.Certificate{
+		Subject:     pkix.Name{CommonName: "good.example"},
+		DNSNames:    []string{"good.example"},
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		KeyUsage:    x509.KeyUsageDigitalSignature,
+	}, p.inter, nil)
+	port := serve(t, serverConfig(client, p.inter), nil)
+	r := req(port, TLS)
+	r.ServerName, r.Trust, r.Roots = "good.example", TrustBundle, p.pool
+	a := single(t, Probe(context.Background(), r))
+	if !a.OK || a.Verified || !strings.Contains(a.VerifyError, "usage") {
+		t.Fatalf("client-only certificate verified as a server certificate: %+v", a.VerifyError)
+	}
+}
+
 func TestExpiredLeafStillTrusted(t *testing.T) {
 	longAgo := time.Now().Add(-400 * 24 * time.Hour)
 	root := newCert(t, &x509.Certificate{Subject: pkix.Name{CommonName: "Old Root"}, IsCA: true, BasicConstraintsValid: true,

@@ -79,7 +79,7 @@ Every observation runs the full set of checks; each failed check is a finding of
 | --- | --- | --- | --- |
 | `expiring` | The earliest NotAfter in the presented chain is within the warning or critical threshold | warning / critical | Counts whole days; escalates from warning to critical as the date nears |
 | `expired` | Any certificate in the presented chain has expired | critical | |
-| `chain_untrusted` | The chain does not verify against the trust mode (system store or bundle) | critical | Missing intermediate, unknown root, broken signature; not raised for `self-signed` targets |
+| `chain_untrusted` | The chain does not verify against the trust mode (system store or bundle) | critical | Missing intermediate, unknown root, broken signature, a certificate not valid for server authentication (for example client-only); not raised for `self-signed` targets |
 | `self_signed` | A self-signed leaf on a target whose trust mode is not `self-signed` | critical | The fix is either the server or switching the target to `self-signed` |
 | `hostname_mismatch` | The servername is not covered by the CN/SANs | critical | Skipped when servername is empty (plain IP target) |
 | `weak_signature` | A chain certificate is signed with SHA-1 or MD5, or has an RSA key under 2048 bits | warning | Expiry is still reported |

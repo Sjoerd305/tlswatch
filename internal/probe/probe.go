@@ -348,7 +348,10 @@ func verify(a *Address, req Request) {
 		Roots:         roots,
 		Intermediates: inter,
 		CurrentTime:   req.Now(),
-		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+		// A leaf (or chain) restricted to client authentication is not a
+		// valid server certificate, as a browser would also refuse it. A
+		// leaf without the extension is valid for any use.
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
 	chains, err := leaf.Verify(opts)
 	var inv x509.CertificateInvalidError

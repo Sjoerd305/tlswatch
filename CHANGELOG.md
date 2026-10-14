@@ -4,6 +4,7 @@ Newest first, one line per change.
 
 ## Unreleased
 
+- Fix: a certificate restricted to client authentication was reported as trusted. Chains are now verified for server authentication, as a browser does; such a certificate raises `chain_untrusted`.
 - Fix: when one chat of a Telegram channel failed, every retry sent the alert again to the chats that already had it. Each chat is now tried, the ones reached are remembered, and a retry goes only to the rest. Telegram's `retry_after` on rate limits is honoured.
 - Environment overrides are validated like the UI fields. An invalid value (for example `TLSWATCH_RETENTION_DAYS=1`, `TLSWATCH_BEHIND_PROXY=yes`, an unreadable secret file) stops tlswatch at start with a message naming the variable, instead of being ignored or, for the booleans, silently turning the setting off.
 - Sessions: a database error while loading the session no longer signs the user out (the request gets a 503 and is logged). A session now also ends 7 days after sign-in, however active; expired sessions are pruned hourly. Static files are served without a session lookup. Panics are logged with their stack.
