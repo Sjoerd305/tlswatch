@@ -160,82 +160,97 @@ func (d *Dispatcher) Flush(ctx context.Context) error {
 	return nil
 }
 
+// attempt is the outcome of sending one batch to one channel.
+type attempt struct {
+	err       error
+	delivered string // recipients reached so far (multi-recipient channels)
+	ref       string // the SMTP Message-ID, or "chat:message_id" per chat reached so far
+	wait      time.Duration
+}
+
 // deliver sends one batch to one channel and records the outcome on its
-// alerts. ref is what the alerts record: the SMTP Message-ID, or for a
-// Telegram channel "chat:message_id" of every chat reached so far.
+// alerts.
 func (d *Dispatcher) deliver(ctx context.Context, chID int64, delivered string, ps []pending) {
-	m := Message{Ref: NewRef()}
-	ref := ""
 	c, err := d.Channels.Get(ctx, chID)
-	var sendErr error
+	var a attempt
 	switch {
 	case err != nil:
-		sendErr = err
+		a = attempt{err: err, delivered: delivered, ref: ps[0].ref}
 	case !c.Enabled:
-		sendErr = errDisabled
+		a = attempt{err: errDisabled, delivered: delivered, ref: ps[0].ref}
 	default:
-		msgs := make([]Message, len(ps))
-		for i, p := range ps {
-			msgs[i] = p.msg
-		}
-		link := ""
-		if d.Link != nil && len(ps) > 1 {
-			link = d.Link(ctx)
-		}
-		combined := Combine(msgs, link)
-		combined.Ref = m.Ref
-		m = combined
-		sctx, cancel := context.WithTimeout(ctx, sendTimeout)
-		if partial, ok := d.sender(c).(PartialSender); ok {
-			var reached, refs []string
-			reached, refs, sendErr = partial.SendSkipping(sctx, m, splitList(delivered))
-			delivered = joinList(append(splitList(delivered), reached...))
-			ref = joinList(append(splitList(ps[0].ref), refs...))
-		} else {
-			sendErr = d.sender(c).Send(sctx, m)
-			if sendErr == nil {
-				ref = MessageID(m.Ref)
-			}
-		}
-		cancel()
-	}
-	var wait time.Duration
-	if ra := (*RetryAfterError)(nil); errors.As(sendErr, &ra) {
-		wait = ra.After
+		a = d.send(ctx, c, delivered, ps)
 	}
 	// Record the outcome even when shutdown cancelled ctx meanwhile, so a
 	// message that went out is not sent again.
-	ctx = context.WithoutCancel(ctx)
+	ids, gaveUp := d.record(context.WithoutCancel(ctx), a, ps)
+	log := d.Log.With("channel_id", chID, "channel", c.Name, "alerts", ids, "ref", a.ref)
+	switch {
+	case a.err == nil:
+		log.Info("alert delivered")
+	case len(gaveUp) > 0:
+		log.Error("alert delivery given up", "failed", gaveUp, "err", a.err)
+	default:
+		log.Warn("alert delivery failed, will retry", "attempt", ps[0].attempts+1, "err", a.err)
+	}
+}
+
+// send combines the batch into one message and sends it, skipping the
+// recipients already reached when the transport tracks them.
+func (d *Dispatcher) send(ctx context.Context, c Channel, delivered string, ps []pending) attempt {
+	msgs := make([]Message, len(ps))
+	for i, p := range ps {
+		msgs[i] = p.msg
+	}
+	link := ""
+	if d.Link != nil && len(ps) > 1 {
+		link = d.Link(ctx)
+	}
+	m := Combine(msgs, link)
+	m.Ref = NewRef()
+	sctx, cancel := context.WithTimeout(ctx, sendTimeout)
+	defer cancel()
+	a := attempt{delivered: delivered}
+	if partial, ok := d.sender(c).(PartialSender); ok {
+		var reached, refs []string
+		reached, refs, a.err = partial.SendSkipping(sctx, m, splitList(delivered))
+		a.delivered = joinList(append(splitList(delivered), reached...))
+		a.ref = joinList(append(splitList(ps[0].ref), refs...))
+	} else if a.err = d.sender(c).Send(sctx, m); a.err == nil {
+		a.ref = MessageID(m.Ref)
+	}
+	if ra := (*RetryAfterError)(nil); errors.As(a.err, &ra) {
+		a.wait = ra.After
+	}
+	return a
+}
+
+// record stores the attempt on every alert of the batch: sent, or pending
+// with the next attempt after the backoff, or failed once retrying would
+// pass GiveUpAfter. It returns the alert IDs and those given up.
+func (d *Dispatcher) record(ctx context.Context, a attempt, ps []pending) (ids, gaveUp []int64) {
 	now := d.now()
-	var ids, gaveUp []int64
 	for _, p := range ps {
 		ids = append(ids, p.id)
-		if sendErr == nil {
-			_, err = d.DB.W.ExecContext(ctx, "UPDATE alerts SET state='sent', sent_at=?, attempts=attempts+1, error='', ref=? WHERE id=?", now.Unix(), ref, p.id)
+		var err error
+		if a.err == nil {
+			_, err = d.DB.W.ExecContext(ctx, "UPDATE alerts SET state='sent', sent_at=?, attempts=attempts+1, error='', ref=? WHERE id=?", now.Unix(), a.ref, p.id)
 		} else {
 			n := p.attempts + 1
-			next := now.Add(max(backoff(n), wait))
+			next := now.Add(max(backoff(n), a.wait))
 			state := "pending"
-			if sendErr == errDisabled || next.After(time.Unix(p.createdAt, 0).Add(GiveUpAfter)) {
+			if a.err == errDisabled || next.After(time.Unix(p.createdAt, 0).Add(GiveUpAfter)) {
 				state = "failed"
 				gaveUp = append(gaveUp, p.id)
 			}
 			_, err = d.DB.W.ExecContext(ctx, "UPDATE alerts SET state=?, attempts=?, next_attempt=?, error=?, delivered=?, ref=? WHERE id=?",
-				state, n, next.Unix(), sendErr.Error(), delivered, ref, p.id)
+				state, n, next.Unix(), a.err.Error(), a.delivered, a.ref, p.id)
 		}
 		if err != nil {
 			d.Log.Error("update alert", "id", p.id, "err", err)
 		}
 	}
-	log := d.Log.With("channel_id", chID, "channel", c.Name, "alerts", ids, "ref", ref)
-	switch {
-	case sendErr == nil:
-		log.Info("alert delivered")
-	case len(gaveUp) > 0:
-		log.Error("alert delivery given up", "failed", gaveUp, "err", sendErr)
-	default:
-		log.Warn("alert delivery failed, will retry", "attempt", ps[0].attempts+1, "err", sendErr)
-	}
+	return ids, gaveUp
 }
 
 // sendTimeout bounds one delivery attempt.

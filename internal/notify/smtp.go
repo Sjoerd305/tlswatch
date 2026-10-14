@@ -102,71 +102,110 @@ func (s *SMTPSender) send(ctx context.Context, m Message) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	deadline, _ := ctx.Deadline()
-
-	addr := net.JoinHostPort(s.S.Host, strconv.Itoa(s.S.Port))
 	tlsConf := &tls.Config{ServerName: s.S.Host, MinVersion: tls.VersionTLS12, RootCAs: s.RootCAs, InsecureSkipVerify: s.S.InsecureSkipVerify} //nolint:gosec // opt-in per channel
 
+	conn, err := s.dial(ctx, tlsConf)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	c, err := smtp.NewClient(conn, s.S.Host)
+	if err != nil {
+		return fmt.Errorf("smtp greeting: %w", err)
+	}
+	defer c.Close()
+	secure, err := s.hello(c, tlsConf)
+	if err != nil {
+		return err
+	}
+	if err := s.authenticate(c, secure); err != nil {
+		return err
+	}
+	if err := s.transmit(c, m); err != nil {
+		return err
+	}
+	return c.Quit()
+}
+
+// dial connects to the relay, with TLS from the first byte for implicit
+// TLS. The connection's deadline follows ctx.
+func (s *SMTPSender) dial(ctx context.Context, tlsConf *tls.Config) (net.Conn, error) {
+	addr := net.JoinHostPort(s.S.Host, strconv.Itoa(s.S.Port))
+	d := &net.Dialer{}
 	var conn net.Conn
 	var err error
-	d := &net.Dialer{}
 	if s.S.encryption() == "tls" {
 		conn, err = (&tls.Dialer{NetDialer: d, Config: tlsConf}).DialContext(ctx, "tcp", addr)
 	} else {
 		conn, err = d.DialContext(ctx, "tcp", addr)
 	}
 	if err != nil {
-		return fmt.Errorf("connect to %s: %w", addr, err)
+		return nil, fmt.Errorf("connect to %s: %w", addr, err)
 	}
-	defer conn.Close()
+	deadline, _ := ctx.Deadline()
 	_ = conn.SetDeadline(deadline)
-	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Now()) })
-	defer stop()
+	// Cancelling ctx interrupts a blocked read or write. When send returns,
+	// its cancel fires this on the closed connection, which is harmless.
+	context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Now()) })
+	return conn, nil
+}
 
-	c, err := smtp.NewClient(conn, s.S.Host)
-	if err != nil {
-		return fmt.Errorf("smtp greeting: %w", err)
-	}
-	defer c.Close()
+// hello sends EHLO and, for STARTTLS, upgrades the connection. It reports
+// whether the session is encrypted.
+func (s *SMTPSender) hello(c *smtp.Client, tlsConf *tls.Config) (bool, error) {
 	hostname := s.Hostname
 	if hostname == "" {
 		hostname = "tlswatch"
 	}
 	if err := c.Hello(hostname); err != nil {
-		return fmt.Errorf("EHLO: %w", err)
+		return false, fmt.Errorf("EHLO: %w", err)
 	}
-	secure := s.S.encryption() == "tls"
-	if s.S.encryption() == "starttls" {
+	switch s.S.encryption() {
+	case "tls":
+		return true, nil
+	case "starttls":
 		if ok, _ := c.Extension("STARTTLS"); !ok {
-			return errors.New("server does not offer STARTTLS")
+			return false, errors.New("server does not offer STARTTLS")
 		}
 		if err := c.StartTLS(tlsConf); err != nil {
-			return fmt.Errorf("STARTTLS: %w", err)
+			return false, fmt.Errorf("STARTTLS: %w", err)
 		}
-		secure = true
+		return true, nil
 	}
-	if s.S.Username != "" {
-		if !secure && !isLocalhost(s.S.Host) {
-			return errors.New("refusing to send credentials over an unencrypted connection")
-		}
-		ok, mechs := c.Extension("AUTH")
-		if !ok {
-			return errors.New("server does not offer AUTH")
-		}
-		var a smtp.Auth
-		upper := " " + strings.ToUpper(mechs) + " "
-		switch {
-		case strings.Contains(upper, " PLAIN "):
-			a = &plainAuth{user: s.S.Username, pass: s.S.Password}
-		case strings.Contains(upper, " LOGIN "):
-			a = &loginAuth{user: s.S.Username, pass: s.S.Password}
-		default:
-			return fmt.Errorf("no supported AUTH mechanism (server offers %s)", mechs)
-		}
-		if err := c.Auth(a); err != nil {
-			return fmt.Errorf("authentication: %w", err)
-		}
+	return false, nil
+}
+
+// authenticate signs in with PLAIN or LOGIN when a username is set; it
+// refuses to send credentials unencrypted except to localhost.
+func (s *SMTPSender) authenticate(c *smtp.Client, secure bool) error {
+	if s.S.Username == "" {
+		return nil
 	}
+	if !secure && !isLocalhost(s.S.Host) {
+		return errors.New("refusing to send credentials over an unencrypted connection")
+	}
+	ok, mechs := c.Extension("AUTH")
+	if !ok {
+		return errors.New("server does not offer AUTH")
+	}
+	var a smtp.Auth
+	upper := " " + strings.ToUpper(mechs) + " "
+	switch {
+	case strings.Contains(upper, " PLAIN "):
+		a = &plainAuth{user: s.S.Username, pass: s.S.Password}
+	case strings.Contains(upper, " LOGIN "):
+		a = &loginAuth{user: s.S.Username, pass: s.S.Password}
+	default:
+		return fmt.Errorf("no supported AUTH mechanism (server offers %s)", mechs)
+	}
+	if err := c.Auth(a); err != nil {
+		return fmt.Errorf("authentication: %w", err)
+	}
+	return nil
+}
+
+// transmit sends m to every recipient in one transaction.
+func (s *SMTPSender) transmit(c *smtp.Client, m Message) error {
 	from, _ := mail.ParseAddress(s.S.From)
 	if err := c.Mail(from.Address); err != nil {
 		return fmt.Errorf("MAIL FROM: %w", err)
@@ -189,7 +228,7 @@ func (s *SMTPSender) send(ctx context.Context, m Message) error {
 	if err := w.Close(); err != nil {
 		return fmt.Errorf("end of data: %w", err)
 	}
-	return c.Quit()
+	return nil
 }
 
 // MessageID is the Message-ID header value for a delivery reference.

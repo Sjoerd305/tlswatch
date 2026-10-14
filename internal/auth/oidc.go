@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -162,44 +163,61 @@ func (s *Service) OIDCFinish(ctx context.Context, cfg OIDCConfig, st OIDCState, 
 	if raw == "" {
 		return User{}, errors.New("token response has no id_token")
 	}
-	// The ID token was received directly from the token endpoint over TLS
-	// (server certificate verified by net/http), not via the browser. Per
-	// OpenID Connect Core 1.0 section 3.1.3.7 step 6, TLS server validation
-	// may then be used to validate the issuer in place of checking the
-	// token signature, so no JWKS fetch is needed. All claims are still
-	// checked below.
+	c, err := parseIDToken(raw)
+	if err != nil {
+		return User{}, err
+	}
+	if err := c.validate(cfg, st.Nonce, s.now()); err != nil {
+		return User{}, err
+	}
+	return s.googleUser(ctx, c)
+}
+
+// parseIDToken reads the claims of an ID token without checking its
+// signature. The token was received directly from the token endpoint over
+// TLS (server certificate verified by net/http), not via the browser. Per
+// OpenID Connect Core 1.0 section 3.1.3.7 step 6, TLS server validation may
+// then be used to validate the issuer in place of checking the token
+// signature, so no JWKS fetch is needed. validate checks every claim.
+func parseIDToken(raw string) (idClaims, error) {
+	var c idClaims
 	parts := strings.Split(raw, ".")
 	if len(parts) != 3 {
-		return User{}, errors.New("malformed id_token")
+		return c, errors.New("malformed id_token")
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return User{}, errors.New("malformed id_token")
+		return c, errors.New("malformed id_token")
 	}
-	var c idClaims
 	if err := json.Unmarshal(payload, &c); err != nil {
-		return User{}, errors.New("malformed id_token")
+		return c, errors.New("malformed id_token")
 	}
-	issOK := false
-	for _, iss := range cfg.issuers() {
-		if c.Iss == iss {
-			issOK = true
-		}
-	}
+	return c, nil
+}
+
+// validate checks issuer, audience, expiry and nonce, and that the e-mail
+// address is verified and, when a domain is configured, in that domain.
+func (c idClaims) validate(cfg OIDCConfig, nonce string, now int64) error {
 	switch {
-	case !issOK:
-		return User{}, errors.New("id_token issuer mismatch")
+	case !slices.Contains(cfg.issuers(), c.Iss):
+		return errors.New("id_token issuer mismatch")
 	case !c.hasAudience(cfg.ClientID):
-		return User{}, errors.New("id_token audience mismatch")
-	case c.Exp <= s.now():
-		return User{}, errors.New("id_token expired")
-	case subtle.ConstantTimeCompare([]byte(c.Nonce), []byte(st.Nonce)) != 1:
-		return User{}, errors.New("id_token nonce mismatch")
+		return errors.New("id_token audience mismatch")
+	case c.Exp <= now:
+		return errors.New("id_token expired")
+	case subtle.ConstantTimeCompare([]byte(c.Nonce), []byte(nonce)) != 1:
+		return errors.New("id_token nonce mismatch")
 	case c.Email == "" || !c.emailVerified():
-		return User{}, ErrNotAllowed
+		return ErrNotAllowed
 	case cfg.Domain != "" && !strings.EqualFold(c.HD, cfg.Domain):
-		return User{}, ErrNotAllowed
+		return ErrNotAllowed
 	}
+	return nil
+}
+
+// googleUser returns the enabled Google-method user with the token's
+// e-mail address, taking the name from the token when none is set.
+func (s *Service) googleUser(ctx context.Context, c idClaims) (User, error) {
 	u, err := s.UserByEmail(ctx, c.Email)
 	if errors.Is(err, ErrNotFound) {
 		return User{}, ErrNotAllowed
