@@ -6,11 +6,12 @@ import (
 	"crypto/subtle"
 	_ "embed"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"unicode/utf8"
+
+	"github.com/sjoerd305/tlswatch/internal/usererr"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -113,9 +114,9 @@ func (b *Breached) Contains(pw string) bool {
 
 // Password policy errors, worded for the user.
 var (
-	ErrPasswordTooShort = fmt.Errorf("Use at least %d characters.", MinPasswordLength)
-	ErrPasswordLeaked   = errors.New("This password appears in a list of leaked or common passwords. Choose another one.")
-	ErrPasswordIsEmail  = errors.New("The password must not be your e-mail address.")
+	ErrPasswordTooShort = usererr.New(fmt.Sprintf("Use at least %d characters.", MinPasswordLength))
+	ErrPasswordLeaked   = usererr.New("This password appears in a list of leaked or common passwords. Choose another one.")
+	ErrPasswordIsEmail  = usererr.New("The password must not be your e-mail address.")
 )
 
 // CheckPasswordPolicy validates a new password for the account email.

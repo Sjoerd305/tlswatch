@@ -18,19 +18,14 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/db"
 	"github.com/sjoerd305/tlswatch/internal/notify"
 	"github.com/sjoerd305/tlswatch/internal/probe"
+	"github.com/sjoerd305/tlswatch/internal/usererr"
 )
 
 // ErrNotFound is returned for unknown IDs.
 var ErrNotFound = errors.New("not found")
 
-// InputError is an error whose message is meant for the user: a rule the
-// request broke, not a fault. Web handlers show it; other errors are logged.
-type InputError struct{ Msg string }
-
-func (e *InputError) Error() string { return e.Msg }
-
 // ErrTargetExists is returned when a target with the same endpoint exists.
-var ErrTargetExists = &InputError{"A target with this host, port, protocol and server name already exists"}
+var ErrTargetExists = usererr.New("A target with this host, port, protocol and server name already exists")
 
 // ErrStale is returned by Apply when the target was disabled, or its
 // endpoint or trust changed, while it was being probed; the result is
@@ -336,7 +331,7 @@ func ParseTags(v string) ([]string, error) {
 			continue
 		}
 		if len([]rune(t)) > 40 {
-			return nil, &InputError{"Tags are limited to 40 characters: " + t}
+			return nil, usererr.New("Tags are limited to 40 characters: " + t)
 		}
 		seen[t] = true
 		out = append(out, t)

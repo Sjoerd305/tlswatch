@@ -128,8 +128,12 @@ func migrationVersion(name string) int {
 	return n
 }
 
-// Migrate applies pending migrations, forward only. It refuses a database
-// written by a newer version of tlswatch.
+// Migrate applies pending migrations, forward only, each in its own
+// transaction. It refuses a database written by a newer version of
+// tlswatch. A migration that rebuilds a table cannot switch foreign keys
+// off from inside its transaction (SQLite ignores PRAGMA foreign_keys
+// there); such a migration needs PRAGMA defer_foreign_keys, or handling
+// here outside the transaction.
 func (d *DB) Migrate(ctx context.Context) error {
 	var current int
 	if err := d.W.QueryRowContext(ctx, "PRAGMA user_version").Scan(&current); err != nil {

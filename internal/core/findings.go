@@ -11,6 +11,7 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/check"
 	"github.com/sjoerd305/tlswatch/internal/notify"
 	"github.com/sjoerd305/tlswatch/internal/probe"
+	"github.com/sjoerd305/tlswatch/internal/usererr"
 )
 
 const findingCols = `f.id, f.target_id, f.kind, f.severity, f.opened_at, f.resolved_at, f.details, f.fingerprint, f.days_left,
@@ -167,13 +168,13 @@ func (s *Service) Acknowledge(ctx context.Context, id int64, user string, until 
 		return f, err
 	}
 	if !f.Open() {
-		return f, &InputError{"The finding is already resolved"}
+		return f, usererr.New("The finding is already resolved")
 	}
 	now := s.now().Unix()
 	var untilU int64
 	if !until.IsZero() {
 		if until.Unix() <= now {
-			return f, &InputError{"The until date must be in the future"}
+			return f, usererr.New("The until date must be in the future")
 		}
 		untilU = until.Unix()
 	}
@@ -227,6 +228,7 @@ func (s *Service) Remind(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	targets := map[int64]Target{}
+	recipients := map[int64][]notify.Channel{} // per target, listed once per run
 	queued := 0
 	for _, f := range findings {
 		if f.Severity == check.Info || f.Acked(now) {
@@ -250,9 +252,12 @@ func (s *Service) Remind(ctx context.Context) (int, error) {
 		if every <= 0 || f.LastAlertAt+int64(every) > now.Unix() {
 			continue
 		}
-		chans, err := s.recipients(ctx, t)
-		if err != nil {
-			return queued, err
+		chans, ok := recipients[t.ID]
+		if !ok {
+			if chans, err = s.recipients(ctx, t); err != nil {
+				return queued, err
+			}
+			recipients[t.ID] = chans
 		}
 		if f.Kind == check.Expiring && t.NotAfter > 0 {
 			days := check.DaysLeft(time.Unix(t.NotAfter, 0), now) // as of now, not of the last check

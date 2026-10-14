@@ -20,6 +20,7 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/core"
 	"github.com/sjoerd305/tlswatch/internal/db"
 	"github.com/sjoerd305/tlswatch/internal/notify"
+	"github.com/sjoerd305/tlswatch/internal/usererr"
 )
 
 func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request, status int, name, sub, title string, data any) {
@@ -51,7 +52,9 @@ func (s *Server) settingsGeneralSave(w http.ResponseWriter, r *http.Request) {
 		Metrics:     r.PostFormValue("metrics") == "1",
 	}
 	if err := s.Settings.SaveGeneral(r.Context(), g); err != nil {
-		s.settingsPage(w, r, http.StatusBadRequest, "settings-general", "general", "Settings", generalData{G: g, Derived: s.baseURL(r), Error: err.Error(), Zones: commonZones})
+		if msg, ok := s.formError(w, r, err); ok {
+			s.settingsPage(w, r, http.StatusBadRequest, "settings-general", "general", "Settings", generalData{G: g, Derived: s.baseURL(r), Error: msg, Zones: commonZones})
+		}
 		return
 	}
 	s.Core.Audit(r.Context(), user(r).Email, "settings.general", "general", fmt.Sprintf("base_url=%s behind_proxy=%v allow_local=%v time_zone=%s metrics=%v", g.BaseURL, g.BehindProxy, g.AllowLocal, g.TimeZone, g.Metrics))
@@ -80,8 +83,10 @@ func (s *Server) settingsSignInSave(w http.ResponseWriter, r *http.Request) {
 	}
 	clear := r.PostFormValue("clear_secret") == "1"
 	if err := s.Settings.SaveSignIn(r.Context(), si, clear); err != nil {
-		st := info(r).settings
-		s.settingsPage(w, r, http.StatusBadRequest, "settings-signin", "signin", "Settings", signInData{S: si, HasSecret: st.HasGoogleSecret(), Error: err.Error(), Redirect: s.baseURL(r) + "/auth/google/callback"})
+		if msg, ok := s.formError(w, r, err); ok {
+			st := info(r).settings
+			s.settingsPage(w, r, http.StatusBadRequest, "settings-signin", "signin", "Settings", signInData{S: si, HasSecret: st.HasGoogleSecret(), Error: msg, Redirect: s.baseURL(r) + "/auth/google/callback"})
+		}
 		return
 	}
 	detail := fmt.Sprintf("client_id=%s domain=%s", si.GoogleClientID, si.GoogleDomain)
@@ -156,9 +161,11 @@ func (s *Server) channelSave(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := s.Core.Channels.Save(r.Context(), c)
 	if err != nil {
-		chans, _ := s.Core.Channels.List(r.Context())
-		c.SMTP.Password, c.Telegram.Token = "", ""
-		s.settingsPage(w, r, http.StatusBadRequest, "settings-channels", "channels", "Settings", channelsData{Channels: chans, Edit: &c, Error: err.Error()})
+		if msg, ok := s.formError(w, r, err); ok {
+			chans, _ := s.Core.Channels.List(r.Context())
+			c.SMTP.Password, c.Telegram.Token = "", ""
+			s.settingsPage(w, r, http.StatusBadRequest, "settings-channels", "channels", "Settings", channelsData{Channels: chans, Edit: &c, Error: msg})
+		}
 		return
 	}
 	action := "channel.update"
@@ -269,8 +276,10 @@ func (s *Server) bundleSave(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(r.FormValue("id"), 10, 64)
 	nid, err := s.Core.SaveBundle(r.Context(), id, name, data)
 	if err != nil {
-		bs, _ := s.Core.Bundles(r.Context())
-		s.settingsPage(w, r, http.StatusBadRequest, "settings-bundles", "bundles", "Settings", bundlesData{Bundles: bs, Name: name, PEM: data, Error: err.Error(), Edit: id})
+		if msg, ok := s.formError(w, r, err); ok {
+			bs, _ := s.Core.Bundles(r.Context())
+			s.settingsPage(w, r, http.StatusBadRequest, "settings-bundles", "bundles", "Settings", bundlesData{Bundles: bs, Name: name, PEM: data, Error: msg, Edit: id})
+		}
 		return
 	}
 	action := "bundle.update"
@@ -365,8 +374,10 @@ func (s *Server) settingsDefaultsSave(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := s.Settings.SaveDefaults(r.Context(), d); err != nil {
-		chans, _ := s.Core.Channels.List(r.Context())
-		s.settingsPage(w, r, http.StatusBadRequest, "settings-defaults", "defaults", "Settings", defaultsData{D: d, Channels: chans, Error: err.Error()})
+		if msg, ok := s.formError(w, r, err); ok {
+			chans, _ := s.Core.Channels.List(r.Context())
+			s.settingsPage(w, r, http.StatusBadRequest, "settings-defaults", "defaults", "Settings", defaultsData{D: d, Channels: chans, Error: msg})
+		}
 		return
 	}
 	s.Core.Audit(r.Context(), user(r).Email, "settings.defaults", "defaults", fmt.Sprintf("manual=%d/%d managed=%d/%d interval=%s workers=%d retention=%d digest=%v",
@@ -474,19 +485,19 @@ func (s *Server) userCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.Auth.CheckPasswordPolicy(pw, f.Email); err != nil {
-			fail(userError(err))
+			fail(s.userError(r, err))
 			return
 		}
 	}
 	u, err := s.Auth.CreateUser(ctx, f.Email, f.Name, role, method)
 	if err != nil {
-		fail(userError(err))
+		fail(s.userError(r, err))
 		return
 	}
 	if setPassword {
 		if err := s.Auth.SetPassword(ctx, u.ID, pw); err != nil {
 			_ = s.Auth.DeleteUser(ctx, u.ID)
-			fail(userError(err))
+			fail(s.userError(r, err))
 			return
 		}
 	}
@@ -557,15 +568,32 @@ func (s *Server) showLink(w http.ResponseWriter, r *http.Request, u auth.User, l
 	s.render(w, r, "settings-users", p)
 }
 
-func userError(err error) string {
+// userError is the message for a failed user change: the error's own
+// message when it is meant for the user, otherwise a generic one, the
+// error being logged.
+func (s *Server) userError(r *http.Request, err error) string {
 	switch {
 	case errors.Is(err, auth.ErrExists):
 		return "A user with this e-mail address already exists."
 	case errors.Is(err, auth.ErrLastAdmin):
 		return "At least one enabled admin must remain."
 	}
-	msg := err.Error()
-	return strings.ToUpper(msg[:1]) + msg[1:]
+	if msg, ok := usererr.Message(err); ok {
+		return msg
+	}
+	s.Log.Error("request failed", "request_id", info(r).id, "method", r.Method, "path", r.URL.Path, "err", err)
+	return "Something went wrong. The error has been logged."
+}
+
+// formError returns the message to show on a form for a failed save. An
+// error not meant for the user is answered as a server error instead, and
+// ok is false.
+func (s *Server) formError(w http.ResponseWriter, r *http.Request, err error) (msg string, ok bool) {
+	if msg, ok := usererr.Message(err); ok {
+		return msg, true
+	}
+	s.serverError(w, r, err)
+	return "", false
 }
 
 func (s *Server) userUpdate(w http.ResponseWriter, r *http.Request) {
@@ -587,7 +615,7 @@ func (s *Server) userUpdate(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, http.StatusNotFound, "No such user.")
 			return
 		}
-		s.back(w, r, fmt.Sprintf("/settings/users?edit=%d", id), userError(err), "crit")
+		s.back(w, r, fmt.Sprintf("/settings/users?edit=%d", id), s.userError(r, err), "crit")
 		return
 	}
 	u, _ := s.Auth.UserByID(r.Context(), id)
@@ -639,7 +667,7 @@ func (s *Server) userPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Auth.SetPassword(r.Context(), id, pw); err != nil {
-		s.back(w, r, back, userError(err), "crit")
+		s.back(w, r, back, s.userError(r, err), "crit")
 		return
 	}
 	if err := s.Auth.DeleteUserSessions(r.Context(), id); err != nil {
@@ -689,7 +717,7 @@ func (s *Server) userDelete(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, http.StatusNotFound, "No such user.")
 			return
 		}
-		s.back(w, r, fmt.Sprintf("/settings/users?edit=%d", id), userError(err), "crit")
+		s.back(w, r, fmt.Sprintf("/settings/users?edit=%d", id), s.userError(r, err), "crit")
 		return
 	}
 	s.Core.Audit(r.Context(), user(r).Email, "user.delete", "user "+u.Email, "role="+string(u.Role))

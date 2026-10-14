@@ -4,6 +4,8 @@ Newest first, one line per change.
 
 ## Unreleased
 
+- Without a release version, `tlswatch version` and the asset URLs use the git revision the binary was built from. Static files are cached for good unless the build is a development one (no version, or a modified working tree).
+- Settings pages show validation messages and log any other error instead of showing its text.
 - Prometheus metrics at `/metrics`, off by default: switch them on under Settings › General (or `TLSWATCH_METRICS=true`). They cover targets by status, open findings, the outbox, every target's certificate expiry and the scheduler.
 - Settings › Defaults refuses text in a number field instead of saving it as 0. The findings page says "latest 1000 resolved" when the list is capped.
 - `tlswatch rotate-key` replaces the secret key: stored credentials are re-encrypted under a new key, and the old key file is kept next to the new one.

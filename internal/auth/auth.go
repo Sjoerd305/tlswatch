@@ -15,6 +15,7 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/authz"
 	"github.com/sjoerd305/tlswatch/internal/db"
 	"github.com/sjoerd305/tlswatch/internal/secret"
+	"github.com/sjoerd305/tlswatch/internal/usererr"
 )
 
 // Errors returned by the service. Login failures are deliberately neutral.
@@ -25,9 +26,9 @@ var (
 	ErrTokenInvalid       = errors.New("this link is invalid, used or expired")
 	ErrNotAllowed         = errors.New("this account is not allowed to sign in here")
 	ErrNotFound           = errors.New("user not found")
-	ErrLastAdmin          = errors.New("at least one enabled admin must remain")
-	ErrExists             = errors.New("a user with this e-mail already exists")
-	ErrSetupDone          = errors.New("setup is already complete")
+	ErrLastAdmin          = usererr.New("at least one enabled admin must remain")
+	ErrExists             = usererr.New("a user with this e-mail already exists")
+	ErrSetupDone          = usererr.New("setup is already complete")
 )
 
 // Login methods.
@@ -129,7 +130,7 @@ func NormalizeEmail(email string) (string, error) {
 	email = strings.TrimSpace(email)
 	a, err := mail.ParseAddress(email)
 	if err != nil || a.Address != email || !strings.Contains(email, "@") {
-		return "", fmt.Errorf("%q is not a valid e-mail address", email)
+		return "", usererr.New(fmt.Sprintf("%q is not a valid e-mail address", email))
 	}
 	return strings.ToLower(email), nil
 }
@@ -146,7 +147,7 @@ func (s *Service) CreateUser(ctx context.Context, email, name string, role authz
 		return User{}, err
 	}
 	if !validMethod(method) {
-		return User{}, fmt.Errorf("unknown login method %q", method)
+		return User{}, usererr.New(fmt.Sprintf("Unknown login method %q", method))
 	}
 	name = strings.TrimSpace(name)
 	res, err := s.DB.W.ExecContext(ctx,
@@ -209,7 +210,7 @@ func (s *Service) UpdateUser(ctx context.Context, id int64, name string, role au
 		return err
 	}
 	if !validMethod(method) {
-		return fmt.Errorf("unknown login method %q", method)
+		return usererr.New(fmt.Sprintf("Unknown login method %q", method))
 	}
 	tx, err := s.DB.W.BeginTx(ctx, nil)
 	if err != nil {
@@ -302,7 +303,7 @@ func (s *Service) SetPassword(ctx context.Context, id int64, pw string) error {
 		return err
 	}
 	if u.Method != MethodLocal {
-		return errors.New("this account signs in with Google and has no password")
+		return usererr.New("This account signs in with Google and has no password")
 	}
 	if err := s.CheckPasswordPolicy(pw, u.Email); err != nil {
 		return err
@@ -320,7 +321,7 @@ func (s *Service) SetTheme(ctx context.Context, id int64, theme string) error {
 	switch theme {
 	case "system", "light", "dark":
 	default:
-		return fmt.Errorf("unknown theme %q", theme)
+		return usererr.New(fmt.Sprintf("Unknown theme %q", theme))
 	}
 	_, err := s.DB.W.ExecContext(ctx, "UPDATE users SET theme = ? WHERE id = ?", theme, id)
 	return err

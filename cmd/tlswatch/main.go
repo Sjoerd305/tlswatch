@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"syscall"
@@ -31,8 +32,39 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/web"
 )
 
-// version is set at build time with -ldflags "-X main.version=v0.1.0".
+// version is set at build time with -ldflags "-X main.version=v0.1.0";
+// without it, init takes the VCS revision Go recorded in the binary.
 var version = "dev"
+
+func init() {
+	if version != "dev" {
+		return
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return
+	}
+	var rev string
+	var modified bool
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev = s.Value
+		case "vcs.modified":
+			modified = s.Value == "true"
+		}
+	}
+	if len(rev) >= 12 {
+		version = rev[:12]
+		if modified {
+			version += "-dirty"
+		}
+	}
+}
+
+// devAssets reports a build whose embedded files may change without the
+// version changing, so the browser must not cache them for good.
+func devAssets() bool { return version == "dev" || strings.HasSuffix(version, "-dirty") }
 
 const usage = `tlswatch monitors the TLS certificates served on your endpoints.
 
@@ -188,7 +220,7 @@ func serve(args []string) error {
 	}
 
 	srv := &web.Server{Core: a.core, Sched: a.sched, Auth: a.auth, Settings: a.settings, Dispatch: a.dispatch,
-		Log: a.log, Version: version, Listen: a.boot.Listen}
+		Log: a.log, Version: version, DevAssets: devAssets(), Listen: a.boot.Listen}
 	h, err := srv.Handler()
 	if err != nil {
 		return err

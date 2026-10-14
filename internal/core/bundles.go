@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/sjoerd305/tlswatch/internal/probe"
+	"github.com/sjoerd305/tlswatch/internal/usererr"
 )
 
 // Bundle is an uploaded set of private roots and intermediates.
@@ -42,22 +43,22 @@ func ParseBundle(data string) ([]*x509.Certificate, error) {
 			break
 		}
 		if strings.Contains(b.Type, "PRIVATE KEY") {
-			return nil, &InputError{"The bundle contains a private key; upload only certificates"}
+			return nil, usererr.New("The bundle contains a private key; upload only certificates")
 		}
 		if b.Type != "CERTIFICATE" {
 			continue
 		}
 		c, err := x509.ParseCertificate(b.Bytes)
 		if err != nil {
-			return nil, &InputError{"A certificate in the bundle could not be parsed: " + err.Error()}
+			return nil, usererr.New("A certificate in the bundle could not be parsed: " + err.Error())
 		}
 		certs = append(certs, c)
 	}
 	if strings.Contains(string(rest), "PRIVATE KEY") {
-		return nil, &InputError{"The bundle contains a private key; upload only certificates"}
+		return nil, usererr.New("The bundle contains a private key; upload only certificates")
 	}
 	if len(certs) == 0 {
-		return nil, &InputError{"No PEM certificates found"}
+		return nil, usererr.New("No PEM certificates found")
 	}
 	return certs, nil
 }
@@ -89,7 +90,7 @@ func (s *Service) Bundles(ctx context.Context) ([]Bundle, error) {
 func (s *Service) SaveBundle(ctx context.Context, id int64, name, data string) (int64, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return 0, &InputError{"Name is required"}
+		return 0, usererr.New("Name is required")
 	}
 	certs, err := ParseBundle(data)
 	if err != nil {
@@ -122,13 +123,13 @@ func (s *Service) SaveBundle(ctx context.Context, id int64, name, data string) (
 
 func uniqueBundle(err error) error {
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
-		return &InputError{"A bundle with this name already exists"}
+		return usererr.New("A bundle with this name already exists")
 	}
 	return err
 }
 
 // ErrBundleInUse is returned when deleting a bundle that targets use.
-var ErrBundleInUse = &InputError{"The bundle is used by targets; switch them to another trust mode first"}
+var ErrBundleInUse = usererr.New("The bundle is used by targets; switch them to another trust mode first")
 
 // DeleteBundle removes a bundle; it refuses while targets use it. The check
 // and the delete are one statement, so a target saved meanwhile cannot be

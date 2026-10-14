@@ -242,7 +242,7 @@ func (s *Scheduler) run(ctx context.Context, id int64, done chan struct{}) {
 	case errors.Is(err, core.ErrStale):
 		// Edited or disabled meanwhile; the reload picks up the new slot.
 		s.Log.Info("check discarded: target changed during the check", "target_id", id, "target", t.Name)
-		err = nil
+		t, err = core.Target{}, nil // t is from before the change: requeue reads it again
 	case err != nil && ctx.Err() == nil && !errors.Is(err, core.ErrNotFound):
 		s.Log.Error("check failed", "target_id", id, "target", t.Name, "err", err)
 	}
@@ -254,7 +254,7 @@ func (s *Scheduler) run(ctx context.Context, id int64, done chan struct{}) {
 	if ctx.Err() != nil {
 		return
 	}
-	s.requeue(ctx, id, err)
+	s.requeue(ctx, id, t, err)
 	signal(s.wake)
 }
 
@@ -273,10 +273,16 @@ func retryDelay(n int) time.Duration {
 
 // requeue puts a target back after a check: at the slot the check stored,
 // or, when the check could not be stored (the slot did not move), after a
-// growing delay so a persistent error does not re-probe in a loop.
-func (s *Scheduler) requeue(ctx context.Context, id int64, checkErr error) {
-	t, err := s.Core.Target(ctx, id)
-	if err != nil || !t.Enabled {
+// growing delay so a persistent error does not re-probe in a loop. After a
+// stored check t is the state check read back; otherwise it is read again.
+func (s *Scheduler) requeue(ctx context.Context, id int64, t core.Target, checkErr error) {
+	if checkErr != nil || t.ID == 0 {
+		var err error
+		if t, err = s.Core.Target(ctx, id); err != nil {
+			return
+		}
+	}
+	if !t.Enabled {
 		return
 	}
 	s.mu.Lock()

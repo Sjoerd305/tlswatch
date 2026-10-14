@@ -136,6 +136,10 @@ func (c CheckSummary) LogAttrs() []any {
 // transitions with their alerts, and the target's new state.
 func (s *Service) Apply(ctx context.Context, t Target, r probe.Result) (CheckSummary, error) {
 	st := s.CurrentSettings(ctx)
+	// Evaluate reads the open findings before the transaction. That is
+	// safe: one target is checked at a time, and applyFindingsTx works from
+	// the findings open inside the transaction, so a finding acknowledged
+	// (resolved) meanwhile is not reopened by being kept.
 	out, err := s.Evaluate(ctx, t, r, st)
 	if err != nil {
 		return CheckSummary{}, err

@@ -24,6 +24,7 @@ import (
 
 	"github.com/sjoerd305/tlswatch/internal/db"
 	"github.com/sjoerd305/tlswatch/internal/secret"
+	"github.com/sjoerd305/tlswatch/internal/usererr"
 )
 
 // Bootstrap is the configuration needed to open the database.
@@ -341,7 +342,7 @@ func (s *Store) open(v string) ([]byte, error) {
 // SaveGeneral stores the general settings.
 func (s *Store) SaveGeneral(ctx context.Context, g General) error {
 	if err := g.Validate(); err != nil {
-		return err
+		return usererr.Wrap(err)
 	}
 	g.BaseURL = strings.TrimRight(g.BaseURL, "/")
 	return s.save(ctx, keyGeneral, g)
@@ -370,7 +371,7 @@ func (s *Store) SaveSignIn(ctx context.Context, si SignIn, clearSecret bool) err
 // SaveDefaults stores the global defaults.
 func (s *Store) SaveDefaults(ctx context.Context, d Defaults) error {
 	if err := d.Validate(); err != nil {
-		return err
+		return usererr.Wrap(err)
 	}
 	return s.save(ctx, keyDefaults, d)
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/check"
 	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/core"
+	"github.com/sjoerd305/tlswatch/internal/usererr"
 )
 
 type certsData struct {
@@ -475,12 +476,12 @@ func (s *Server) findingAck(w http.ResponseWriter, r *http.Request) {
 	u := user(r)
 	f, err := s.Core.Acknowledge(r.Context(), id, u.DisplayName(), until, comment)
 	if err != nil {
-		var ie *core.InputError
-		if !errors.As(err, &ie) {
+		msg, ok := usererr.Message(err)
+		if !ok {
 			s.failErr(w, r, err, "No such finding.")
 			return
 		}
-		s.back(w, r, fmt.Sprintf("/findings?sel=%d", id), ie.Msg, "crit")
+		s.back(w, r, fmt.Sprintf("/findings?sel=%d", id), msg, "crit")
 		return
 	}
 	s.Core.Audit(r.Context(), u.Email, "finding.ack", fmt.Sprintf("finding %d %s on %s", id, f.Kind, f.HostPort()), ackDetail(until, comment))
@@ -520,9 +521,9 @@ func (s *Server) findingAckBulk(w http.ResponseWriter, r *http.Request) {
 	acked, confirmed, failed := 0, 0, 0
 	for _, id := range ids {
 		f, err := s.Core.Acknowledge(r.Context(), id, u.DisplayName(), until, comment)
-		var ie *core.InputError
+		_, isUser := usererr.Message(err)
 		switch {
-		case errors.Is(err, core.ErrNotFound) || errors.As(err, &ie):
+		case errors.Is(err, core.ErrNotFound) || isUser:
 			failed++ // resolved or gone meanwhile
 			continue
 		case err != nil:

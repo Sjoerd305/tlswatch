@@ -11,6 +11,7 @@ import (
 
 	"github.com/sjoerd305/tlswatch/internal/db"
 	"github.com/sjoerd305/tlswatch/internal/secret"
+	"github.com/sjoerd305/tlswatch/internal/usererr"
 )
 
 // Channel kinds.
@@ -269,7 +270,7 @@ func (s *Channels) Save(ctx context.Context, c Channel) (int64, error) {
 		}
 	}
 	if err := c.Validate(); err != nil {
-		return 0, err
+		return 0, usererr.Wrap(err)
 	}
 	blob, err := s.seal(c)
 	if err != nil {
@@ -301,7 +302,7 @@ func (s *Channels) Delete(ctx context.Context, id int64) error {
 
 func uniqueErr(err error) error {
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
-		return errors.New("A channel with this name already exists")
+		return usererr.New("A channel with this name already exists")
 	}
 	return err
 }

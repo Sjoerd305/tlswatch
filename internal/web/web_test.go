@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -24,6 +25,7 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/probe"
 	"github.com/sjoerd305/tlswatch/internal/sched"
 	"github.com/sjoerd305/tlswatch/internal/secret"
+	"github.com/sjoerd305/tlswatch/internal/usererr"
 	assets "github.com/sjoerd305/tlswatch/web"
 )
 
@@ -358,6 +360,22 @@ func TestMetrics(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q in\n%s", want, body)
 		}
+	}
+}
+
+// A failed save shows the message of an error meant for the user, and turns
+// any other error into a logged 500 instead of showing its text.
+func TestFormError(t *testing.T) {
+	hs := newHarness(t)
+	req := httptest.NewRequest("POST", "/settings/general", nil)
+	rec := httptest.NewRecorder()
+	if msg, ok := hs.srv.formError(rec, req, fmt.Errorf("save: %w", usererr.New("Base URL must be absolute"))); !ok || msg != "Base URL must be absolute" {
+		t.Fatalf("%q %v", msg, ok)
+	}
+	rec = httptest.NewRecorder()
+	if _, ok := hs.srv.formError(rec, req, errors.New("database is locked")); ok || rec.Code != http.StatusInternalServerError ||
+		strings.Contains(rec.Body.String(), "database is locked") {
+		t.Fatalf("%v %d %s", ok, rec.Code, rec.Body.String())
 	}
 }
 

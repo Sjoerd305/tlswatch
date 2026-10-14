@@ -168,7 +168,7 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 			s.back(w, r, "/login", "tlswatch is already set up. Sign in.", "info")
 			return
 		default:
-			d.Error = userError(err)
+			d.Error = s.userError(r, err)
 		}
 	}
 	s.renderStatus(w, r, http.StatusBadRequest, "setup", &Page{Title: "Set up tlswatch", Data: d})

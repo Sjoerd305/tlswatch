@@ -26,6 +26,7 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/core"
 	"github.com/sjoerd305/tlswatch/internal/notify"
 	"github.com/sjoerd305/tlswatch/internal/sched"
+	"github.com/sjoerd305/tlswatch/internal/usererr"
 	assets "github.com/sjoerd305/tlswatch/web"
 )
 
@@ -38,8 +39,11 @@ type Server struct {
 	Dispatch *notify.Dispatcher
 	Log      *slog.Logger
 	Version  string
-	Listen   string
-	Now      func() time.Time
+	// DevAssets serves the static files uncached: a development build can
+	// change them without changing Version.
+	DevAssets bool
+	Listen    string
+	Now       func() time.Time
 
 	pages  map[string]*template.Template
 	static http.Handler
@@ -92,7 +96,7 @@ func (s *Server) Handler() (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.static = staticHandler(http.FileServer(http.FS(static)), assetVersion(s.Version), s.Version == "dev")
+	s.static = staticHandler(http.FileServer(http.FS(static)), assetVersion(s.Version), s.DevAssets)
 	mux := http.NewServeMux()
 	s.routes(mux)
 	return s.middleware(mux), nil
@@ -396,14 +400,15 @@ func (s *Server) serverError(w http.ResponseWriter, r *http.Request, err error) 
 }
 
 // failErr answers an error from core: 404 with notFound for ErrNotFound,
-// 400 with the message for an InputError, and a logged 500 otherwise.
+// 400 with the message for an error meant for the user (usererr), and a
+// logged 500 otherwise.
 func (s *Server) failErr(w http.ResponseWriter, r *http.Request, err error, notFound string) {
-	var ie *core.InputError
+	msg, isUser := usererr.Message(err)
 	switch {
 	case errors.Is(err, core.ErrNotFound):
 		s.fail(w, r, http.StatusNotFound, notFound)
-	case errors.As(err, &ie):
-		s.fail(w, r, http.StatusBadRequest, ie.Msg)
+	case isUser:
+		s.fail(w, r, http.StatusBadRequest, msg)
 	default:
 		s.serverError(w, r, err)
 	}

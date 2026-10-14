@@ -177,7 +177,7 @@ func TestFailedCheckBacksOff(t *testing.T) {
 	s.init()
 	fail := errors.New("disk full")
 	for n, want := range []time.Duration{time.Minute, 2 * time.Minute, 4 * time.Minute} {
-		s.requeue(ctx, 1, fail)
+		s.requeue(ctx, 1, core.Target{}, fail)
 		if got := s.nextOf(1) - time.Now().Unix(); got < int64(want/time.Second)-1 || got > int64(want/time.Second) {
 			t.Fatalf("failure %d: retry in %d s, want %v", n+1, got, want)
 		}
@@ -186,7 +186,7 @@ func TestFailedCheckBacksOff(t *testing.T) {
 		t.Fatal("retry delay not capped")
 	}
 	tg, _ := c.Target(ctx, 1)
-	s.requeue(ctx, 1, nil)
+	s.requeue(ctx, 1, tg, nil)
 	if s.nextOf(1) != tg.NextCheck || s.fails[1] != 0 {
 		t.Fatalf("success did not restore the slot: %d", s.nextOf(1))
 	}
@@ -232,5 +232,30 @@ func TestCheckSoon(t *testing.T) {
 	}
 	if n := atomic.LoadInt64(calls); n != 2 {
 		t.Fatalf("CheckSoon did not run the target: %d checks", n)
+	}
+}
+
+// A target disabled while it is probed is discarded and not queued again.
+func TestDisabledDuringCheckIsNotRequeued(t *testing.T) {
+	s, c, _ := setup(t, 1)
+	ctx := context.Background()
+	s.init()
+	s.Probe = func(_ context.Context, req probe.Request) probe.Result {
+		if err := c.SetEnabled(ctx, 1, false); err != nil {
+			t.Error(err)
+		}
+		return probe.Result{Host: req.Host, Port: req.Port, DNSError: "no such host"}
+	}
+	s.mu.Lock()
+	s.inflight[1] = make(chan struct{})
+	s.running++
+	done := s.inflight[1]
+	s.mu.Unlock()
+	s.run(ctx, 1, done)
+	if n := s.nextOf(1); n != -1 {
+		t.Fatalf("disabled target queued at %d", n)
+	}
+	if tg, _ := c.Target(ctx, 1); tg.LastCheck != 0 {
+		t.Fatal("check of a disabled target stored")
 	}
 }
