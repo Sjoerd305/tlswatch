@@ -107,7 +107,7 @@
   <div class="timeline">
   {{- if $f.ResolvedAt}}<div class="ev"><span class="when">{{whenTime $p.Loc $p.Now $f.ResolvedAt}}</span><span>resolved{{if and $f.AckAt (eq $f.ResolvedAt $f.AckAt)}} by {{$f.AckBy}}{{end}}</span></div>{{end}}
   {{- range $d.Alerts}}
-    <div class="ev"><span class="when">{{whenTime $p.Loc $p.Now .CreatedAt}}</span><span>{{template "event-label" .Event}} · {{.Channel}} · <span class="st sm {{if eq .State "sent"}}ok{{else if eq .State "failed"}}crit{{else}}off{{end}}">{{if eq .State "pending"}}{{if .Attempts}}retrying{{else}}queued{{end}}{{else}}{{.State}}{{end}}</span>{{if .Error}} <span class="muted">{{.Error}}</span>{{end}}</span></div>
+    <div class="ev"><span class="when">{{whenTime $p.Loc $p.Now .CreatedAt}}</span><span>{{template "event-label" .Event}} · {{.Channel}} · <span class="st sm {{if eq .State "sent"}}ok{{else if eq .State "failed"}}crit{{else}}off{{end}}"{{if .Ref}} title="Message-ID &lt;{{.Ref}}@tlswatch&gt;"{{end}}>{{if eq .State "pending"}}{{if .Attempts}}retrying{{else}}queued{{end}}{{else}}{{.State}}{{end}}</span>{{if .Error}} <span class="muted">{{.Error}}</span>{{end}}</span></div>
   {{- end}}
   {{- if and $f.AckAt (ne $f.ResolvedAt $f.AckAt)}}<div class="ev"><span class="when">{{whenTime $p.Loc $p.Now $f.AckAt}}</span><span>acknowledged by {{$f.AckBy}}</span></div>{{end}}
     <div class="ev"><span class="when">{{whenTime $p.Loc $p.Now $f.OpenedAt}}</span><span>opened as {{$f.Severity}}</span></div>

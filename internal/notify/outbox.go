@@ -160,6 +160,7 @@ func (d *Dispatcher) Flush(ctx context.Context) error {
 }
 
 func (d *Dispatcher) deliver(ctx context.Context, chID int64, delivered string, ps []pending) {
+	ref := NewRef()
 	c, err := d.Channels.Get(ctx, chID)
 	var sendErr error
 	switch {
@@ -177,6 +178,7 @@ func (d *Dispatcher) deliver(ctx context.Context, chID int64, delivered string, 
 			link = d.Link(ctx)
 		}
 		m := Combine(msgs, link)
+		m.Ref = ref
 		sender := c.Sender()
 		if d.Senders != nil {
 			sender = d.Senders(c)
@@ -206,7 +208,7 @@ func (d *Dispatcher) deliver(ctx context.Context, chID int64, delivered string, 
 	for _, p := range ps {
 		ids = append(ids, p.id)
 		if sendErr == nil {
-			_, err = d.DB.W.ExecContext(ctx, "UPDATE alerts SET state='sent', sent_at=?, attempts=attempts+1, error='' WHERE id=?", now.Unix(), p.id)
+			_, err = d.DB.W.ExecContext(ctx, "UPDATE alerts SET state='sent', sent_at=?, attempts=attempts+1, error='', ref=? WHERE id=?", now.Unix(), ref, p.id)
 		} else {
 			n := p.attempts + 1
 			next := now.Add(max(backoff(n), wait))
@@ -222,7 +224,7 @@ func (d *Dispatcher) deliver(ctx context.Context, chID int64, delivered string, 
 			d.Log.Error("update alert", "id", p.id, "err", err)
 		}
 	}
-	log := d.Log.With("channel_id", chID, "channel", c.Name, "alerts", ids)
+	log := d.Log.With("channel_id", chID, "channel", c.Name, "alerts", ids, "ref", ref)
 	switch {
 	case sendErr == nil:
 		log.Info("alert delivered")
@@ -256,6 +258,7 @@ func (d *Dispatcher) SendTest(ctx context.Context, chID int64, link string) erro
 		return err
 	}
 	m := TestMessage(c.Name, link)
+	m.Ref = NewRef()
 	sender := c.Sender()
 	if d.Senders != nil {
 		sender = d.Senders(c)
@@ -273,8 +276,8 @@ func (d *Dispatcher) SendTest(ctx context.Context, chID int64, link string) erro
 	if state == "sent" {
 		sent = now
 	}
-	_, err = d.DB.W.ExecContext(ctx, `INSERT INTO alerts(channel_id, event, created_at, state, attempts, next_attempt, sent_at, error, subject, body)
-		VALUES(?, 'test', ?, ?, 1, ?, ?, ?, ?, ?)`, chID, now, state, now, sent, msg, m.Subject, m.Body)
+	_, err = d.DB.W.ExecContext(ctx, `INSERT INTO alerts(channel_id, event, created_at, state, attempts, next_attempt, sent_at, error, subject, body, ref)
+		VALUES(?, 'test', ?, ?, 1, ?, ?, ?, ?, ?, ?)`, chID, now, state, now, sent, msg, m.Subject, m.Body, m.Ref)
 	if sendErr != nil {
 		return sendErr
 	}

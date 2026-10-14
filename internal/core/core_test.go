@@ -508,6 +508,12 @@ func TestBatchCollapsesPerChannel(t *testing.T) {
 	if !strings.Contains(mail[0].Subject, "60 alerts") || !strings.Contains(mail[0].Body, "and 10 more") {
 		t.Fatalf("collapsed: %s\n%s", mail[0].Subject, mail[0].Body)
 	}
+	// Every alert of the batch records the reference the message went out under.
+	var refs, n int
+	_ = e.svc.DB.R.QueryRow("SELECT COUNT(DISTINCT ref), COUNT(*) FROM alerts WHERE channel_id = ? AND ref = ?", e.chW, mail[0].Ref).Scan(&refs, &n)
+	if mail[0].Ref == "" || refs != 1 || n != 60 {
+		t.Fatalf("ref %q on %d alerts", mail[0].Ref, n)
+	}
 }
 
 func TestRetryBackoffAndFailure(t *testing.T) {

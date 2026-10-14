@@ -156,7 +156,7 @@ func TestSMTPStartTLSPlainAuth(t *testing.T) {
 	s := settings(port, "starttls")
 	s.Username, s.Password = "user", "s3cret"
 	snd := &SMTPSender{S: s, RootCAs: pool, Timeout: 5 * time.Second}
-	err := snd.Send(context.Background(), Message{Subject: "[critical] portal.example.nl:443 expires in 6 days", Body: "line one\nline two"})
+	err := snd.Send(context.Background(), Message{Subject: "[critical] portal.example.nl:443 expires in 6 days", Body: "line one\nline two", Ref: "0a1b2c"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestSMTPStartTLSPlainAuth(t *testing.T) {
 	if !strings.HasPrefix(c.from, "<tlswatch@example.nl>") || len(c.rcpt) != 2 || c.rcpt[1] != "<noc@example.nl>" {
 		t.Fatalf("envelope %q %q", c.from, c.rcpt)
 	}
-	for _, want := range []string{"Subject: [critical] portal.example.nl:443 expires in 6 days\r\n", "Auto-Submitted: auto-generated", "Content-Transfer-Encoding: quoted-printable", "line one\r\nline two", "Message-ID: <"} {
+	for _, want := range []string{"Subject: [critical] portal.example.nl:443 expires in 6 days\r\n", "Auto-Submitted: auto-generated", "Content-Transfer-Encoding: quoted-printable", "line one\r\nline two", "Message-ID: <0a1b2c@tlswatch>"} {
 		if !strings.Contains(c.data, want) {
 			t.Errorf("message lacks %q:\n%s", want, c.data)
 		}

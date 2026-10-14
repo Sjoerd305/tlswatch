@@ -2,6 +2,8 @@ package notify
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"strings"
 	"time"
 )
@@ -10,6 +12,16 @@ import (
 type Message struct {
 	Subject string
 	Body    string
+	// Ref identifies this delivery; SMTP sends it as the Message-ID so
+	// the relay's logs can be matched with the alert log. Empty: random.
+	Ref string
+}
+
+// NewRef returns a random delivery reference.
+func NewRef() string {
+	var b [12]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
 }
 
 // Sender delivers a message over one transport.

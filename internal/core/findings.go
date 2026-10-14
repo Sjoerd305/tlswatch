@@ -127,11 +127,12 @@ type AlertEntry struct {
 	Error       string
 	Subject     string
 	NextAttempt int64
+	Ref         string // the SMTP Message-ID it went out under
 }
 
 // Alerts returns the alert log of a finding or of all findings of a target.
 func (s *Service) Alerts(ctx context.Context, findingID, targetID int64, limit int) ([]AlertEntry, error) {
-	q := `SELECT a.id, COALESCE(a.finding_id, 0), c.name, a.event, a.created_at, a.state, a.attempts, a.sent_at, a.error, a.subject, a.next_attempt
+	q := `SELECT a.id, COALESCE(a.finding_id, 0), c.name, a.event, a.created_at, a.state, a.attempts, a.sent_at, a.error, a.subject, a.next_attempt, a.ref
 		FROM alerts a JOIN channels c ON c.id = a.channel_id `
 	var arg int64
 	if findingID != 0 {
@@ -150,7 +151,7 @@ func (s *Service) Alerts(ctx context.Context, findingID, targetID int64, limit i
 	var out []AlertEntry
 	for rows.Next() {
 		var a AlertEntry
-		if err := rows.Scan(&a.ID, &a.FindingID, &a.Channel, &a.Event, &a.CreatedAt, &a.State, &a.Attempts, &a.SentAt, &a.Error, &a.Subject, &a.NextAttempt); err != nil {
+		if err := rows.Scan(&a.ID, &a.FindingID, &a.Channel, &a.Event, &a.CreatedAt, &a.State, &a.Attempts, &a.SentAt, &a.Error, &a.Subject, &a.NextAttempt, &a.Ref); err != nil {
 			return nil, err
 		}
 		out = append(out, a)

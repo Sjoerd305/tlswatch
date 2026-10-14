@@ -3,10 +3,8 @@ package notify
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"mime"
@@ -195,15 +193,17 @@ func (s *SMTPSender) send(ctx context.Context, m Message) error {
 }
 
 func buildMessage(from string, to []string, m Message, now time.Time) []byte {
-	var id [12]byte
-	_, _ = rand.Read(id[:])
+	ref := m.Ref
+	if ref == "" {
+		ref = NewRef()
+	}
 	var b bytes.Buffer
 	h := func(k, v string) { b.WriteString(k + ": " + v + "\r\n") }
 	h("From", from)
 	h("To", strings.Join(to, ", "))
 	h("Subject", mime.QEncoding.Encode("utf-8", strings.NewReplacer("\r", " ", "\n", " ").Replace(m.Subject)))
 	h("Date", now.Format(time.RFC1123Z))
-	h("Message-ID", "<"+hex.EncodeToString(id[:])+"@tlswatch>")
+	h("Message-ID", "<"+ref+"@tlswatch>")
 	h("MIME-Version", "1.0")
 	h("Content-Type", "text/plain; charset=utf-8")
 	h("Content-Transfer-Encoding", "quoted-printable")
