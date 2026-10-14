@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"errors"
 	"io"
 	"log/slog"
 	"math/big"
@@ -565,6 +566,39 @@ func TestUnreadableChannelDoesNotStopChecks(t *testing.T) {
 		if ch.ID == e.chC && (ch.Unreadable == "" || ch.LastState != "retrying" || !strings.Contains(ch.LastError, "decrypt")) {
 			t.Fatalf("unreadable channel: %+v", ch)
 		}
+	}
+}
+
+// A probe result for a target disabled or moved to another endpoint while
+// it was being probed is discarded.
+func TestApplyDiscardsStaleTarget(t *testing.T) {
+	e := newEnv(t)
+	ca := newCA(t, "Sectigo")
+	now := e.clock.Now()
+	expiring := result(served("192.0.2.1", ca.leaf(t, now.Add(-days(360)), now.Add(days(3)), "portal.example.nl"), ca.cert))
+
+	tg := e.target(nil)
+	if err := e.svc.SetEnabled(e.ctx, tg.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.svc.Apply(e.ctx, tg, expiring); !errors.Is(err, ErrStale) {
+		t.Fatalf("disabled meanwhile: %v", err)
+	}
+	if len(e.open(tg.ID)) != 0 {
+		t.Fatal("findings opened on a disabled target")
+	}
+
+	tg = e.target(func(t *Target) { t.Port = 8443 })
+	moved := tg
+	moved.Host = "new.example.nl"
+	if _, err := e.svc.SaveTarget(e.ctx, moved, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.svc.Apply(e.ctx, tg, expiring); !errors.Is(err, ErrStale) {
+		t.Fatalf("host changed meanwhile: %v", err)
+	}
+	if got, _ := e.svc.Target(e.ctx, tg.ID); got.CurrentFP != "" {
+		t.Fatal("old endpoint's certificate stored as current")
 	}
 }
 

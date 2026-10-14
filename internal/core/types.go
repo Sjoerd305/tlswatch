@@ -23,6 +23,11 @@ import (
 // ErrNotFound is returned for unknown IDs.
 var ErrNotFound = errors.New("not found")
 
+// ErrStale is returned by Apply when the target was disabled, or its
+// endpoint or trust changed, while it was being probed; the result is
+// discarded.
+var ErrStale = errors.New("target changed during the check")
+
 // Target statuses.
 const (
 	StatusPending     = "pending"

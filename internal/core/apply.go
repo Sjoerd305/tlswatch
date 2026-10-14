@@ -189,6 +189,9 @@ func (s *Service) Apply(ctx context.Context, t Target, r probe.Result) error {
 		return err
 	}
 	defer tx.Rollback()
+	if err := unchangedTx(ctx, tx, t); err != nil {
+		return err
+	}
 
 	// Certificates and observations.
 	for _, a := range r.Addresses {
@@ -394,6 +397,30 @@ func (s *Service) Apply(ctx context.Context, t Target, r probe.Result) error {
 	}
 	if alerts > 0 {
 		s.wake()
+	}
+	return nil
+}
+
+// unchangedTx returns ErrStale when the target was disabled or edited since
+// t was read, so a probe that ran meanwhile cannot reopen the findings that
+// disabling resolved, or store the old endpoint's certificate as current.
+func unchangedTx(ctx context.Context, tx *sql.Tx, t Target) error {
+	var enabled bool
+	var host, protocol, sni, trust string
+	var port int
+	var bundle sql.NullInt64
+	var updated int64
+	err := tx.QueryRowContext(ctx, "SELECT enabled, host, port, protocol, servername, trust_mode, bundle_id, updated_at FROM targets WHERE id = ?", t.ID).
+		Scan(&enabled, &host, &port, &protocol, &sni, &trust, &bundle, &updated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if !enabled || updated != t.UpdatedAt || host != t.Host || port != t.Port || protocol != string(t.Protocol) ||
+		sni != t.ServerName || trust != string(t.Trust) || bundle.Int64 != t.BundleID {
+		return ErrStale
 	}
 	return nil
 }

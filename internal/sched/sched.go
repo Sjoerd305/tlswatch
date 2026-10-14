@@ -224,7 +224,12 @@ func (s *Scheduler) dispatch(ctx context.Context) {
 
 func (s *Scheduler) run(ctx context.Context, id int64, done chan struct{}) {
 	t, err := s.check(ctx, id)
-	if err != nil && ctx.Err() == nil && !errors.Is(err, core.ErrNotFound) {
+	switch {
+	case errors.Is(err, core.ErrStale):
+		// Edited or disabled meanwhile; the reload picks up the new slot.
+		s.Log.Info("check discarded: target changed during the check", "target_id", id, "target", t.Name)
+		err = nil
+	case err != nil && ctx.Err() == nil && !errors.Is(err, core.ErrNotFound):
 		s.Log.Error("check failed", "target_id", id, "target", t.Name, "err", err)
 	}
 	s.mu.Lock()
@@ -349,6 +354,9 @@ func (s *Scheduler) CheckNow(ctx context.Context, id int64) (core.Target, error)
 		close(done)
 	}()
 	t, err := s.check(ctx, id)
+	if errors.Is(err, core.ErrStale) {
+		return s.Core.Target(ctx, id) // edited meanwhile; it is checked again soon
+	}
 	if err == nil && t.Enabled {
 		s.mu.Lock()
 		delete(s.fails, id)
