@@ -885,6 +885,37 @@ func TestMetrics(t *testing.T) {
 	}
 }
 
+// The overview counts with aggregate queries and lists the eight enabled
+// targets expiring first.
+func TestOverview(t *testing.T) {
+	e := newEnv(t)
+	ca := newCA(t, "Sectigo")
+	now := e.clock.Now()
+	for i := 0; i < 10; i++ {
+		tg := e.target(func(t *Target) { t.Port = 1000 + i })
+		c := ca.leaf(t, now.Add(-days(300)), now.Add(days(float64(5+20*i))), "portal.example.nl")
+		e.apply(tg.ID, result(served("192.0.2.1", c, ca.cert)))
+	}
+	disabled := e.target(func(t *Target) { t.Port = 2000 })
+	if err := e.svc.SetEnabled(e.ctx, disabled.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	o, err := e.svc.Overview(e.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Days left 5, 25, 45 … : 5 critical, 25 warning, the rest healthy.
+	if o.Total != 11 || o.Critical != 1 || o.Warning != 1 || o.Healthy != 8 || o.Disabled != 1 || o.DueWithin30 != 2 {
+		t.Fatalf("counts: total %d crit %d warn %d healthy %d disabled %d due %d", o.Total, o.Critical, o.Warning, o.Healthy, o.Disabled, o.DueWithin30)
+	}
+	if len(o.Targets) != 8 || o.Targets[0].Port != 1000 || o.Targets[7].Port != 1007 || o.Targets[0].Cert == nil {
+		t.Fatalf("listed: %d, first %d", len(o.Targets), o.Targets[0].Port)
+	}
+	if o.LastCheck == 0 || o.NextCheck == 0 {
+		t.Fatalf("times: %d %d", o.LastCheck, o.NextCheck)
+	}
+}
+
 func TestParseBundleRejectsKeys(t *testing.T) {
 	if _, err := ParseBundle("-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n"); err == nil {
 		t.Fatal("private key accepted")

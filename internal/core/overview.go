@@ -5,8 +5,6 @@ import (
 	"errors"
 	"strconv"
 	"time"
-
-	"github.com/sjoerd305/tlswatch/internal/check"
 )
 
 // NavCounts are the live counts in the navigation.
@@ -74,52 +72,57 @@ type Overview struct {
 	MinWarn     int
 }
 
-// Overview gathers the home screen.
+// Overview gathers the home screen: counts from aggregate queries, and
+// only the eight targets it lists.
 func (s *Service) Overview(ctx context.Context) (Overview, error) {
 	var o Overview
-	ts, err := s.Targets(ctx)
+	now := s.now()
+	o.MinWarn = s.CurrentSettings(ctx).Defaults.Manual.WarnDays
+	rows, err := s.DB.R.QueryContext(ctx, "SELECT status, COUNT(*) FROM targets GROUP BY status")
 	if err != nil {
 		return o, err
 	}
-	now := s.now()
-	st := s.CurrentSettings(ctx)
-	o.MinWarn = st.Defaults.Manual.WarnDays
-	o.Total = len(ts)
-	for _, t := range ts {
-		switch t.Status {
+	for rows.Next() {
+		var status string
+		var n int
+		if err := rows.Scan(&status, &n); err != nil {
+			rows.Close()
+			return o, err
+		}
+		o.Total += n
+		switch status {
 		case StatusCritical:
-			o.Critical++
+			o.Critical = n
 		case StatusWarning:
-			o.Warning++
+			o.Warning += n
 		case StatusChanged:
-			o.Warning++
-			o.Changed++
+			o.Warning += n
+			o.Changed = n
 		case StatusHealthy:
-			o.Healthy++
+			o.Healthy = n
 		case StatusUnreachable:
-			o.Unreachable++
+			o.Unreachable = n
 		case StatusDisabled:
-			o.Disabled++
+			o.Disabled = n
 		case StatusPending:
-			o.Pending++
-		}
-		if t.Enabled && t.NotAfter > 0 {
-			if d := check.DaysLeft(time.Unix(t.NotAfter, 0), now); d < 30 {
-				o.DueWithin30++
-			}
-		}
-		if t.LastCheck > o.LastCheck {
-			o.LastCheck = t.LastCheck
-		}
-		if t.Enabled && t.NextCheck > 0 && (o.NextCheck == 0 || t.NextCheck < o.NextCheck) {
-			o.NextCheck = t.NextCheck
-		}
-		if t.Enabled && t.Cert != nil {
-			o.Targets = append(o.Targets, t)
+			o.Pending = n
 		}
 	}
-	if len(o.Targets) > 8 {
-		o.Targets = o.Targets[:8]
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return o, err
+	}
+	// Fewer than 30 whole days left (check.DaysLeft) is less than 30 days.
+	err = s.DB.R.QueryRowContext(ctx, `SELECT
+		COALESCE(SUM(enabled = 1 AND not_after > 0 AND not_after < ?), 0),
+		COALESCE(MAX(last_check), 0),
+		COALESCE(MIN(CASE WHEN enabled = 1 AND next_check > 0 THEN next_check END), 0)
+		FROM targets`, now.Add(30*24*time.Hour).Unix()).Scan(&o.DueWithin30, &o.LastCheck, &o.NextCheck)
+	if err != nil {
+		return o, err
+	}
+	if o.Targets, err = s.queryTargets(ctx, "t.enabled = 1 AND t.current_fp IN (SELECT fingerprint FROM certificates)", 8); err != nil {
+		return o, err
 	}
 	if o.Open, err = s.Findings(ctx, FindingFilter{Limit: 8}); err != nil {
 		return o, err

@@ -47,44 +47,67 @@ func scanTarget(r interface{ Scan(...any) error }) (Target, error) {
 // Targets returns every target with its current certificate, sorted by
 // expiry (unknown and disabled last).
 func (s *Service) Targets(ctx context.Context) ([]Target, error) {
-	rows, err := s.DB.R.QueryContext(ctx, "SELECT "+targetCols+targetFrom+
-		" ORDER BY t.enabled DESC, CASE WHEN t.not_after = 0 THEN 1 ELSE 0 END, t.not_after, t.name")
+	return s.queryTargets(ctx, "", 0)
+}
+
+// targetOrder sorts by expiry, unknown and disabled last.
+const targetOrder = " ORDER BY t.enabled DESC, CASE WHEN t.not_after = 0 THEN 1 ELSE 0 END, t.not_after, t.name"
+
+// queryTargets returns the targets matching where (empty: all) in
+// targetOrder, at most limit (0: all), with their current certificates.
+func (s *Service) queryTargets(ctx context.Context, where string, limit int, args ...any) ([]Target, error) {
+	q := "SELECT " + targetCols + targetFrom
+	if where != "" {
+		q += " WHERE " + where
+	}
+	q += targetOrder
+	if limit > 0 {
+		q += fmt.Sprintf(" LIMIT %d", limit)
+	}
+	rows, err := s.DB.R.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []Target
+	var fps []any
 	for rows.Next() {
 		t, err := scanTarget(rows)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, t)
+		if t.CurrentFP != "" {
+			fps = append(fps, t.CurrentFP)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	rows.Close()
-	certs, err := s.currentCerts(ctx)
+	certs, err := s.certificatesByFP(ctx, fps)
 	if err != nil {
 		return nil, err
 	}
 	for i := range out {
 		if c, ok := certs[out[i].CurrentFP]; ok {
-			cc := c
-			out[i].Cert = &cc
+			out[i].Cert = &c
 		}
 	}
 	return out, nil
 }
 
-func (s *Service) currentCerts(ctx context.Context) (map[string]Certificate, error) {
-	rows, err := s.DB.R.QueryContext(ctx, "SELECT "+certListCols+" FROM certificates WHERE fingerprint IN (SELECT current_fp FROM targets)")
+// certificatesByFP loads the given certificates (without PEM).
+func (s *Service) certificatesByFP(ctx context.Context, fps []any) (map[string]Certificate, error) {
+	m := map[string]Certificate{}
+	if len(fps) == 0 {
+		return m, nil
+	}
+	rows, err := s.DB.R.QueryContext(ctx, "SELECT "+certListCols+" FROM certificates WHERE fingerprint IN (?"+strings.Repeat(",?", len(fps)-1)+")", fps...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	m := map[string]Certificate{}
 	for rows.Next() {
 		c, err := scanCert(rows)
 		if err != nil {
