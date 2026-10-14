@@ -2,20 +2,36 @@
 <div class="page-head">
   <div><h1>Findings</h1><span class="summary">{{$d.OpenCount}} open{{if $d.AckCount}} · {{$d.AckCount}} acknowledged{{end}} · {{$d.ResCount}} resolved in the last {{$d.Retention}} days</span></div>
 </div>
-<div class="row">
+<form class="row" method="get" action="/findings" role="search" data-keep-filter="state sev kind target sel">
+  {{- if $d.Resolved}}<input type="hidden" name="state" value="resolved">{{end}}
+  {{- with $d.Target}}<input type="hidden" name="target" value="{{.ID}}">{{end}}
+  <div class="filter">{{template "search-icon"}}<input class="input" type="search" name="q" value="{{$d.Query}}" placeholder="Filter: target, host, finding" aria-label="Filter findings" aria-keyshortcuts="/" title="Press / to filter" data-filter="#findings"></div>
+  {{- with $d.Target}}<a class="chip on" href="{{$d.ClearTarget}}" title="Show findings of every target">target: {{.Name}} <span class="x" aria-hidden="true">×</span><span class="sr-only">, remove</span></a>{{end}}
+  <noscript><button type="submit" class="btn btn-xs">Filter</button></noscript>
   <span class="row gap-sm">{{template "chips" $d.State}}</span>
   {{- if or $d.Sev $d.Kinds}}<span class="divider"></span>{{end}}
   <span class="row gap-sm">{{template "sevchips" $d.Sev}}</span>
   <span class="row gap-sm">{{template "chips" $d.Kinds}}</span>
-</div>
+</form>
 <div class="grid-main-side">
   <div class="card clip">
     {{- if $d.Items}}
-    <table class="tbl vtop cards">
-      <thead><tr><th>Sev</th><th>Finding</th><th>Target</th><th>{{if $d.Resolved}}Resolved{{else}}Since{{end}}</th><th>Last alert</th><th>Ack</th><th><span class="sr-only">Actions</span></th></tr></thead>
+    {{- if $d.Bulk}}
+    <form id="bulk-ack" class="bulkbar" method="post" action="/findings/ack" aria-label="Acknowledge selected findings">
+      {{template "csrf" $p.CSRF}}<input type="hidden" name="next" value="{{$d.Next}}" data-follow-url>
+      <span class="strong" data-bulk-count aria-live="polite">Selected findings</span>
+      <label class="sr-only" for="bulk-until">Until</label><input id="bulk-until" name="until" class="input mono w150" type="date" placeholder="YYYY-MM-DD" title="Reminders resume after this date if still open; empty for until resolved">
+      <label class="sr-only" for="bulk-comment">Comment</label><input id="bulk-comment" name="comment" class="input grow" maxlength="2000" placeholder="Comment, e.g. the ticket number">
+      <button type="submit" class="btn btn-primary">Acknowledge</button>
+      <span class="help">Reminders stop until the date, or until resolved when empty. Certificate changes are confirmed and resolved.</span>
+    </form>
+    {{- end}}
+    <table class="tbl vtop cards" id="findings">
+      <thead><tr>{{if $d.Bulk}}<th class="chk"><input type="checkbox" data-select-all="#findings" aria-label="Select all shown findings"></th>{{end}}<th>Sev</th><th>Finding</th><th>Target</th><th>{{if $d.Resolved}}Resolved{{else}}Since{{end}}</th><th>Last alert</th><th>Ack</th><th><span class="sr-only">Actions</span></th></tr></thead>
       <tbody>
       {{- range $d.Items}}{{$acked := .Acked $p.Now}}
-        <tr class="{{if and $d.Sel (eq $d.Sel.F.ID .ID)}}sel{{else if or $acked $d.Resolved}}muted{{end}}">
+        <tr class="{{if and $d.Sel (eq $d.Sel.F.ID .ID)}}sel{{else if or $acked $d.Resolved}}muted{{end}}" data-search="{{.Search}}"{{if .Hidden}} hidden{{end}}>
+          {{- if $d.Bulk}}<td class="chk" data-label=""><label class="rowcheck"><input type="checkbox" name="id" value="{{.ID}}" form="bulk-ack" aria-label="Select {{lower .Kind.Label}} on {{.TargetName}}"></label></td>{{end}}
           <td data-label="Severity"><span class="pill {{.Severity.Class}}">{{.Severity.Short}}</span></td>
           <td data-label="Finding" class="wrap"><div class="strong">{{.Kind.Label}}</div><div class="muted wrap-any">{{.Details}}</div></td>
           <td data-label="Target" class="wrap"><a href="/targets/{{.TargetID}}" class="ink strong">{{.TargetName}}</a><div class="mono small muted">{{.HostPort}}</div></td>
@@ -24,14 +40,17 @@
           <td data-label="Ack" class="nowrap">{{if .AckAt}}<span class="pill off">{{.AckBy}}</span>{{if .AckUntil}}<div class="small">until {{when $p.Loc $p.Now .AckUntil}}</div>{{end}}{{else}}—{{end}}</td>
           <td data-label="">
             {{- $label := "Details"}}{{if and .Open ($p.Can "findings.ack")}}{{if .Kind.AckResolves}}{{$label = "Confirm"}}{{else if .AckAt}}{{$label = "Unack"}}{{else}}{{$label = "Acknowledge"}}{{end}}{{end}}
-            <a href="?{{if $d.Resolved}}state=resolved&amp;{{end}}sel={{.ID}}" class="btn btn-xs{{if and $d.Sel (eq $d.Sel.F.ID .ID)}} btn-primary{{end}}" data-panel="#finding-panel" data-panel-url="/api/v1/findings/{{.ID}}/panel">{{$label}}</a>
+            <a href="{{$d.SelPrefix}}sel={{.ID}}" class="btn btn-xs{{if and $d.Sel (eq $d.Sel.F.ID .ID)}} btn-primary{{end}}" data-row-link data-panel="#finding-panel" data-panel-url="/api/v1/findings/{{.ID}}/panel">{{$label}}</a>
           </td>
         </tr>
       {{- end}}
       </tbody>
     </table>
+    <div class="empty" data-empty-for="#findings"{{if $d.Shown}} hidden{{end}}>No findings match the filter.</div>
     {{- else if $d.Resolved}}
-    <div class="empty">No resolved findings in the last {{$d.Retention}} days.</div>
+    <div class="empty">No resolved findings{{with $d.Target}} on {{.Name}}{{end}} in the last {{$d.Retention}} days.</div>
+    {{- else if $d.Target}}
+    <div class="healthy"><span class="st ok">No open findings</span><span class="muted">{{$d.Target.Name}} passes its checks.</span></div>
     {{- else}}
     <div class="healthy"><span class="st ok">No open findings</span><span class="muted">Every target passes its checks.</span></div>
     {{- end}}

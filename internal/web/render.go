@@ -42,6 +42,9 @@ type Page struct {
 	Data     any
 	// SettingsNav is the active settings sub-page.
 	SettingsNav string
+	// Live pages refresh themselves when Stamp changes on the server.
+	Live  bool
+	Stamp string
 }
 
 // Can reports whether the signed-in user may perform an action.
@@ -96,6 +99,9 @@ func (s *Server) fill(w http.ResponseWriter, r *http.Request, p *Page) {
 			p.Theme = u.Theme
 		}
 		p.Counts = s.Core.Nav(r.Context())
+		if p.Live {
+			p.Stamp, _, _ = s.Core.Stamp(r.Context())
+		}
 		if u.Role == authz.Admin && ri.settings.General.BaseURL == "" {
 			p.Notices = append(p.Notices, Notice{Kind: "info", Text: "Set the public URL under Settings › General so alerts link back to tlswatch."})
 		}

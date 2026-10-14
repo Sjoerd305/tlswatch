@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,6 +25,10 @@ type certsData struct {
 	Issuers []Chip
 	Keys    []Chip
 	Query   string
+	// ShowAll includes certificates no longer served; AllHref toggles it and
+	// keeps the other filters.
+	ShowAll bool
+	AllHref string
 }
 
 type certRow struct {
@@ -50,7 +55,12 @@ func (s *Server) certificates(w http.ResponseWriter, r *http.Request) {
 	win, issuer, key, open := q.Get("window"), q.Get("issuer"), q.Get("key"), q.Get("open")
 	text := strings.ToLower(strings.TrimSpace(q.Get("q")))
 	showAll := q.Get("all") == "1"
-	d := certsData{Query: q.Get("q")}
+	d := certsData{Query: q.Get("q"), ShowAll: showAll}
+	if showAll {
+		d.AllHref = chipHref(r, "all", "")
+	} else {
+		d.AllHref = chipHref(r, "all", "1")
+	}
 	issuers, keys := map[string]int{}, map[string]int{}
 	var w30, w90 int
 	targets := map[int64]bool{}
@@ -121,7 +131,7 @@ func (s *Server) certificates(w http.ResponseWriter, r *http.Request) {
 			cs[i].Href = chipHref(r, cs[i].Key, cs[i].Value)
 		}
 	}
-	s.render(w, r, "certificates", &Page{Title: "Certificates", Nav: "certificates", Data: d})
+	s.render(w, r, "certificates", &Page{Title: "Certificates", Nav: "certificates", Data: d, Live: true})
 }
 
 func sortedChips(key string, m map[string]int, on string) []Chip {
@@ -197,7 +207,7 @@ func (s *Server) certificatePEM(w http.ResponseWriter, r *http.Request) {
 }
 
 type findingsData struct {
-	Items     []core.Finding
+	Items     []findingRow
 	Resolved  bool
 	State     []Chip
 	Sev       []Chip
@@ -207,9 +217,35 @@ type findingsData struct {
 	AckCount  int
 	ResCount  int
 	Retention int
+	Query     string
+	Shown     int
+	// Target narrows the list to one target; ClearTarget is the link without it.
+	Target      *core.Target
+	ClearTarget string
+	// Bulk is true when the rows get checkboxes for bulk acknowledgement.
+	Bulk bool
+	// Next is this list without a selected finding, to return to after a
+	// bulk acknowledgement; SelPrefix starts a link that selects a finding.
+	Next      string
+	SelPrefix string
+}
+
+// findingRow is a row of the findings table.
+type findingRow struct {
+	core.Finding
+	Hidden bool
+}
+
+// Search is the text the live filter matches.
+func (f findingRow) Search() string { return findingSearch(f.Finding) }
+
+func findingSearch(f core.Finding) string {
+	return strings.ToLower(strings.Join([]string{f.Kind.Label(), string(f.Kind), f.Details, f.TargetName, f.HostPort(), f.AckBy}, " "))
 }
 
 type findingPanel struct {
+	// Next is the findings list to return to after acknowledging.
+	Next    string
 	F       core.Finding
 	Alerts  []core.AlertEntry
 	CanAck  bool
@@ -224,17 +260,31 @@ func (s *Server) findings(w http.ResponseWriter, r *http.Request) {
 	st := info(r).settings
 	resolved := q.Get("state") == "resolved"
 	since := s.now().Add(-time.Duration(st.Defaults.RetentionDays) * 24 * time.Hour).Unix()
-	open, err := s.Core.Findings(ctx, core.FindingFilter{})
+	d := findingsData{Resolved: resolved, Retention: st.Defaults.RetentionDays, Query: q.Get("q")}
+	var targetID int64
+	if id, err := strconv.ParseInt(q.Get("target"), 10, 64); err == nil && id > 0 {
+		if t, err := s.Core.Target(ctx, id); err == nil {
+			targetID, d.Target = id, &t
+			d.ClearTarget = findingsHref(r, "target", "", false)
+		}
+	}
+	open, err := s.Core.Findings(ctx, core.FindingFilter{TargetID: targetID})
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
-	done, err := s.Core.Findings(ctx, core.FindingFilter{Resolved: true, Since: since, Limit: 1000})
+	done, err := s.Core.Findings(ctx, core.FindingFilter{TargetID: targetID, Resolved: true, Since: since, Limit: 1000})
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
-	d := findingsData{Resolved: resolved, OpenCount: len(open), ResCount: len(done), Retention: st.Defaults.RetentionDays}
+	d.OpenCount, d.ResCount = len(open), len(done)
+	d.Bulk = !resolved && s.can(r, "findings.ack")
+	d.Next, d.SelPrefix = "/findings", "?"
+	if back := findingsHref(r, "sel", "", false); strings.HasPrefix(back, "?") {
+		d.Next += back
+		d.SelPrefix = back + "&"
+	}
 	now := s.now()
 	for _, f := range open {
 		if f.Acked(now) {
@@ -246,12 +296,19 @@ func (s *Server) findings(w http.ResponseWriter, r *http.Request) {
 		list = done
 	}
 	sev, kind := q.Get("sev"), q.Get("kind")
+	text := strings.ToLower(strings.TrimSpace(d.Query))
 	sevCount, kindCount := map[string]int{}, map[string]int{}
 	for _, f := range list {
 		sevCount[string(f.Severity)]++
 		kindCount[string(f.Kind)]++
 		if (sev == "" || string(f.Severity) == sev) && (kind == "" || string(f.Kind) == kind) {
-			d.Items = append(d.Items, f)
+			// Like the targets list, rows that miss the text filter are
+			// rendered hidden so the live filter can bring them back.
+			row := findingRow{Finding: f, Hidden: text != "" && !strings.Contains(findingSearch(f), text)}
+			if !row.Hidden {
+				d.Shown++
+			}
+			d.Items = append(d.Items, row)
 		}
 	}
 	d.State = []Chip{
@@ -275,10 +332,11 @@ func (s *Server) findings(w http.ResponseWriter, r *http.Request) {
 	}
 	if sel, err := strconv.ParseInt(q.Get("sel"), 10, 64); err == nil && sel > 0 {
 		if p, err := s.findingPanel(r, sel); err == nil {
+			p.Next = d.Next
 			d.Sel = &p
 		}
 	}
-	s.render(w, r, "findings", &Page{Title: "Findings", Nav: "findings", Data: d})
+	s.render(w, r, "findings", &Page{Title: "Findings", Nav: "findings", Data: d, Live: true})
 }
 
 // findingsHref toggles a chip: clicking an active severity or kind chip
@@ -338,6 +396,15 @@ func (s *Server) apiFindingPanel(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusNotFound, "No such finding.")
 		return
 	}
+	// The list the panel was opened from, without the selection.
+	p.Next = "/findings"
+	if next, err := url.Parse(r.URL.Query().Get("next")); err == nil && next.Path == "/findings" {
+		q := next.Query()
+		q.Del("sel")
+		if enc := q.Encode(); enc != "" {
+			p.Next += "?" + enc
+		}
+	}
 	html, err := s.fragment(r, "finding-panel", frag{P: s.fragPage(w, r), Item: p})
 	if err != nil {
 		s.serverError(w, r, err)
@@ -352,14 +419,10 @@ func (s *Server) findingAck(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusNotFound, "No such finding.")
 		return
 	}
-	var until time.Time
-	if v := strings.TrimSpace(r.PostFormValue("until")); v != "" {
-		day, err := time.ParseInLocation("2006-01-02", v, info(r).settings.Location())
-		if err != nil {
-			s.back(w, r, fmt.Sprintf("/findings?sel=%d", id), "Enter the until date as YYYY-MM-DD.", "crit")
-			return
-		}
-		until = day.Add(24*time.Hour - time.Second) // through the end of that day
+	until, ok := s.parseUntil(r)
+	if !ok {
+		s.back(w, r, fmt.Sprintf("/findings?sel=%d", id), "Enter the until date as YYYY-MM-DD.", "crit")
+		return
 	}
 	comment := r.PostFormValue("comment")
 	if len(comment) > 2000 {
@@ -375,17 +438,92 @@ func (s *Server) findingAck(w http.ResponseWriter, r *http.Request) {
 		s.back(w, r, fmt.Sprintf("/findings?sel=%d", id), err.Error(), "crit")
 		return
 	}
-	detail := "comment=" + strings.TrimSpace(comment)
-	if !until.IsZero() {
-		detail = "until=" + until.Format("2006-01-02") + " " + detail
-	}
-	s.Core.Audit(r.Context(), u.Email, "finding.ack", fmt.Sprintf("finding %d %s on %s", id, f.Kind, f.HostPort()), detail)
+	s.Core.Audit(r.Context(), u.Email, "finding.ack", fmt.Sprintf("finding %d %s on %s", id, f.Kind, f.HostPort()), ackDetail(until, comment))
 	s.Sched.Reload()
 	msg := "Acknowledged: reminders stop; escalation and the recovery notice still go out."
 	if f.Kind.AckResolves() {
 		msg = "Confirmed: the change is accepted and the finding resolved."
 	}
 	s.back(w, r, safeNext(r.PostFormValue("next")), msg, "ok")
+}
+
+// findingAckBulk acknowledges several open findings at once, with one
+// until-date and comment.
+func (s *Server) findingAckBulk(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	next := safeNext(r.PostFormValue("next"))
+	until, ok := s.parseUntil(r)
+	if !ok {
+		s.back(w, r, next, "Enter the until date as YYYY-MM-DD.", "crit")
+		return
+	}
+	var ids []int64
+	for _, v := range r.PostForm["id"] {
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil && id > 0 {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		s.back(w, r, next, "Select the findings to acknowledge first.", "crit")
+		return
+	}
+	comment := r.PostFormValue("comment")
+	if len(comment) > 2000 {
+		comment = comment[:2000]
+	}
+	u := user(r)
+	acked, confirmed, failed := 0, 0, 0
+	for _, id := range ids {
+		f, err := s.Core.Acknowledge(r.Context(), id, u.DisplayName(), until, comment)
+		if err != nil {
+			failed++
+			continue
+		}
+		if f.Kind.AckResolves() {
+			confirmed++
+		} else {
+			acked++
+		}
+		s.Core.Audit(r.Context(), u.Email, "finding.ack", fmt.Sprintf("finding %d %s on %s", id, f.Kind, f.HostPort()), ackDetail(until, comment)+" bulk=true")
+	}
+	s.Sched.Reload()
+	var parts []string
+	if acked > 0 {
+		parts = append(parts, fmt.Sprintf("%d acknowledged", acked))
+	}
+	if confirmed > 0 {
+		parts = append(parts, fmt.Sprintf("%d confirmed and resolved", confirmed))
+	}
+	if failed > 0 {
+		parts = append(parts, fmt.Sprintf("%d no longer open", failed))
+	}
+	kind := "ok"
+	if acked+confirmed == 0 {
+		kind = "crit"
+	}
+	s.back(w, r, next, strings.ToUpper(parts[0][:1])+strings.Join(parts, "; ")[1:]+".", kind)
+}
+
+// parseUntil reads the optional until-date of an acknowledgement; it runs
+// through the end of that day.
+func (s *Server) parseUntil(r *http.Request) (time.Time, bool) {
+	v := strings.TrimSpace(r.PostFormValue("until"))
+	if v == "" {
+		return time.Time{}, true
+	}
+	day, err := time.ParseInLocation("2006-01-02", v, info(r).settings.Location())
+	if err != nil {
+		return time.Time{}, false
+	}
+	return day.Add(24*time.Hour - time.Second), true
+}
+
+func ackDetail(until time.Time, comment string) string {
+	detail := "comment=" + strings.TrimSpace(comment)
+	if !until.IsZero() {
+		detail = "until=" + until.Format("2006-01-02") + " " + detail
+	}
+	return detail
 }
 
 func (s *Server) findingUnack(w http.ResponseWriter, r *http.Request) {

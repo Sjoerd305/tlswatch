@@ -313,6 +313,47 @@ func TestLastAdmin(t *testing.T) {
 	}
 }
 
+func TestDeleteAndUnlockUser(t *testing.T) {
+	s, _ := newService(t)
+	ctx := context.Background()
+	a := mkLocal(t, s, "a@example.nl", authz.Admin)
+	if err := s.DeleteUser(ctx, a.ID); err != ErrLastAdmin {
+		t.Fatalf("delete last admin: %v", err)
+	}
+	v := mkLocal(t, s, "v@example.nl", authz.Viewer)
+	raw, _, err := s.NewSession(ctx, v.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.W.ExecContext(ctx, "UPDATE users SET locked_until = ? WHERE id = ?", s.now()+600, v.ID); err != nil {
+		t.Fatal(err)
+	}
+	us, err := s.ListUsers(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range us {
+		if u.ID == v.ID && !u.Locked(s.now()) {
+			t.Fatal("lockout not listed")
+		}
+	}
+	if err := s.Unlock(ctx, v.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Unlock(ctx, 999); err != ErrNotFound {
+		t.Fatalf("unlock unknown: %v", err)
+	}
+	if err := s.DeleteUser(ctx, v.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Session(ctx, raw); err != ErrNoSession {
+		t.Fatalf("session of a deleted user: %v", err)
+	}
+	if err := s.DeleteUser(ctx, v.ID); err != ErrNotFound {
+		t.Fatalf("delete twice: %v", err)
+	}
+}
+
 func TestStateSeal(t *testing.T) {
 	s, c := newService(t)
 	cfg := OIDCConfig{ClientID: "cid", ClientSecret: "cs", RedirectURL: "https://w.example/auth/google/callback", Domain: "example.nl"}

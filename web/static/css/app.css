@@ -30,7 +30,8 @@
  * Buttons    .btn · .btn-primary · .btn-danger · .btn-xs · .btn-link
  *            (on <a> and <button>) · .btn-row (inline button group)
  * Tables     .tbl (th, td, .num, th.sorted, tr.sel, tr.muted, tr.detail,
- *            td.expander, td.wrap, tr[data-expand] pointer) · .tbl.vtop (top
+ *            td.expander, td.wrap, tr[data-expand] pointer, rows with an
+ *            a[data-row-link] are clickable as a whole) · .tbl.vtop (top
  *            aligned cells) · .tbl.nested (auto width table inside detail)
  *            .tbl.cards (falls back to cards below 760px; td[data-label])
  *            .detail-grid (label/value grid inside an expanded row)
@@ -56,7 +57,8 @@
  *            .form-sec (uppercase section rule) · .form-foot (footer)
  *            .readonly-note (set by environment)
  * Sign in    .login · .login-card · .wordmark (+ svg) · .or · .login-foot
- * Panels     .panel (side panel card) · .panel-head
+ * Panels     .panel (side panel card) · .panel-head · .panel-close (×)
+ * Bulk       .bulkbar (actions on checked rows) · th.chk/td.chk · .rowcheck
  * Misc       .copyable (identifier with copy/pem buttons) · .menu
  *            .kbd · .pre (PEM / code block)
  */
@@ -201,6 +203,7 @@ code,.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospa
 .strong{font-weight:500}
 .bold{font-weight:600}
 .ink,a.ink{color:var(--ink);font-weight:500}
+a.plain{color:inherit}
 tr.muted a.ink{color:var(--muted)}
 .wrap-any{overflow-wrap:anywhere}
 .ellipsis{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
@@ -335,6 +338,9 @@ a.tile:hover{text-decoration:none;border-color:var(--input-line)}
 .tbl tr.sel td,.tbl tr.sel:hover td{background:var(--info-bg)}
 .tbl tr.muted td{color:var(--muted)}
 .tbl tr[data-expand]{cursor:pointer}
+.tbl tr:has(a[data-row-link]),.li:has(a[data-row-link]){cursor:pointer}
+.tbl tbody tr:has(a[data-row-link]:focus-visible) td{background:var(--surface-2)}
+.li:has(a[data-row-link]):hover,.li:has(a[data-row-link]:focus-visible){background:var(--surface-2)}
 .tbl td.expander{width:24px;color:var(--muted)}
 .tbl tr.detail td,.tbl tr.detail:hover td{background:var(--surface-2);padding:12px 12px 14px 34px;white-space:normal}
 .tbl td form{margin:0;display:inline}
@@ -518,11 +524,25 @@ input[type="file"].input{padding:5px 8px;height:auto}
 .or::before,.or::after{content:"";flex-grow:1;height:1px;background:var(--line)}
 .login-foot{text-align:center;font-size:12px;color:var(--muted)}
 
+/* ---------- Bulk selection ----------
+   A bar above a table acts on the rows whose checkbox (form="bulk-…") is
+   checked; it shows only while at least one is. */
+.bulkbar{display:none;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--info-bg)}
+.card:has(input[form="bulk-ack"]:checked) .bulkbar{display:flex}
+.bulkbar .input{height:30px}
+.bulkbar .input.grow{flex:1 1 200px;width:auto}
+.bulkbar .help{flex-basis:100%}
+.tbl th.chk,.tbl td.chk{width:34px;padding-right:0}
+.tbl th.chk input,.rowcheck input{width:16px;height:16px;margin:0;accent-color:var(--acc);cursor:pointer;vertical-align:middle}
+.rowcheck{display:inline-flex;padding:4px;margin:-4px;cursor:pointer}
+
 /* ---------- Side panel ---------- */
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:14px;min-width:0}
 .panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .panel-head .title{display:flex;align-items:center;gap:8px;min-width:0}
 .panel-head h2{font-size:14px;font-weight:600}
+.panel-close{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:5px;color:var(--muted);font-size:18px;line-height:1;flex-shrink:0}
+.panel-close:hover{background:var(--surface-2);color:var(--ink);text-decoration:none}
 .panel .sect{padding-top:12px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
 
 /* ---------- Responsive ---------- */

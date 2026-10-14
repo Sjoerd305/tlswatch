@@ -3,7 +3,7 @@
 <div class="grid-settings">
   {{template "settings-nav" $p}}
   <div class="stack">
-    <div><h2 class="h2">Users</h2><span class="summary">Viewers see everything, operators manage targets and acknowledge findings, admins also manage settings and users.</span></div>
+    <div><h2 class="h2">Users</h2><span class="summary">Viewers see everything, operators manage targets and acknowledge findings, admins also manage settings and users. Disable a user to keep the account for later; delete it to remove it for good.</span></div>
     <div class="card clip">
       <table class="tbl cards">
         <thead><tr><th>Name</th><th>E-mail</th><th>Login</th><th>Role</th><th>Status</th><th>Last sign-in</th><th><span class="sr-only">Actions</span></th></tr></thead>
@@ -14,9 +14,9 @@
             <td data-label="E-mail" class="mono small">{{.Email}}</td>
             <td data-label="Login">{{if eq .Method "google"}}Google{{else}}password{{if not .HasPassword}} <span class="muted">· link pending</span>{{end}}{{end}}</td>
             <td data-label="Role">{{.Role}}</td>
-            <td data-label="Status">{{if .Enabled}}<span class="st ok">active</span>{{else}}<span class="st off">disabled</span>{{end}}</td>
+            <td data-label="Status">{{if not .Enabled}}<span class="st off">disabled</span>{{else if .Locked $p.Now.Unix}}<span class="st warn">locked</span> <span class="mono muted small">until {{clock $p.Loc .LockedUntil}}</span>{{else}}<span class="st ok">active</span>{{end}}</td>
             <td data-label="Last sign-in" class="mono muted">{{when $p.Loc $p.Now .LastLogin}}</td>
-            <td data-label=""><a href="?edit={{.ID}}" class="btn btn-xs">Edit</a></td>
+            <td data-label=""><span class="btn-row">{{if and .Enabled (.Locked $p.Now.Unix)}}<form method="post" action="/settings/users/{{.ID}}/unlock">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-xs">Unlock</button></form>{{end}}<a href="?edit={{.ID}}" class="btn btn-xs" data-row-link>Edit</a></span></td>
           </tr>
         {{- end}}
         </tbody>
@@ -36,9 +36,11 @@
         <button type="submit" class="btn btn-primary">Save</button>
         <a href="/settings/users" class="btn">Cancel</a>
         {{- if eq $u.Method "local"}}<button type="submit" form="user-link" class="btn cancel">New password link</button>{{end}}
+        {{- if ne $u.ID $d.Self}}<button type="submit" form="user-delete" class="btn-link danger{{if ne $u.Method "local"}} cancel{{end}}">Delete user</button>{{end}}
       </div>
     </form>
     {{- if eq $u.Method "local"}}<form id="user-link" method="post" action="/settings/users/{{$u.ID}}/link" hidden>{{template "csrf" $p.CSRF}}</form>{{end}}
+    {{- if ne $u.ID $d.Self}}<form id="user-delete" method="post" action="/settings/users/{{$u.ID}}/delete" data-confirm="Delete {{$u.Email}}? They are signed out and can no longer sign in. The audit log keeps their entries." hidden>{{template "csrf" $p.CSRF}}</form>{{end}}
     {{- end}}
     <form class="card form" method="post" action="/settings/users">
       {{template "csrf" $p.CSRF}}

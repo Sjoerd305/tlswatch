@@ -152,8 +152,20 @@ func (s *Service) NewSession(ctx context.Context, userID int64) (string, string,
 // ErrNoSession is returned for a missing, expired or revoked session.
 var ErrNoSession = errors.New("no valid session")
 
-// Session loads the session for a cookie value.
+// Session loads the session for a cookie value and counts the request as
+// activity for the idle timeout.
 func (s *Service) Session(ctx context.Context, raw string) (*Session, error) {
+	return s.session(ctx, raw, true)
+}
+
+// SessionPassive loads the session without counting the request as activity,
+// for background requests such as the live-page refresh: an open tab must not
+// keep a session alive past its idle timeout.
+func (s *Service) SessionPassive(ctx context.Context, raw string) (*Session, error) {
+	return s.session(ctx, raw, false)
+}
+
+func (s *Service) session(ctx context.Context, raw string, touch bool) (*Session, error) {
 	if raw == "" {
 		return nil, ErrNoSession
 	}
@@ -178,7 +190,7 @@ func (s *Service) Session(ctx context.Context, raw string) (*Session, error) {
 		_, _ = s.DB.W.ExecContext(ctx, "DELETE FROM sessions WHERE hash = ?", h)
 		return nil, ErrNoSession
 	}
-	if now-sess.LastSeen >= sessionTouchMin {
+	if touch && now-sess.LastSeen >= sessionTouchMin {
 		if _, err := s.DB.W.ExecContext(ctx, "UPDATE sessions SET last_seen = ? WHERE hash = ?", now, h); err != nil {
 			return nil, err
 		}

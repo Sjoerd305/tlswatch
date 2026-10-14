@@ -31,7 +31,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	s.render(w, r, "overview", &Page{Title: "Overview", Nav: "overview", Data: o})
+	s.render(w, r, "overview", &Page{Title: "Overview", Nav: "overview", Data: o, Live: true})
 }
 
 // Chip is a filter chip with its count.
@@ -116,7 +116,7 @@ func (s *Server) targets(w http.ResponseWriter, r *http.Request) {
 	} else {
 		d.GroupHref = chipHref(r, "group", "tag")
 	}
-	s.render(w, r, "targets", &Page{Title: "Targets", Nav: "targets", Data: d})
+	s.render(w, r, "targets", &Page{Title: "Targets", Nav: "targets", Data: d, Live: true})
 }
 
 // targetGroup is one tag section of the grouped targets list; a target with
@@ -274,7 +274,7 @@ func (s *Server) targetDetail(w http.ResponseWriter, r *http.Request) {
 	if d.Eff.IntervalS == 86400 {
 		d.Slot = fmt.Sprintf("%02d:%02d UTC", int(slot.Hours()), int(slot.Minutes())%60)
 	}
-	s.render(w, r, "target", &Page{Title: t.Name, Nav: "targets", Data: d})
+	s.render(w, r, "target", &Page{Title: t.Name, Nav: "targets", Data: d, Live: true})
 }
 
 func hasInt(ids []int64, id int64) bool {
@@ -781,7 +781,19 @@ func (s *Server) apiCheckAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Core.Audit(r.Context(), user(r).Email, "target.check_all", "", fmt.Sprintf("%d targets", n))
-	writeJSON(w, http.StatusOK, map[string]string{"notice": fmt.Sprintf("Checking %d targets; reload to see the results.", n), "notice_kind": "info"})
+	writeJSON(w, http.StatusOK, map[string]string{"notice": fmt.Sprintf("Checking %d targets; the page updates as results come in.", n), "notice_kind": "info"})
+}
+
+// apiStamp lets live pages poll for changes. Busy asks for a quicker poll
+// while checks are queued, running or a target was never checked.
+func (s *Server) apiStamp(w http.ResponseWriter, r *http.Request) {
+	stamp, pending, err := s.Core.Stamp(r.Context())
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	st := s.Sched.Status()
+	writeJSON(w, http.StatusOK, map[string]any{"stamp": stamp, "busy": pending > 0 || st.Backlog > 0 || st.Running > 0})
 }
 
 func (s *Server) apiTargetTest(w http.ResponseWriter, r *http.Request) {

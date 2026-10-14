@@ -8,7 +8,7 @@
       <a href="/settings/audit.csv{{if $d.Query}}?q={{$d.Query}}{{end}}" class="btn">Export CSV</a>
     </div>
     <form class="row" method="get" action="/settings/audit" role="search">
-      <div class="filter w300">{{template "search-icon"}}<input class="input" type="search" name="q" value="{{$d.Query}}" placeholder="Filter: user, action, object" aria-label="Filter the audit log"></div>
+      <div class="filter w300">{{template "search-icon"}}<input class="input" type="search" name="q" value="{{$d.Query}}" placeholder="Filter: user, action, object" aria-label="Filter the audit log" aria-keyshortcuts="/" title="Press / to filter"></div>
       <button type="submit" class="btn">Filter</button>
     </form>
     <div class="card clip">

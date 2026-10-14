@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -121,6 +122,7 @@ var protected = []route{
 	{"GET", "/certificates", authz.ViewData},
 	{"GET", "/certificates.csv", authz.ViewData},
 	{"GET", "/findings", authz.ViewData},
+	{"GET", "/api/v1/stamp", authz.ViewData},
 	{"GET", "/targets/new", authz.EditTargets},
 	{"POST", "/targets/new", authz.EditTargets},
 	{"GET", "/targets/1/edit", authz.EditTargets},
@@ -135,6 +137,7 @@ var protected = []route{
 	{"POST", "/api/v1/targets/check-all", authz.EditTargets},
 	{"POST", "/api/v1/targets/test", authz.EditTargets},
 	{"POST", "/findings/1/ack", authz.Acknowledge},
+	{"POST", "/findings/ack", authz.Acknowledge},
 	{"POST", "/findings/1/unack", authz.Acknowledge},
 	{"GET", "/settings/general", authz.ManageSettings},
 	{"POST", "/settings/general", authz.ManageSettings},
@@ -155,6 +158,8 @@ var protected = []route{
 	{"POST", "/settings/users", authz.ManageUsers},
 	{"POST", "/settings/users/1", authz.ManageUsers},
 	{"POST", "/settings/users/1/link", authz.ManageUsers},
+	{"POST", "/settings/users/1/unlock", authz.ManageUsers},
+	{"POST", "/settings/users/99/delete", authz.ManageUsers},
 	{"GET", "/settings/audit", authz.ViewAudit},
 	{"GET", "/settings/audit.csv", authz.ViewAudit},
 	{"GET", "/account", authz.ManageOwnAccount},
@@ -180,6 +185,10 @@ func TestRoleNegativeSuite(t *testing.T) {
 		if r.method == "POST" {
 			if rec.Code != http.StatusForbidden { // CSRF fails first without a session
 				t.Errorf("%s %s signed out: got %d", r.method, r.path, rec.Code)
+			}
+		} else if strings.HasPrefix(r.path, "/api/") {
+			if rec.Code != http.StatusUnauthorized {
+				t.Errorf("%s %s signed out: got %d, want 401", r.method, r.path, rec.Code)
 			}
 		} else if rec.Code != http.StatusSeeOther {
 			t.Errorf("%s %s signed out: got %d, want redirect", r.method, r.path, rec.Code)
@@ -485,5 +494,155 @@ func TestDeleteTarget(t *testing.T) {
 	_ = hs.db.R.QueryRow("SELECT COUNT(*) FROM audit WHERE action = 'target.delete'").Scan(&n)
 	if n != 1 {
 		t.Fatalf("audit entries: %d", n)
+	}
+}
+
+func (hs *harness) userID(role authz.Role) int64 {
+	hs.t.Helper()
+	u, err := hs.srv.Auth.UserByEmail(context.Background(), string(role)+"@example.test")
+	if err != nil {
+		hs.t.Fatal(err)
+	}
+	return u.ID
+}
+
+func TestUnlockAndDeleteUser(t *testing.T) {
+	hs := newHarness(t)
+	ctx := context.Background()
+	op := hs.userID(authz.Operator)
+	if _, err := hs.db.W.Exec("UPDATE users SET locked_until = ? WHERE id = ?", hs.srv.now().Unix()+600, op); err != nil {
+		t.Fatal(err)
+	}
+	page := hs.do(authz.Admin, "GET", "/settings/users", nil, false).Body.String()
+	if !strings.Contains(page, ">locked</span>") || !strings.Contains(page, fmt.Sprintf(`action="/settings/users/%d/unlock"`, op)) {
+		t.Fatal("locked user not shown with an Unlock button")
+	}
+	if rec := hs.do(authz.Admin, "POST", fmt.Sprintf("/settings/users/%d/unlock", op), nil, true); rec.Code != http.StatusSeeOther {
+		t.Fatalf("unlock: %d", rec.Code)
+	}
+	var until int64
+	_ = hs.db.R.QueryRow("SELECT locked_until FROM users WHERE id = ?", op).Scan(&until)
+	if until != 0 {
+		t.Fatal("still locked after unlock")
+	}
+
+	admin := hs.userID(authz.Admin)
+	if rec := hs.do(authz.Admin, "POST", fmt.Sprintf("/settings/users/%d/delete", admin), nil, true); rec.Code != http.StatusSeeOther {
+		t.Fatalf("delete self: %d", rec.Code)
+	}
+	if _, err := hs.srv.Auth.UserByID(ctx, admin); err != nil {
+		t.Fatal("an admin deleted their own account")
+	}
+	viewer := hs.userID(authz.Viewer)
+	if rec := hs.do(authz.Admin, "POST", fmt.Sprintf("/settings/users/%d/delete", viewer), nil, true); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/settings/users" {
+		t.Fatalf("delete viewer: %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+	if _, err := hs.srv.Auth.UserByID(ctx, viewer); err == nil {
+		t.Fatal("viewer still exists")
+	}
+	// The deleted user's session no longer works.
+	if rec := hs.do(authz.Viewer, "GET", "/", nil, false); rec.Code != http.StatusSeeOther {
+		t.Fatalf("deleted user's session: %d", rec.Code)
+	}
+	var n int
+	_ = hs.db.R.QueryRow("SELECT COUNT(*) FROM audit WHERE action IN ('user.unlock', 'user.delete')").Scan(&n)
+	if n != 2 {
+		t.Fatalf("audit entries: %d", n)
+	}
+}
+
+func (hs *harness) addFinding(kind, severity string, resolved bool) int64 {
+	hs.t.Helper()
+	now := hs.srv.now().Unix()
+	res := int64(0)
+	if resolved {
+		res = now
+	}
+	r, err := hs.db.W.Exec("INSERT INTO findings (target_id, kind, severity, opened_at, resolved_at, details) VALUES (1, ?, ?, ?, ?, 'test')", kind, severity, now-60, res)
+	if err != nil {
+		hs.t.Fatal(err)
+	}
+	id, _ := r.LastInsertId()
+	return id
+}
+
+func TestBulkAcknowledge(t *testing.T) {
+	hs := newHarness(t)
+	a := hs.addFinding("expiring", "warning", false)
+	b := hs.addFinding("chain_untrusted", "critical", false)
+	c := hs.addFinding("hostname_mismatch", "critical", true)
+	page := hs.do(authz.Operator, "GET", "/findings", nil, false).Body.String()
+	if !strings.Contains(page, `form="bulk-ack"`) || !strings.Contains(page, `data-select-all="#findings"`) {
+		t.Fatal("no bulk selection for an operator")
+	}
+	if page := hs.do(authz.Viewer, "GET", "/findings", nil, false).Body.String(); strings.Contains(page, `form="bulk-ack"`) {
+		t.Fatal("bulk selection shown to a viewer")
+	}
+	form := url.Values{"id": {fmt.Sprint(a), fmt.Sprint(b), fmt.Sprint(c)}, "until": {""}, "comment": {"INC-42"}, "next": {"/findings?target=1"}}
+	rec := hs.do(authz.Operator, "POST", "/findings/ack", form, true)
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/findings?target=1" {
+		t.Fatalf("bulk ack: %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+	var acked int
+	_ = hs.db.R.QueryRow("SELECT COUNT(*) FROM findings WHERE ack_at > 0 AND ack_comment = 'INC-42'").Scan(&acked)
+	if acked != 2 {
+		t.Fatalf("acknowledged: %d, want 2 (the resolved one is skipped)", acked)
+	}
+	if rec := hs.do(authz.Operator, "POST", "/findings/ack", url.Values{"until": {"tomorrow"}, "id": {fmt.Sprint(a)}}, true); rec.Code != http.StatusSeeOther {
+		t.Fatalf("bad date: %d", rec.Code)
+	}
+}
+
+func TestFindingsFilters(t *testing.T) {
+	hs := newHarness(t)
+	hs.addFinding("expiring", "warning", false)
+	page := hs.do(authz.Viewer, "GET", "/findings?target=1", nil, false).Body.String()
+	if !strings.Contains(page, "target: t") {
+		t.Fatal("no target chip")
+	}
+	page = hs.do(authz.Viewer, "GET", "/findings?q=nothing-matches", nil, false).Body.String()
+	if !regexp.MustCompile(`data-search="[^"]*" hidden`).MatchString(page) || !strings.Contains(page, "No findings match the filter.") {
+		t.Fatal("text filter does not hide the row")
+	}
+	target := hs.do(authz.Viewer, "GET", "/targets/1", nil, false).Body.String()
+	if !strings.Contains(target, `href="/findings?target=1"`) {
+		t.Fatal("no link from the target to its findings")
+	}
+}
+
+func TestStampPollIsPassive(t *testing.T) {
+	hs := newHarness(t)
+	old := hs.srv.now().Unix() - 3600
+	if _, err := hs.db.W.Exec("UPDATE sessions SET last_seen = ?", old); err != nil {
+		t.Fatal(err)
+	}
+	lastSeen := func() int64 {
+		var v int64
+		_ = hs.db.R.QueryRow("SELECT last_seen FROM sessions WHERE user_id = ?", hs.userID(authz.Viewer)).Scan(&v)
+		return v
+	}
+	rec := hs.do(authz.Viewer, "GET", "/api/v1/stamp", nil, false)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"stamp"`) {
+		t.Fatalf("stamp: %d %s", rec.Code, rec.Body.String())
+	}
+	first := rec.Body.String()
+	req := httptest.NewRequest("GET", "/targets", nil)
+	req.Header.Set(refreshHeader, "1")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: hs.sess[authz.Viewer].cookie})
+	page := httptest.NewRecorder()
+	hs.h.ServeHTTP(page, req)
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), `name="tlswatch-stamp"`) {
+		t.Fatalf("refresh render: %d", page.Code)
+	}
+	if lastSeen() != old {
+		t.Fatal("background polling extended the session")
+	}
+	hs.addFinding("expiring", "warning", false)
+	if second := hs.do(authz.Viewer, "GET", "/api/v1/stamp", nil, false).Body.String(); second == first {
+		t.Fatal("stamp did not change with a new finding")
+	}
+	hs.do(authz.Viewer, "GET", "/targets", nil, false)
+	if lastSeen() == old {
+		t.Fatal("a normal page view did not count as activity")
 	}
 }

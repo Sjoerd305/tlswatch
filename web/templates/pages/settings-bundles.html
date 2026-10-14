@@ -11,11 +11,11 @@
         <thead><tr><th>Subject</th><th>Type</th><th>Key</th><th>Not after</th><th class="num">Days</th><th>SHA-256</th></tr></thead>
         <tbody>
         {{- range .Certs}}{{$dl := days $p.Now .NotAfter.Unix}}
-          <tr><td data-label="Subject" class="strong wrap">{{.SubjectCN}}</td><td data-label="Type">{{if .SelfSigned}}root{{else if .IsCA}}intermediate{{else}}leaf{{end}}</td><td data-label="Key" class="mono small">{{.KeyDesc}}</td><td data-label="Not after" class="mono">{{date $p.Loc .NotAfter.Unix}}</td><td data-label="Days" class="num mono days{{if lt $dl 0}} crit-t{{else if lt $dl 90}} warn-t{{end}}">{{$dl}}</td><td data-label="SHA-256" class="mono small muted">{{short .Fingerprint}}</td></tr>
+          <tr><td data-label="Subject" class="strong wrap">{{.SubjectCN}}</td><td data-label="Type">{{if .SelfSigned}}root{{else if .IsCA}}intermediate{{else}}leaf{{end}}</td><td data-label="Key" class="mono small">{{.KeyDesc}}</td><td data-label="Not after" class="mono">{{date $p.Loc .NotAfter.Unix}}</td><td data-label="Days" class="num mono days{{if lt $dl 0}} crit-t{{else if lt $dl 90}} warn-t{{end}}">{{template "days-left" $dl}}</td><td data-label="SHA-256" class="mono small muted">{{short .Fingerprint}}</td></tr>
         {{- end}}
         </tbody>
       </table>
-      {{- if not .Targets}}<div class="li"><form method="post" action="/settings/bundles/{{.ID}}/delete">{{template "csrf" $p.CSRF}}<button type="submit" class="btn-link danger">Delete bundle</button></form></div>{{end}}
+      {{- if not .Targets}}<div class="li"><form method="post" action="/settings/bundles/{{.ID}}/delete" data-confirm="Delete the bundle {{.Name}}?">{{template "csrf" $p.CSRF}}<button type="submit" class="btn-link danger">Delete bundle</button></form></div>{{end}}
     </section>
     {{- else}}
     <section class="card"><div class="empty"><span class="h3">No CA bundles</span><span>Upload the root (and intermediates) of an internal PKI to verify its certificates.</span></div></section>

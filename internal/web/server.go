@@ -138,7 +138,11 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		}
 
 		if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
-			if sess, err := s.Auth.Session(r.Context(), c.Value); err == nil {
+			lookup := s.Auth.Session
+			if passiveRequest(r) {
+				lookup = s.Auth.SessionPassive
+			}
+			if sess, err := lookup(r.Context(), c.Value); err == nil {
 				ri.session = sess
 			} else {
 				s.clearCookie(w, sessionCookie, ri)
@@ -164,6 +168,15 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			s.Log.Debug("http", "method", r.Method, "path", r.URL.Path, "status", lw.status, "ms", s.now().Sub(start).Milliseconds(), "ip", ri.ip)
 		}
 	})
+}
+
+// refreshHeader marks the live-page refresh of the TypeScript.
+const refreshHeader = "X-Tlswatch-Refresh"
+
+// passiveRequest reports a background request that must not count as user
+// activity for the session idle timeout.
+func passiveRequest(r *http.Request) bool {
+	return r.Method == http.MethodGet && (r.Header.Get(refreshHeader) == "1" || r.URL.Path == "/api/v1/stamp")
 }
 
 type statusWriter struct {

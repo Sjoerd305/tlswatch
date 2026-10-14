@@ -47,6 +47,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /certificates.csv", view(s.certificatesCSV))
 	mux.HandleFunc("GET /certificates/{fp}/pem", view(s.certificatePEM))
 	mux.HandleFunc("GET /findings", view(s.findings))
+	mux.HandleFunc("POST /findings/ack", ack(s.findingAckBulk))
 	mux.HandleFunc("POST /findings/{id}/ack", ack(s.findingAck))
 	mux.HandleFunc("POST /findings/{id}/unack", ack(s.findingUnack))
 
@@ -72,6 +73,8 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /settings/users", users(s.userCreate))
 	mux.HandleFunc("POST /settings/users/{id}", users(s.userUpdate))
 	mux.HandleFunc("POST /settings/users/{id}/link", users(s.userLink))
+	mux.HandleFunc("POST /settings/users/{id}/unlock", users(s.userUnlock))
+	mux.HandleFunc("POST /settings/users/{id}/delete", users(s.userDelete))
 	mux.HandleFunc("GET /settings/audit", audit(s.settingsAudit))
 	mux.HandleFunc("GET /settings/audit.csv", audit(s.auditCSV))
 	mux.HandleFunc("GET /settings/about", admin(s.settingsAbout))
@@ -84,6 +87,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/targets/check-all", edit(s.apiCheckAll))
 	mux.HandleFunc("POST /api/v1/targets/test", edit(s.apiTargetTest))
 	mux.HandleFunc("GET /api/v1/findings/{id}/panel", view(s.apiFindingPanel))
+	mux.HandleFunc("GET /api/v1/stamp", view(s.apiStamp))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusNotFound, "There is nothing at this address.")

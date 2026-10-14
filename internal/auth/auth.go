@@ -57,7 +57,13 @@ type User struct {
 	LastLogin   int64
 	CreatedAt   int64
 	HasPassword bool
+	// LockedUntil is set by ListUsers: the end of a lockout after too many
+	// failed sign-ins, or 0.
+	LockedUntil int64
 }
+
+// Locked reports whether the account is locked out at the given time.
+func (u User) Locked(now int64) bool { return u.LockedUntil > now }
 
 // DisplayName is the name, or the e-mail when no name is set.
 func (u User) DisplayName() string {
@@ -156,17 +162,20 @@ func (s *Service) UserByEmail(ctx context.Context, email string) (User, error) {
 
 // ListUsers returns all users by name.
 func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
-	rows, err := s.DB.R.QueryContext(ctx, "SELECT "+userCols+" FROM users ORDER BY lower(name), email")
+	rows, err := s.DB.R.QueryContext(ctx, "SELECT "+userCols+", locked_until FROM users ORDER BY lower(name), email")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []User
 	for rows.Next() {
-		u, _, err := scanUser(rows)
-		if err != nil {
+		var u User
+		var hash, role string
+		var enabled int
+		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &role, &u.Method, &hash, &enabled, &u.Theme, &u.LastLogin, &u.CreatedAt, &u.LockedUntil); err != nil {
 			return nil, err
 		}
+		u.Role, u.Enabled, u.HasPassword = authz.Role(role), enabled == 1, hash != ""
 		out = append(out, u)
 	}
 	return out, rows.Err()
@@ -220,6 +229,52 @@ func (s *Service) UpdateUser(ctx context.Context, id int64, name string, role au
 	}
 	if !enabled {
 		if _, err := tx.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = ?", id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// Unlock ends a lockout after too many failed sign-ins.
+func (s *Service) Unlock(ctx context.Context, id int64) error {
+	res, err := s.DB.W.ExecContext(ctx, "UPDATE users SET failed_count = 0, locked_until = 0 WHERE id = ?", id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// DeleteUser removes a user with their sessions and one-time links. The
+// audit log keeps their e-mail address. The last enabled admin cannot be
+// deleted.
+func (s *Service) DeleteUser(ctx context.Context, id int64) error {
+	tx, err := s.DB.W.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var role string
+	var enabled int
+	if err := tx.QueryRowContext(ctx, "SELECT role, enabled FROM users WHERE id = ?", id).Scan(&role, &enabled); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if role == string(authz.Admin) && enabled == 1 {
+		var admins int
+		if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM users WHERE role = 'admin' AND enabled = 1").Scan(&admins); err != nil {
+			return err
+		}
+		if admins <= 1 {
+			return ErrLastAdmin
+		}
+	}
+	for _, q := range []string{"DELETE FROM sessions WHERE user_id = ?", "DELETE FROM tokens WHERE user_id = ?", "DELETE FROM users WHERE id = ?"} {
+		if _, err := tx.ExecContext(ctx, q, id); err != nil {
 			return err
 		}
 	}

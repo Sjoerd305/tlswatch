@@ -38,9 +38,9 @@
       <tbody>
       {{- range $o.Targets}}{{$c := .ExpiryClass $p.Settings.Defaults $p.Now}}
         <tr>
-          <td data-label="Target"><a href="/targets/{{.ID}}" class="ink strong">{{.Name}}</a></td>
+          <td data-label="Target"><a href="/targets/{{.ID}}" class="ink strong" data-row-link>{{.Name}}</a></td>
           <td data-label="Host" class="mono muted">{{.HostPort}}</td>
-          <td data-label="Days" class="num mono days{{if $c}} {{$c}}-t{{end}}">{{days $p.Now .NotAfter}}</td>
+          <td data-label="Days" class="num mono days{{if $c}} {{$c}}-t{{end}}">{{template "days-left" (days $p.Now .NotAfter)}}</td>
           <td data-label="Lifetime">{{template "bar" (dict "Used" (used $p.Now .Cert.NotBefore .Cert.NotAfter) "Class" (.BarClass $p.Settings.Defaults $p.Now) "Wide" "w140")}}</td>
           <td data-label="Expires" class="mono">{{date $p.Loc .NotAfter}}</td>
           <td data-label="Issuer" class="muted">{{.Cert.IssuerName}}{{if .RenewalManaged}} · auto{{end}}</td>
@@ -58,7 +58,7 @@
       {{- range $o.Open}}
       <div class="li{{if .Acked $p.Now}} muted{{end}}">
         {{if .Acked $p.Now}}<span class="pill off">ack</span>{{else}}<span class="pill {{.Severity.Class}}">{{.Severity.Short}}</span>{{end}}
-        <span><a href="/targets/{{.TargetID}}" class="ink strong">{{.TargetName}}</a> {{lower .Kind.Label}}{{if and .DaysLeft (eq (print .Kind) "expiring")}}, {{daysPtr .DaysLeft}} days left{{end}}{{if .Acked $p.Now}} · {{.AckBy}}{{if .AckUntil}} until {{when $p.Loc $p.Now .AckUntil}}{{end}}{{end}}</span>
+        <span><a href="/targets/{{.TargetID}}" class="ink strong">{{.TargetName}}</a> <a href="/findings?sel={{.ID}}" class="plain" data-row-link>{{lower .Kind.Label}}</a>{{if and .DaysLeft (eq (print .Kind) "expiring")}}, {{daysPtr .DaysLeft}} days left{{end}}{{if .Acked $p.Now}} · {{.AckBy}}{{if .AckUntil}} until {{when $p.Loc $p.Now .AckUntil}}{{end}}{{end}}</span>
         <span class="t">{{when $p.Loc $p.Now .OpenedAt}}</span>
       </div>
       {{- else}}
@@ -70,7 +70,7 @@
       {{- range $o.Changes}}
       <div class="li">
         {{- if .ResolvedAt}}{{if eq (print .Kind) "certificate_changed"}}<span class="pill info">new</span>{{else}}<span class="pill ok">fixed</span>{{end}}{{else}}<span class="pill warn">new</span>{{end}}
-        <span><a href="/targets/{{.TargetID}}" class="ink strong">{{.TargetName}}</a> {{if and .ResolvedAt (ne (print .Kind) "certificate_changed")}}{{lower .Kind.Label}} resolved{{else}}{{.Details}}{{end}}</span>
+        <span><a href="/targets/{{.TargetID}}" class="ink strong" data-row-link>{{.TargetName}}</a> {{if and .ResolvedAt (ne (print .Kind) "certificate_changed")}}{{lower .Kind.Label}} resolved{{else}}{{.Details}}{{end}}</span>
         <span class="t">{{when $p.Loc $p.Now (or .ResolvedAt .OpenedAt)}}</span>
       </div>
       {{- else}}

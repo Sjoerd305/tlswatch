@@ -20,7 +20,7 @@
             <td data-label="Floor"><span class="pill {{sevClass .MinSeverity}}">{{sevShort .MinSeverity}}</span></td>
             <td data-label="Last delivery">{{if eq .LastState "sent"}}<span class="st ok">ok</span> <span class="mono muted">{{whenTime $p.Loc $p.Now .LastAt}}</span>{{else if eq .LastState "failed"}}<span class="st crit">failed</span> <span class="mono muted" title="{{.LastError}}">{{whenTime $p.Loc $p.Now .LastAt}}</span>{{else if eq .LastState "retrying"}}<span class="st crit">failing</span> <span class="mono muted">retry {{whenTime $p.Loc $p.Now .NextAttempt}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
             <td data-label="Sent, 30 d" class="num mono">{{.Sent30d}}</td>
-            <td data-label=""><span class="btn-row"><form method="post" action="/settings/channels/{{.ID}}/test">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-xs">Test</button></form><a href="?edit={{.ID}}" class="btn btn-xs">Edit</a></span></td>
+            <td data-label=""><span class="btn-row"><form method="post" action="/settings/channels/{{.ID}}/test">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-xs">Test</button></form><a href="?edit={{.ID}}" class="btn btn-xs" data-row-link>Edit</a></span></td>
           </tr>
           {{- if and .LastError (eq .LastState "failed" "retrying")}}<tr class="muted"><td colspan="7" class="wrap small">{{.Name}}: {{.LastError}}</td></tr>{{end}}
         {{- end}}
@@ -76,7 +76,7 @@
         {{- if $c.ID}}<button type="submit" form="delete-channel" class="btn-link danger cancel">Delete channel</button>{{end}}
       </div>
     </form>
-    {{- if $c.ID}}<form id="delete-channel" method="post" action="/settings/channels/{{$c.ID}}/delete" hidden>{{template "csrf" $p.CSRF}}</form>{{end}}
+    {{- if $c.ID}}<form id="delete-channel" method="post" action="/settings/channels/{{$c.ID}}/delete" data-confirm="Delete the channel {{$c.Name}}? Targets stop sending alerts to it." hidden>{{template "csrf" $p.CSRF}}</form>{{end}}
     {{- end}}
   </div>
 </div>

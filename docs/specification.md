@@ -1,8 +1,8 @@
 # Specification – tlswatch
 
-Version 0.1 (draft) · 14 October 2026 · Sjoerd van Dijk
+Version 0.1 (draft) · 14 October 2026, last updated 14 October 2026 · Sjoerd van Dijk
 
-Working title: tlswatch. The living copy of this document is in Claude Docs; this file is the exported snapshot kept with the code.
+Working title: tlswatch. This document started as an export of the original design document in Claude Docs. This file is now the maintained specification: it describes how tlswatch behaves and is updated in the same change as the code.
 
 ## Purpose and scope
 
@@ -87,7 +87,7 @@ Every observation runs the full set of checks; each failed check is a finding of
 | `issuer_changed` | The issuer differs from the previous certificate or from the configured expected issuer | warning | A Let's Encrypt name suddenly served by another CA is worth a look |
 | `inconsistent` | Different addresses of one name serve different certificates | warning | One node behind a load balancer not updated |
 | `tls_unavailable` | A STARTTLS server did not offer STARTTLS | critical | |
-| `unreachable` | Connect or handshake failed after retries, on all addresses | critical | Debounced: needs 2 consecutive failing checks to open and 2 passing to close |
+| `unreachable` | Connect or handshake failed after retries, on all addresses | critical | Debounced: needs 2 consecutive failing checks to open and 2 passing to close. The target's status shows Unreachable from the first failing check; only the finding and its alert wait. A protocol that does not fit a well-known port (implicit TLS on 587, STARTTLS on 465) adds a hint to the error |
 | `dns_failed` | The name did not resolve | critical | Debounced like `unreachable` |
 
 **Change detection.** A new leaf certificate is normal on an ACME-managed endpoint and suspicious on a manually managed one. A target carries the flag *renewal managed* (default on when the issuer is a known ACME CA such as Let's Encrypt, ZeroSSL or Google Trust Services, off otherwise; always editable).
@@ -154,20 +154,24 @@ The UI is an operations console: the home screen answers "what needs attention n
 | Screen | Role | Content |
 | --- | --- | --- |
 | Sign in | all | One card: e-mail and password, "Sign in with Google" below. Neutral error messages. |
-| Overview | viewer+ | Four status tiles (critical, warning, healthy, unreachable), "Expiring next" with a lifetime bar per certificate, open findings, recent changes, and the last run's summary (targets and addresses probed, failures, alerts sent). |
-| Targets | viewer+ | Dense table: status, name, `host:port`, days left, lifetime bar, expiry date, issuer, TLS version, tags, last check. Filter field plus chips for status and tag with counts; sorted by expiry by default. Page-head buttons: Add target (operator+), Check all (operator+). |
-| Target detail | viewer+ | Leads with the certificate: countdown, lifetime bar, subject, issuer, SANs, key, serial, fingerprint with copy/PEM. Then the chain as a vertical stack with the weak link marked, per-address results of the last check, history of certificates seen on the target. Side column: configuration, findings on this target, alerts sent. Buttons: Check now, Edit, Disable (operator+). |
-| Target form | operator+ | Fields in order: host, port, protocol, name, servername; trust mode (system / bundle / self-signed) and bundle, renewal managed, expected issuer; thresholds, interval, addresses; tags, channels, notes. "Test without saving" runs a probe and shows the result in a side panel. |
-| Certificates | viewer+ | The inventory: one row per unique certificate: subject, issuer, days left, lifetime bar, not after, key, number of targets serving it, short fingerprint, first seen. Filter chips for expiry window, issuer, key type. Row expands to full fingerprint, SANs, chain and the targets and addresses where it is served. |
-| Findings | viewer+ | Open findings first, sorted by severity then days left; each row: severity, kind with detail, target, since, last alert, acknowledgement. The acknowledge form (until-date, comment) and the alert timeline open in a side panel (operator+). Chips for open/resolved, severity and kind. |
-| Settings: General | admin | Public base URL, proxy trust, local targets; values set by environment shown read-only. |
-| Settings: Channels | admin | SMTP and Telegram channels with severity floor, last delivery, Test button, edit form below the table: SMTP host, port, encryption, username, password, from, recipients; Telegram bot token and chat IDs. |
+| Overview | viewer+ | Four status tiles (critical, warning, healthy, unreachable), "Expiring next" with a lifetime bar per certificate, open findings (each opens its finding), recent changes, and the last run's summary (targets and addresses probed, failures, alerts sent). |
+| Targets | viewer+ | Dense table: status, name, `host:port`, days left, lifetime bar, expiry date, issuer, TLS version, tags, last check. Filter field plus chips for status and tag with counts; a tag in a row filters on that tag; grouping by tag; sorted by expiry by default. Per row: Check, or Enable for a disabled target (operator+). Page-head buttons: Add target (operator+), Check all (operator+). |
+| Target detail | viewer+ | Leads with the certificate: countdown, lifetime bar, subject, issuer, SANs, key, serial, fingerprint with copy/PEM. Then the chain as a vertical stack with the weak link marked, per-address results of the last check, history of certificates seen on the target. Side column: configuration, findings on this target (with a link to all of them on the Findings page), alerts sent. Buttons: Check now, Edit, Disable or Enable, Delete (operator+). Delete goes to a confirmation page that shows what is removed and offers Disable instead. |
+| Target form | operator+ | Fields in order: host, port, protocol, name, servername; trust mode (system / bundle / self-signed) and bundle, renewal managed, expected issuer; thresholds, interval, addresses; tags, channels, notes. The port follows the protocol while it is empty or still the previous protocol's default. "Test without saving" runs a probe and shows the result in a side panel. |
+| Certificates | viewer+ | The inventory: one row per unique certificate: subject, issuer, days left, lifetime bar, not after, key, number of targets serving it, short fingerprint, first seen. Filter field and chips for expiry window, issuer, key type; a switch to include or hide certificates no longer served. Row expands to full fingerprint, SANs, chain and the targets and addresses where it is served. Export as CSV. |
+| Findings | viewer+ | Open findings first, sorted by severity then days left; each row: severity, kind with detail, target, since, last alert, acknowledgement. The acknowledge form (until-date, comment) and the alert timeline open in a side panel (operator+), closed with × or Escape. Filter field (target, host, finding), a target filter linked from the target page, and chips for open/resolved, severity and kind. Bulk acknowledgement (operator+): a checkbox per open finding and "select all shown"; a bar with one until-date and comment acknowledges the selection. Certificate changes in it are confirmed and resolved, as when acknowledged one by one. |
+| Settings: General | admin | Public base URL, time zone, proxy trust, local targets; values set by environment shown read-only. |
+| Settings: Channels | admin | SMTP and Telegram channels with severity floor, last delivery, Test button, edit form below the table: SMTP host, port (following the encryption), encryption, username, password, from, recipients; Telegram bot token and chat IDs. Deleting a channel asks first. |
 | Settings: Sign-in | admin | Google client ID, client secret, Workspace domain, redirect URI to register. |
-| Settings: CA bundles | admin | Upload PEM, list of the certificates inside with validity. |
-| Settings: Defaults | admin | The global thresholds table, digest schedule, probe concurrency. |
-| Settings: Users | admin | Table: name, e-mail, login method, role, status; invite by e-mail, edit, disable. |
+| Settings: CA bundles | admin | Upload PEM, list of the certificates inside with validity; replace a bundle; delete one no target uses, after a confirmation. |
+| Settings: Defaults | admin | The global thresholds table, digest schedule and channels, "Send digest now", probe concurrency, retention. |
+| Settings: Users | admin | Table: name, e-mail, login method, role, status (active, disabled, or locked until a time after failed sign-ins), last sign-in. Invite by e-mail, edit, new password link, unlock, disable, delete. |
 | Settings: Audit log | admin | Who changed what, filterable, export CSV. |
 | Account | all | Name, theme (system, light, dark), change password for local accounts. |
+
+**Interaction.** A row in a list is clickable as a whole and follows its primary link (the target, the finding, the certificate, the user or channel to edit). Cmd/Ctrl-click or a middle click opens it in a new tab, and selecting text in a row does not navigate. Every row still holds a real link, so keyboard and no-JavaScript use are unchanged. "/" focuses the page's filter field. Past expiry is shown as "expired", not as negative days. Deleting a target, channel, bundle or user asks for confirmation; disabling does not, because it is reversible. A form disables its buttons while it is being sent, so a slow action (a channel test, a save) is not sent twice.
+
+**Live pages.** Overview, Targets, a target's page, Certificates and Findings keep themselves current. They poll a small change stamp (`/api/v1/stamp`): every 4 seconds while checks are queued or running or a target has never been checked, otherwise every minute, and not at all while the browser tab is hidden. When the stamp changes, a fresh render of the same URL is swapped in. The filter, the expanded certificate and the selected finding are part of the URL and survive. A refresh is skipped while the user is typing, has text selected, has unsaved input or ticked checkboxes, or has a menu open. These background requests do not count as activity for the session idle timeout.
 
 The healthy state is the common one and must read as good news: "14 targets, nothing due within 30 days, last run 04:17". Empty states say what to do next ("No targets yet — add one or run `tlswatch check host`"). Below 760 px tables fall back to cards. Status colours are used identically everywhere: green healthy, amber warning, red critical and expired, grey disabled or unreachable, blue only for informational changes.
 
@@ -179,18 +183,20 @@ Three roles, one per user, no organisations or tenants: the tool is single-tenan
 | --- | --- | --- | --- |
 | View targets, certificates, findings, history | yes | yes | yes |
 | Add, edit, disable, delete targets; check now | | yes | yes |
-| Acknowledge findings | | yes | yes |
+| Acknowledge findings, one by one or in bulk | | yes | yes |
 | Settings: general, sign-in, channels, CA bundles, defaults, digest | | | yes |
-| Users and roles | | | yes |
+| Users and roles: invite, edit, unlock, disable, delete | | | yes |
 | Audit log | | | yes |
 
-**Local login**: e-mail and password. An admin creates the account; the user receives a one-time link (7 days valid) to set a password of at least 12 characters, checked against a local list of leaked passwords. Password hashes use Argon2id. Five failed attempts block the account for 15 minutes; the error message does not reveal whether the e-mail exists.
+**Local login**: e-mail and password. An admin creates the account; the user receives a one-time link (7 days valid) to set a password of at least 12 characters, checked against a local list of leaked passwords. Password hashes use Argon2id. Five failed attempts block the account for 15 minutes; the error message does not reveal whether the e-mail exists. Admins see a locked account in the user list and can unlock it; setting a new password through a one-time link also clears the lock.
 
 **Google sign-in**: OpenID Connect with Authorization Code and PKCE, implemented against the standard library plus `golang.org/x/oauth2`. Sign-in is only possible for an e-mail address an admin has already added (allowlist); there is no self-registration. Optionally restricted to one Workspace domain. The login method is per user: a Google user has no password.
 
+**Removing users.** Disabling a user ends their sessions and keeps the account for later; deleting removes the account with its sessions and one-time links for good. The audit log keeps their entries, which record the e-mail address. Nobody can delete their own account, and the last enabled admin can be neither deleted, disabled nor demoted.
+
 **TOTP** as second factor for local accounts is not in version 1 (open point); the tool holds no secrets beyond its own channel credentials.
 
-**Sessions**: server-side session store in SQLite, cookie `HttpOnly; Secure; SameSite=Lax`, 8 hours idle timeout, CSRF token on every state-changing form and JSON call. While no account exists, every page redirects to a setup screen where the first admin is created with their own e-mail address and password and signed in directly; the screen disappears once an account exists. The check and the insert are one transaction, so concurrent attempts create one admin only. Scripted installs can use the `create-admin` subcommand, which prints a one-time password link.
+**Sessions**: server-side session store in SQLite, cookie `HttpOnly; Secure; SameSite=Lax`, 8 hours idle timeout (the live-page polling does not count as activity, so an open tab does not keep a session alive), CSRF token on every state-changing form and JSON call. While no account exists, every page redirects to a setup screen where the first admin is created with their own e-mail address and password and signed in directly; the screen disappears once an account exists. The check and the insert are one transaction, so concurrent attempts create one admin only. Scripted installs can use the `create-admin` subcommand, which prints a one-time password link.
 
 **Authorisation** is one decision function role × action, called by every handler and covered by a negative test suite (every role tried against every action it must not have).
 
@@ -233,7 +239,7 @@ The scheduler hands targets to the prober, the checker turns each observation in
 | `internal/notify` | Channels, message rendering, outbox with retry |
 | `internal/auth`, `internal/authz` | Passwords, sessions, OIDC; the role × action decision |
 | `internal/db` | SQLite access and embedded migrations, run at start |
-| `internal/web` | HTTP handlers, pages, the internal JSON API under `/api/v1` used by the TypeScript |
+| `internal/web` | HTTP handlers, pages, the internal JSON API under `/api/v1` used by the TypeScript (check, check all, test probe, finding panel, change stamp) |
 | `web/` | templates, `static/css`, self-hosted fonts, `ts/` sources compiled to `static/js` |
 
 **Database**: SQLite in WAL mode through `modernc.org/sqlite` (pure Go, so the binary is static and cross-compiles without cgo). One writer goroutine serialises writes; reads are concurrent. Certificates are stored once by fingerprint with the PEM; observations reference them. Expected size at 100 targets with daily checks and 180 days retention: under 50 MB.
@@ -252,13 +258,15 @@ The frontend is pages rendered server-side with Go `html/template`, and TypeScri
 
 Where TypeScript is used in version 1:
 
-- The target form's Test button (probe without saving, render the result).
+- The target form's Test button (probe without saving, render the result), and the port following the protocol.
 - Check now and Check all, with the row updating in place when the probe returns.
-- Table row expand/collapse, copy-to-clipboard for fingerprints and PEM, filter chips.
-- The acknowledge panel (until-date, comment).
-- Live filtering on the targets and certificates tables.
+- Live pages: polling the change stamp and swapping in a fresh render (see Inventory and user interface).
+- Clickable rows, table row expand/collapse, copy-to-clipboard for fingerprints and PEM, filter chips, and tags that act as chips.
+- The acknowledge panel (until-date, comment, close with Escape), and the bulk selection on the findings list.
+- Live filtering on the targets, certificates and findings tables, the "/" shortcut, and links that carry the current filter.
+- Confirmation before deleting, and disabling a form's buttons while it is sent.
 
-Everything else is a form. Shared helpers (`$`, `api()`, `ApiError`, `onReady`) live in `common.ts`; error messages come from one `messages` map, in English.
+Everything else is a form, and every one of these works as a plain link or form without JavaScript (the bulk bar shows through CSS alone). Shared helpers (`$`, `api()`, `ApiError`, `onReady`) live in `common.ts`; error messages come from one `messages` map, in English.
 
 **Styling** follows the design canvas (`design/` in the repository), which is an operations console, not a workflow portal. The rules: colour carries status and nothing else — green, amber, red and grey mean healthy, warning, critical and off, and appear nowhere else; actions use one neutral accent (slate blue); the chrome is a 48 px dark graphite bar with live counts in the navigation; content is light by default with a full dark token set, the theme chosen as in Share (system preference, manual override stored server-side in a cookie, no flash). Type is IBM Plex Sans at 13 px for the UI and IBM Plex Mono for host:port, fingerprints, serials, dates and counts, both self-hosted under their OFL licences. Lists are dense: 8 px row padding, uppercase 11 px column heads, status as a dot plus a word, a lifetime bar per certificate showing the share of validity already used, filter chips with counts instead of dropdowns, sorted by expiry by default. Notices are bars, not toasts; the acknowledge form is a side panel, not a modal. All colours are CSS custom properties on `:root`; no colour is hard-coded below the token blocks. The token values are listed in `design/README.md`.
 
@@ -313,7 +321,7 @@ The tool holds a list of hosts, their certificates (public data) and the credent
 - **Secrets at rest**: channel credentials and the Google client secret are encrypted with AES-256-GCM under the secret key file; the key is never in the database. Logs redact tokens and passwords.
 - **Outbound connections** are limited to the targets, the SMTP server, `api.telegram.org` and Google's OIDC endpoints. No telemetry, no update check.
 - **Input**: hostnames validated as DNS names or IP literals, ports 1 to 65535, PEM bundles parsed and rejected when they contain private keys, tags limited to 40 characters.
-- **Audit log**: every change to targets, users, channels, bundles, defaults and every acknowledgement, with user and timestamp; readable by admins, exportable as CSV, pruned with the retention.
+- **Audit log**: every change to targets, users (including unlocks and deletions), channels, bundles, defaults and every acknowledgement (bulk ones marked as such), with user and timestamp; readable by admins, exportable as CSV, pruned with the retention.
 - **Supply chain**: Go dependencies pinned in `go.sum`, `govulncheck` and `gosec` in CI, the npm tree limited to `typescript`, releases built in CI from a tagged commit with checksums published.
 
 ## Open source: repository, licence, CI, versioning

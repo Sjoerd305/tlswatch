@@ -515,6 +515,52 @@ func (s *Server) userLink(w http.ResponseWriter, r *http.Request) {
 	s.showLink(w, r, u, link, sent)
 }
 
+func (s *Server) userUnlock(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		s.fail(w, r, http.StatusNotFound, "No such user.")
+		return
+	}
+	u, err := s.Auth.UserByID(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, http.StatusNotFound, "No such user.")
+		return
+	}
+	if err := s.Auth.Unlock(r.Context(), id); err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	s.Core.Audit(r.Context(), user(r).Email, "user.unlock", "user "+u.Email, "")
+	s.back(w, r, "/settings/users", u.Email+" is unlocked and can sign in again.", "ok")
+}
+
+func (s *Server) userDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		s.fail(w, r, http.StatusNotFound, "No such user.")
+		return
+	}
+	u, err := s.Auth.UserByID(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, http.StatusNotFound, "No such user.")
+		return
+	}
+	if id == user(r).ID {
+		s.back(w, r, fmt.Sprintf("/settings/users?edit=%d", id), "You cannot delete your own account.", "crit")
+		return
+	}
+	if err := s.Auth.DeleteUser(r.Context(), id); err != nil {
+		if errors.Is(err, auth.ErrNotFound) {
+			s.fail(w, r, http.StatusNotFound, "No such user.")
+			return
+		}
+		s.back(w, r, fmt.Sprintf("/settings/users?edit=%d", id), userError(err), "crit")
+		return
+	}
+	s.Core.Audit(r.Context(), user(r).Email, "user.delete", "user "+u.Email, "role="+string(u.Role))
+	s.back(w, r, "/settings/users", "User "+u.Email+" deleted.", "ok")
+}
+
 // Audit log.
 
 type auditData struct {

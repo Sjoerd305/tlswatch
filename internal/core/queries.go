@@ -36,6 +36,28 @@ func (s *Service) Nav(ctx context.Context) NavCounts {
 	return n
 }
 
+// Stamp summarises everything the live pages show; it changes when a check
+// lands, a target or finding changes, or an alert is delivered. Pending is the
+// number of enabled targets that were never checked.
+func (s *Service) Stamp(ctx context.Context) (stamp string, pending int, err error) {
+	var tn, tLast, tUpd, fn, fOpen, fRes, fAck, fAcked, an, aSent int64
+	err = s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(MAX(last_check), 0), COALESCE(MAX(updated_at), 0),
+		COALESCE(SUM(enabled = 1 AND last_check = 0), 0) FROM targets`).Scan(&tn, &tLast, &tUpd, &pending)
+	if err != nil {
+		return "", 0, err
+	}
+	err = s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(MAX(opened_at), 0), COALESCE(MAX(resolved_at), 0),
+		COALESCE(MAX(ack_at), 0), COALESCE(SUM(ack_at > 0), 0) FROM findings`).Scan(&fn, &fOpen, &fRes, &fAck, &fAcked)
+	if err != nil {
+		return "", 0, err
+	}
+	err = s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(state != 'pending'), 0) FROM alerts`).Scan(&an, &aSent)
+	if err != nil {
+		return "", 0, err
+	}
+	return fmt.Sprintf("%d.%d.%d.%d.%d.%d.%d.%d.%d.%d", tn, tLast, tUpd, fn, fOpen, fRes, fAck, fAcked, an, aSent), pending, nil
+}
+
 // Overview is the home screen.
 type Overview struct {
 	Targets     []Target

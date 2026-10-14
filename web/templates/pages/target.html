@@ -12,7 +12,7 @@
     {{- end}}
     <a href="/targets/{{$t.ID}}/edit" class="btn">Edit</a>
     {{- if $t.Enabled}}
-    <form method="post" action="/targets/{{$t.ID}}/disable">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-danger">Disable</button></form>
+    <form method="post" action="/targets/{{$t.ID}}/disable">{{template "csrf" $p.CSRF}}<button type="submit" class="btn">Disable</button></form>
     {{- else}}
     <form method="post" action="/targets/{{$t.ID}}/enable">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-primary">Enable</button></form>
     {{- end}}
@@ -64,7 +64,7 @@
         <div class="link"><span class="d {{if or (lt $dl 0) .Weak}}bad{{else if and .Worst $ecls}}{{if eq $ecls "crit"}}bad{{else}}warn{{end}}{{else}}good{{end}}"></span>
           <div><div class="name">{{.SubjectCN}}</div><div class="sub">{{.Role}}{{if .InStore}}, in {{if eq (print $t.Trust) "bundle"}}bundle{{else}}store{{end}}{{end}} · {{.KeyDesc}} · {{.SigAlg}}{{if .Weak}} · <span class="crit-t">weak</span>{{end}}</div></div>
           <span class="date mono">{{date $p.Loc .NotAfter}}</span>
-          <span class="left mono{{if and .Worst $ecls}} {{$ecls}}-t bold{{end}}">{{$dl}} d</span>
+          <span class="left mono{{if and .Worst $ecls}} {{$ecls}}-t bold{{end}}">{{if lt $dl 0}}expired{{else}}{{$dl}} d{{end}}</span>
         </div>
         {{- end}}
       </div>
@@ -84,7 +84,7 @@
             <td data-label="Result">{{if eq .Status "ok"}}<span class="st ok">OK</span>{{else if eq .Status "warning"}}<span class="st warn">Warning</span>{{else if eq .Status "critical"}}<span class="st crit">Critical</span>{{else if eq .Status "skipped"}}<span class="st off">Skipped</span>{{else}}<span class="st crit">Failed</span>{{end}}{{if .Error}} <span class="muted small">{{.Error}}</span>{{end}}</td>
             <td data-label="Protocol" class="mono">{{.TLSVersion}}</td>
             <td data-label="Cipher" class="mono muted small">{{.Cipher}}</td>
-            <td data-label="Certificate" class="mono small">{{if .LeafFP}}<a href="/certificates?open={{short .LeafFP}}" class="ink">{{short .LeafFP}}…</a>{{end}}</td>
+            <td data-label="Certificate" class="mono small">{{if .LeafFP}}<a href="/certificates?open={{short .LeafFP}}" class="ink" data-row-link>{{short .LeafFP}}…</a>{{end}}</td>
             <td data-label="Time" class="num mono">{{if .DurationMS}}{{.DurationMS}} ms{{end}}</td>
           </tr>
         {{- end}}
@@ -101,7 +101,7 @@
         <tbody>
         {{- range $d.History}}
           <tr>
-            <td data-label="Certificate" class="mono small"><a href="/certificates?open={{short .Fingerprint}}&amp;all=1" class="ink">{{short .Fingerprint}}…</a>{{if .Current}} <span class="muted">current</span>{{end}}</td>
+            <td data-label="Certificate" class="mono small"><a href="/certificates?open={{short .Fingerprint}}&amp;all=1" class="ink" data-row-link>{{short .Fingerprint}}…</a>{{if .Current}} <span class="muted">current</span>{{end}}</td>
             <td data-label="Issuer">{{.IssuerName}}</td>
             <td data-label="Not after" class="mono">{{date $p.Loc .NotAfter}}</td>
             <td data-label="First seen" class="mono">{{date $p.Loc .First}}</td>
@@ -134,13 +134,13 @@
       {{- if $t.Notes}}<div class="notes"><span>Notes</span><p>{{$t.Notes}}</p></div>{{end}}
     </section>
     <section class="card clip">
-      <div class="sec"><h2>Findings on this target</h2></div>
+      <div class="sec"><h2>Findings on this target</h2>{{if $d.Findings}}<a href="/findings?target={{$t.ID}}{{if not $d.OpenMain}}&amp;state=resolved{{end}}">All</a>{{end}}</div>
       <table class="tbl">
         <tbody>
         {{- range $d.Findings}}
           <tr{{if not .Open}} class="muted"{{end}}>
             <td>{{if .Open}}{{if .Acked $p.Now}}<span class="pill off">ack</span>{{else}}<span class="pill {{.Severity.Class}}">{{.Severity.Short}}</span>{{end}}{{else}}<span class="pill off">done</span>{{end}}</td>
-            <td class="wrap"><a href="/findings?sel={{.ID}}{{if not .Open}}&amp;state=resolved{{end}}" class="ink">{{lower .Kind.Label}}</a>{{if .DaysLeft}}{{if .Open}} · {{daysPtr .DaysLeft}} d{{end}}{{end}}</td>
+            <td class="wrap"><a href="/findings?sel={{.ID}}{{if not .Open}}&amp;state=resolved{{end}}" class="ink" data-row-link>{{lower .Kind.Label}}</a>{{if and .DaysLeft .Open (ne (print .Kind) "expired")}} · {{daysPtr .DaysLeft}} d{{end}}</td>
             <td class="mono muted">{{when $p.Loc $p.Now .OpenedAt}}</td>
           </tr>
         {{- else}}
