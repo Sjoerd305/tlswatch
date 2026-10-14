@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,8 +28,8 @@ func (s *Service) Nav(ctx context.Context) NavCounts {
 	var n NavCounts
 	_ = s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(MAX(last_check), 0),
 		COALESCE((SELECT MIN(next_check) FROM targets WHERE enabled = 1 AND next_check > 0), 0) FROM targets`).Scan(&n.Targets, &n.LastCheck, &n.NextCheck)
-	_ = s.DB.R.QueryRowContext(ctx, `SELECT COUNT(DISTINCT leaf_fp) FROM observations o
-		WHERE leaf_fp != '' AND checked_at = (SELECT MAX(checked_at) FROM observations o2 WHERE o2.target_id = o.target_id)`).Scan(&n.Certificates)
+	_ = s.DB.R.QueryRowContext(ctx, `SELECT COUNT(DISTINCT o.leaf_fp) FROM targets t
+		JOIN observations o ON o.check_id = t.last_check_id AND o.target_id = t.id WHERE o.leaf_fp != ''`).Scan(&n.Certificates)
 	var crit int
 	_ = s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(severity = 'critical'), 0) FROM findings f JOIN targets t ON t.id = f.target_id
 		WHERE f.resolved_at = 0 AND t.enabled = 1`).Scan(&n.Findings, &crit)
@@ -37,25 +38,17 @@ func (s *Service) Nav(ctx context.Context) NavCounts {
 }
 
 // Stamp summarises everything the live pages show; it changes when a check
-// lands, a target or finding changes, or an alert is delivered. Pending is the
-// number of enabled targets that were never checked.
+// lands, a target or finding changes, or an alert is queued or delivered
+// (triggers bump the changes counter). Pending is the number of enabled
+// targets that were never checked.
 func (s *Service) Stamp(ctx context.Context) (stamp string, pending int, err error) {
-	var tn, tLast, tUpd, fn, fOpen, fRes, fAck, fAcked, an, aSent int64
-	err = s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(MAX(last_check), 0), COALESCE(MAX(updated_at), 0),
-		COALESCE(SUM(enabled = 1 AND last_check = 0), 0) FROM targets`).Scan(&tn, &tLast, &tUpd, &pending)
+	var n int64
+	err = s.DB.R.QueryRowContext(ctx, `SELECT (SELECT n FROM changes),
+		(SELECT COUNT(*) FROM targets WHERE enabled = 1 AND last_check = 0)`).Scan(&n, &pending)
 	if err != nil {
 		return "", 0, err
 	}
-	err = s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(MAX(opened_at), 0), COALESCE(MAX(resolved_at), 0),
-		COALESCE(MAX(ack_at), 0), COALESCE(SUM(ack_at > 0), 0) FROM findings`).Scan(&fn, &fOpen, &fRes, &fAck, &fAcked)
-	if err != nil {
-		return "", 0, err
-	}
-	err = s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(state != 'pending'), 0) FROM alerts`).Scan(&an, &aSent)
-	if err != nil {
-		return "", 0, err
-	}
-	return fmt.Sprintf("%d.%d.%d.%d.%d.%d.%d.%d.%d.%d", tn, tLast, tUpd, fn, fOpen, fRes, fAck, fAcked, an, aSent), pending, nil
+	return strconv.FormatInt(n, 10), pending, nil
 }
 
 // Overview is the home screen.
@@ -211,7 +204,7 @@ type Observation struct {
 // LastCheck returns the observations of a target's most recent check.
 func (s *Service) LastCheck(ctx context.Context, targetID int64) ([]Observation, error) {
 	rows, err := s.DB.R.QueryContext(ctx, `SELECT id, check_id, address, checked_at, status, tls_version, cipher, leaf_fp, chain, verified, verify_error, error, duration_ms
-		FROM observations WHERE target_id = ? AND check_id = (SELECT check_id FROM observations WHERE target_id = ? ORDER BY id DESC LIMIT 1) ORDER BY id`, targetID, targetID)
+		FROM observations WHERE target_id = ?1 AND check_id = (SELECT last_check_id FROM targets WHERE id = ?1) ORDER BY id`, targetID)
 	if err != nil {
 		return nil, err
 	}
@@ -340,30 +333,46 @@ type InventoryItem struct {
 	Chain   []ChainLink
 }
 
-// Inventory returns every leaf certificate seen, with where it is served now.
-func (s *Service) Inventory(ctx context.Context) ([]InventoryItem, error) {
+// served returns where leaf certificates are served now, per fingerprint:
+// the addresses of every target's latest check. A non-empty fp limits it to
+// that certificate.
+func (s *Service) served(ctx context.Context, fp string) (map[string][]Served, error) {
 	rows, err := s.DB.R.QueryContext(ctx, `SELECT o.leaf_fp, o.target_id, t.name, t.host, t.port, o.address, o.status, o.checked_at, t.current_fp, t.address_count
-		FROM observations o JOIN targets t ON t.id = o.target_id
-		WHERE o.leaf_fp != '' AND o.check_id = (SELECT check_id FROM observations o2 WHERE o2.target_id = o.target_id ORDER BY id DESC LIMIT 1)
-		ORDER BY t.name, o.address`)
+		FROM targets t JOIN observations o ON o.check_id = t.last_check_id AND o.target_id = t.id
+		WHERE o.leaf_fp != '' AND (?1 = '' OR o.leaf_fp = ?1)
+		ORDER BY t.name, o.address`, fp)
 	if err != nil {
 		return nil, err
 	}
-	served := map[string][]Served{}
+	defer rows.Close()
+	out := map[string][]Served{}
 	for rows.Next() {
-		var fp, cur string
+		var leaf, cur string
 		var sv Served
 		var host string
 		var port int
-		if err := rows.Scan(&fp, &sv.TargetID, &sv.TargetName, &host, &port, &sv.Address, &sv.Status, &sv.CheckedAt, &cur, &sv.Addresses); err != nil {
-			rows.Close()
+		if err := rows.Scan(&leaf, &sv.TargetID, &sv.TargetName, &host, &port, &sv.Address, &sv.Status, &sv.CheckedAt, &cur, &sv.Addresses); err != nil {
 			return nil, err
 		}
 		sv.HostPort = Target{Host: host, Port: port}.HostPort()
-		sv.Current = cur == fp
-		served[fp] = append(served[fp], sv)
+		sv.Current = cur == leaf
+		out[leaf] = append(out[leaf], sv)
 	}
-	rows.Close()
+	return out, rows.Err()
+}
+
+// ServedOn returns where one certificate is served now.
+func (s *Service) ServedOn(ctx context.Context, fp string) ([]Served, error) {
+	m, err := s.served(ctx, fp)
+	return m[fp], err
+}
+
+// Inventory returns every leaf certificate seen, with where it is served now.
+func (s *Service) Inventory(ctx context.Context) ([]InventoryItem, error) {
+	served, err := s.served(ctx, "")
+	if err != nil {
+		return nil, err
+	}
 	crow, err := s.DB.R.QueryContext(ctx, "SELECT "+certCols+" FROM certificates WHERE fingerprint IN (SELECT DISTINCT leaf_fp FROM observations WHERE leaf_fp != '') ORDER BY not_after")
 	if err != nil {
 		return nil, err
@@ -441,27 +450,88 @@ func (s *Service) AuditLog(ctx context.Context, filter string, limit int) ([]Aud
 	return out, rows.Err()
 }
 
+// pruneBatch is how many rows one prune statement deletes, so checks and
+// sign-ins get the writer between batches.
+const pruneBatch = 5000
+
 // Prune removes history older than the retention period. The current state
 // of every target is kept regardless of age.
 func (s *Service) Prune(ctx context.Context) error {
 	st := s.CurrentSettings(ctx)
 	cut := s.now().Add(-time.Duration(st.Defaults.RetentionDays) * 24 * time.Hour).Unix()
-	stmts := []string{
+	batched := []string{
 		// Keep each target's latest check.
-		`DELETE FROM observations WHERE checked_at < ?1 AND check_id NOT IN (
-			SELECT (SELECT check_id FROM observations o2 WHERE o2.target_id = t.id ORDER BY id DESC LIMIT 1) FROM targets t)`,
-		"DELETE FROM alerts WHERE created_at < ?1 AND state != 'pending'",
-		"DELETE FROM findings WHERE resolved_at > 0 AND resolved_at < ?1",
-		"DELETE FROM audit WHERE at < ?1",
+		`DELETE FROM observations WHERE id IN (SELECT id FROM observations WHERE checked_at < ?1
+			AND check_id NOT IN (SELECT last_check_id FROM targets) LIMIT ?2)`,
+		"DELETE FROM alerts WHERE id IN (SELECT id FROM alerts WHERE created_at < ?1 AND state != 'pending' LIMIT ?2)",
+		"DELETE FROM findings WHERE id IN (SELECT id FROM findings WHERE resolved_at > 0 AND resolved_at < ?1 LIMIT ?2)",
+		"DELETE FROM audit WHERE id IN (SELECT id FROM audit WHERE at < ?1 LIMIT ?2)",
 		"DELETE FROM tokens WHERE expires_at < ?1",
-		`DELETE FROM certificates WHERE last_seen < ?1
-			AND fingerprint NOT IN (SELECT leaf_fp FROM observations)
-			AND fingerprint NOT IN (SELECT current_fp FROM targets) AND fingerprint NOT IN (SELECT pinned_fp FROM targets)
-			AND NOT EXISTS (SELECT 1 FROM observations o WHERE o.chain LIKE '%' || certificates.fingerprint || '%')`,
 	}
-	for _, q := range stmts {
-		if _, err := s.DB.W.ExecContext(ctx, q, cut); err != nil {
-			return fmt.Errorf("prune: %w", err)
+	for _, q := range batched {
+		for {
+			res, err := s.DB.W.ExecContext(ctx, q, cut, pruneBatch)
+			if err != nil {
+				return fmt.Errorf("prune: %w", err)
+			}
+			if n, _ := res.RowsAffected(); n < pruneBatch {
+				break
+			}
+		}
+	}
+	if err := s.pruneCertificates(ctx, cut); err != nil {
+		return fmt.Errorf("prune certificates: %w", err)
+	}
+	return nil
+}
+
+// pruneCertificates removes certificates not seen since cut that no
+// remaining observation, current state or pin refers to. The references are
+// collected in one pass over the observations on the read pool; the delete
+// checks last_seen again, so a certificate seen meanwhile stays.
+func (s *Service) pruneCertificates(ctx context.Context, cut int64) error {
+	rows, err := s.DB.R.QueryContext(ctx, `SELECT fingerprint FROM certificates WHERE last_seen < ?
+		AND fingerprint NOT IN (SELECT current_fp FROM targets) AND fingerprint NOT IN (SELECT pinned_fp FROM targets)`, cut)
+	if err != nil {
+		return err
+	}
+	candidates := map[string]bool{}
+	for rows.Next() {
+		var fp string
+		if err := rows.Scan(&fp); err != nil {
+			rows.Close()
+			return err
+		}
+		candidates[fp] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil || len(candidates) == 0 {
+		return err
+	}
+	rows, err = s.DB.R.QueryContext(ctx, "SELECT leaf_fp, chain FROM observations")
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var leaf, chain string
+		if err := rows.Scan(&leaf, &chain); err != nil {
+			rows.Close()
+			return err
+		}
+		delete(candidates, leaf)
+		var refs []string
+		_ = json.Unmarshal([]byte(chain), &refs)
+		for _, ref := range refs {
+			delete(candidates, strings.TrimPrefix(ref, "root:"))
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for fp := range candidates {
+		if _, err := s.DB.W.ExecContext(ctx, "DELETE FROM certificates WHERE fingerprint = ? AND last_seen < ?", fp, cut); err != nil {
+			return err
 		}
 	}
 	return nil

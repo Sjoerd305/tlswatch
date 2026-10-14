@@ -4,6 +4,8 @@ Newest first, one line per change.
 
 ## Unreleased
 
+- Faster pages as history grows. Each target records the check behind its current state, so the Certificates page, a target's page and the navigation counts no longer run a subquery per stored observation. The Certificates page loads a certificate's chain when its row is opened instead of up to 300 chains per render. The live-page poll reads one change counter instead of aggregating the findings and alerts tables. The hourly retention deletes in batches of 5,000 rows and finds unused certificates in one pass, so checks and sign-ins are not held up behind it. New indexes cover per-target findings and per-channel alerts.
+- Static files are served under the release version (`/static/<version>/…`) and cached for good, so a browser never pairs a new `app.js` with an old `common.js` after an upgrade.
 - Request bodies are capped at 1 MB (3 MB for CA bundle uploads) before anything reads them, also for signed-out requests; a larger request gets a 413. The 2 MB limit on bundle files now actually applies.
 - Fix: deleting a CA bundle while a target using it was being saved could leave that target with an empty trust store, so every check reported an untrusted chain. The in-use check and the delete are now one statement, and a missing bundle is an error in the log instead of an empty trust store.
 - Fix: a certificate restricted to client authentication was reported as trusted. Chains are now verified for server authentication, as a browser does; such a certificate raises `chain_untrusted`.

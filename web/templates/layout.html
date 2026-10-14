@@ -10,8 +10,8 @@
 {{- end}}
 <title>{{.Title}} · tlswatch</title>
 <link rel="icon" href="/favicon.ico" type="image/svg+xml">
-<link rel="stylesheet" href="/static/css/app.css?v={{.Version}}">
-<script type="module" src="/static/js/app.js?v={{.Version}}"></script>
+<link rel="stylesheet" href="{{.Assets}}/css/app.css">
+<script type="module" src="{{.Assets}}/js/app.js"></script>
 </head>
 <body>
 {{- if .User}}

@@ -13,6 +13,8 @@
 //     its data-<key> attribute (space-separated tokens) contains the value.
 //   [data-count-for="#table"]          receives "N of M" (+ data-count-noun)
 //   tr[data-expand]                    toggles the next tr.detail; .expander ▸/▾
+//   [data-load-url="/api/v1/..."]      inside a detail row: loads { html } into
+//                                      the element the first time the row opens
 //   form[data-api="/api/v1/..."]       submitted with fetch; JSON reply
 //     { html?, notice?, notice_kind?, redirect? }; html replaces the element
 //     named by data-replace ("row" = closest tr, else a selector)
@@ -215,6 +217,26 @@ function toggleRow(row) {
         else if (url.searchParams.get("open") === key)
             url.searchParams.delete("open");
         window.history.replaceState(null, "", url.toString());
+    }
+    if (open) {
+        for (const el of $$("[data-load-url]", detail))
+            void loadInto(el);
+    }
+}
+// loadInto fills an element of a detail row from its data-load-url, once.
+async function loadInto(el) {
+    const url = el.dataset["loadUrl"];
+    if (url === undefined)
+        return;
+    delete el.dataset["loadUrl"];
+    try {
+        const reply = await api("GET", url);
+        el.innerHTML = reply.html ?? "";
+        el.classList.remove("muted");
+    }
+    catch {
+        el.textContent = "could not be loaded";
+        el.dataset["loadUrl"] = url;
     }
 }
 // ---------- API forms, panels, test probe ----------

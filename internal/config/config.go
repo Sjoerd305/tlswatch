@@ -113,6 +113,8 @@ type Settings struct {
 	// Env lists the setting names that the environment overrides, keyed by
 	// form field name (for example "base_url").
 	Env map[string]string
+
+	loc *time.Location // resolved TimeZone, set by Store.Get
 }
 
 // Locked reports whether a field is set by the environment.
@@ -120,6 +122,9 @@ func (s Settings) Locked(field string) bool { _, ok := s.Env[field]; return ok }
 
 // Location returns the display time zone.
 func (s Settings) Location() *time.Location {
+	if s.loc != nil {
+		return s.loc
+	}
 	if s.General.TimeZone != "" {
 		if loc, err := time.LoadLocation(s.General.TimeZone); err == nil {
 			return loc
@@ -264,6 +269,7 @@ func (s *Store) Get(ctx context.Context) (Settings, error) {
 		return st, err
 	}
 	applyEnv(&st)
+	st.loc = st.Location()
 	cp := st
 	s.cached = &cp
 	return st, nil

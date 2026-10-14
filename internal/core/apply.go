@@ -371,8 +371,8 @@ func (s *Service) Apply(ctx context.Context, t Target, r probe.Result) error {
 	// Target state.
 	eff := t.Effective(st.Defaults)
 	next := NextCheck(t.ID, time.Duration(eff.IntervalS)*time.Second, now)
-	set := []string{"last_check=?", "fail_streak=?", "ok_streak=?", "dns_fail_streak=?", "dns_ok_streak=?", "next_check=?", "last_error=?", "address_count=?"}
-	args := []any{checkedAt, out.FailStreak, out.OkStreak, out.DNSFail, out.DNSOk, next.Unix(), out.Error, len(r.Addresses)}
+	set := []string{"last_check=?", "last_check_id=?", "fail_streak=?", "ok_streak=?", "dns_fail_streak=?", "dns_ok_streak=?", "next_check=?", "last_error=?", "address_count=?"}
+	args := []any{checkedAt, checkID, out.FailStreak, out.OkStreak, out.DNSFail, out.DNSOk, next.Unix(), out.Error, len(r.Addresses)}
 	if out.Answered {
 		set = append(set, "current_fp=?", "not_after=?", "tls_version=?")
 		args = append(args, out.LeafFP, out.NotAfter.Unix(), out.TLSVersion)

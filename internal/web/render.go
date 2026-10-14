@@ -39,6 +39,7 @@ type Page struct {
 	Notices  []Notice
 	Settings config.Settings
 	Version  string
+	Assets   string // versioned URL prefix of the static files
 	Data     any
 	// SettingsNav is the active settings sub-page.
 	SettingsNav string
@@ -84,6 +85,7 @@ func (s *Server) fill(w http.ResponseWriter, r *http.Request, p *Page) {
 	p.Settings = ri.settings
 	p.Loc = ri.settings.Location()
 	p.Version = s.Version
+	p.Assets = "/static/" + assetVersion(s.Version)
 	p.Theme = "system"
 	if c, err := r.Cookie(themeCookie); err == nil {
 		switch c.Value {
@@ -120,13 +122,14 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string, p *
 func (s *Server) renderStatus(w http.ResponseWriter, r *http.Request, status int, name string, p *Page) {
 	t, ok := s.pages[name]
 	if !ok {
-		http.Error(w, "unknown page "+name, http.StatusInternalServerError)
+		s.Log.Error("render: unknown page", "page", name, "path", r.URL.Path)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 	s.fill(w, r, p)
 	var buf bytes.Buffer
 	if err := t.ExecuteTemplate(&buf, "layout", p); err != nil {
-		s.Log.Error("render", "page", name, "err", err)
+		s.Log.Error("render", "page", name, "path", r.URL.Path, "err", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
@@ -148,9 +151,16 @@ type frag struct {
 	Item any
 }
 
-func (s *Server) fragPage(w http.ResponseWriter, r *http.Request) *Page {
-	p := &Page{}
-	s.fill(w, r, p)
+// fragPage is the page context for a fragment of the JSON API: what the
+// partials use, without the navigation counts or the flash notice of a full
+// page.
+func (s *Server) fragPage(r *http.Request) *Page {
+	ri := info(r)
+	p := &Page{Now: s.now(), Settings: ri.settings, Loc: ri.settings.Location(), Version: s.Version}
+	if ri.session != nil {
+		u := ri.session.User
+		p.User, p.CSRF = &u, ri.session.CSRF
+	}
 	return p
 }
 

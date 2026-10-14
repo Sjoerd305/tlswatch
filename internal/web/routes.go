@@ -89,6 +89,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/targets/test", edit(s.apiTargetTest))
 	mux.HandleFunc("GET /api/v1/findings/{id}/panel", view(s.apiFindingPanel))
 	mux.HandleFunc("GET /api/v1/stamp", view(s.apiStamp))
+	mux.HandleFunc("GET /api/v1/certificates/{fp}/chain", view(s.apiCertChain))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusNotFound, "There is nothing at this address.")

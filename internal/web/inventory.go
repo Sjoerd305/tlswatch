@@ -105,13 +105,8 @@ func (s *Server) certificates(w http.ResponseWriter, r *http.Request) {
 		}
 		d.Items = append(d.Items, row)
 	}
-	// Chains for every row are loaded lazily; rendering all of them would
-	// make the inventory slow at thousands of certificates.
-	for i := range d.Items {
-		if d.Items[i].Chain == nil && len(d.Items) <= 300 {
-			d.Items[i].Chain = s.Core.InventoryChain(ctx, d.Items[i].Fingerprint)
-		}
-	}
+	// Only the open row's chain is rendered; the others load when a row is
+	// expanded (apiCertChain).
 	d.Total = len(d.Items)
 	for _, it := range d.Items {
 		if it.Targets > 0 {
@@ -385,6 +380,18 @@ func (s *Server) can(r *http.Request, action string) bool {
 	return p.Can(action)
 }
 
+// apiCertChain renders the chain a certificate was last served with, for a
+// row expanded on the certificates page.
+func (s *Server) apiCertChain(w http.ResponseWriter, r *http.Request) {
+	chain := s.Core.InventoryChain(r.Context(), strings.ToLower(r.PathValue("fp")))
+	html, err := s.fragment(r, "cert-chain", frag{P: s.fragPage(r), Item: chain})
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"html": html})
+}
+
 func (s *Server) apiFindingPanel(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
@@ -405,7 +412,7 @@ func (s *Server) apiFindingPanel(w http.ResponseWriter, r *http.Request) {
 			p.Next += "?" + enc
 		}
 	}
-	html, err := s.fragment(r, "finding-panel", frag{P: s.fragPage(w, r), Item: p})
+	html, err := s.fragment(r, "finding-panel", frag{P: s.fragPage(r), Item: p})
 	if err != nil {
 		s.serverError(w, r, err)
 		return

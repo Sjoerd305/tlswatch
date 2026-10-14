@@ -15,6 +15,8 @@
 
 {{define "err"}}{{with .}}<span class="err">{{.}}</span>{{end}}{{end}}
 
+{{define "cert-chain"}}{{$p := .P}}{{range $i, $l := .Item}}{{if $i}}{{if ne $l.Role "leaf"}} → {{end}}{{end}}{{if ne $l.Role "leaf"}}{{$l.SubjectCN}} ({{date $p.Loc $l.NotAfter}}){{end}}{{else}}—{{end}}{{end}}
+
 {{define "csrf"}}<input type="hidden" name="csrf" value="{{.}}">{{end}}
 
 {{/* target-row: one row of the targets table. frag{P, Item: targetRow} */}}

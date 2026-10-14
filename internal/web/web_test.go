@@ -123,6 +123,7 @@ var protected = []route{
 	{"GET", "/certificates.csv", authz.ViewData},
 	{"GET", "/findings", authz.ViewData},
 	{"GET", "/api/v1/stamp", authz.ViewData},
+	{"GET", "/api/v1/certificates/00/chain", authz.ViewData},
 	{"GET", "/targets/new", authz.EditTargets},
 	{"POST", "/targets/new", authz.EditTargets},
 	{"GET", "/targets/1/edit", authz.EditTargets},
@@ -234,6 +235,34 @@ func TestBodyLimit(t *testing.T) {
 	}
 	if bodyLimit("/settings/bundles") <= 2<<20 || bodyLimit("/login") > 1<<20 {
 		t.Fatal("limits")
+	}
+}
+
+// Static files are served under the release's version, so the modules
+// app.js imports are versioned too and can be cached for good.
+func TestStaticVersioned(t *testing.T) {
+	hs := newHarness(t)
+	rec := hs.do(authz.Viewer, "GET", "/", nil, false)
+	if !strings.Contains(rec.Body.String(), `src="/static/test/js/app.js"`) {
+		t.Fatal("layout does not load the versioned app.js")
+	}
+	for _, path := range []string{"/static/test/js/common.js", "/static/test/css/app.css", "/static/js/common.js"} {
+		rec = hs.do("", "GET", path, nil, false)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: %d", path, rec.Code)
+		}
+		immutable := strings.Contains(rec.Header().Get("Cache-Control"), "immutable")
+		if immutable != strings.HasPrefix(path, "/static/test/") {
+			t.Fatalf("%s: Cache-Control %q", path, rec.Header().Get("Cache-Control"))
+		}
+	}
+}
+
+func TestCertChainAPI(t *testing.T) {
+	hs := newHarness(t)
+	rec := hs.do(authz.Viewer, "GET", "/api/v1/certificates/abcd/chain", nil, false)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"html"`) {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
 }
 

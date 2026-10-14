@@ -91,22 +91,45 @@ func (s *Server) Handler() (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.static = http.StripPrefix("/static/", cacheStatic(http.FileServer(http.FS(static)), s.Version == "dev"))
+	s.static = staticHandler(http.FileServer(http.FS(static)), assetVersion(s.Version), s.Version == "dev")
 	mux := http.NewServeMux()
 	s.routes(mux)
 	return s.middleware(mux), nil
 }
 
-func cacheStatic(h http.Handler, dev bool) http.Handler {
+// assetVersion is the version as a path segment.
+func assetVersion(v string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-' || r == '_' {
+			return r
+		}
+		return '-'
+	}, v)
+}
+
+// staticHandler serves the assets under /static/<version>/, so every file
+// of a release, including the modules app.js imports relatively, has its
+// own URL and can be cached for good. Unversioned /static/ paths are still
+// served, with a short cache.
+func staticHandler(files http.Handler, version string, dev bool) http.Handler {
+	prefix := "/static/" + version + "/"
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if dev {
+		rest, versioned := strings.CutPrefix(r.URL.Path, prefix)
+		if !versioned {
+			rest = strings.TrimPrefix(r.URL.Path, "/static/")
+		}
+		switch {
+		case dev:
 			w.Header().Set("Cache-Control", "no-cache")
-		} else if strings.HasSuffix(r.URL.Path, ".woff2") {
+		case versioned || strings.HasSuffix(rest, ".woff2"):
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		} else {
+		default:
 			w.Header().Set("Cache-Control", "public, max-age=300")
 		}
-		h.ServeHTTP(w, r)
+		r2 := r.Clone(r.Context())
+		r2.URL.Path = "/" + rest
+		r2.URL.RawPath = ""
+		files.ServeHTTP(w, r2)
 	})
 }
 

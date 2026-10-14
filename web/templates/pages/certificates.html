@@ -39,7 +39,7 @@
           <span class="k">SANs</span><span class="mono small">{{if .SANs}}{{join .SANs ", "}}{{else}}—{{end}}</span>
           <span class="k">Serial</span><span class="mono small">{{.Serial}}</span>
           <span class="k">Signature</span><span>{{.SigAlg}}</span>
-          {{- if .Chain}}<span class="k">Chain</span><span>{{range $i, $l := .Chain}}{{if $i}}{{if ne $l.Role "leaf"}} → {{end}}{{end}}{{if ne $l.Role "leaf"}}{{$l.SubjectCN}} ({{date $p.Loc $l.NotAfter}}){{end}}{{end}}</span>{{end}}
+          <span class="k">Chain</span>{{if .Open}}<span>{{template "cert-chain" (frag $p .Chain)}}</span>{{else}}<span class="muted" data-load-url="/api/v1/certificates/{{.Fingerprint}}/chain">…</span>{{end}}
           <span class="k">Served on</span>
           {{- if .Served}}
           <table class="tbl nested"><tbody>

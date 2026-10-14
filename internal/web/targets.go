@@ -248,19 +248,16 @@ func (s *Server) targetDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if t.CurrentFP != "" {
-		inv, err := s.Core.Inventory(ctx)
-		if err == nil {
-			for _, it := range inv {
-				if it.Fingerprint != t.CurrentFP {
-					continue
-				}
-				seen := map[int64]bool{id: true}
-				for _, sv := range it.Served {
-					if !seen[sv.TargetID] {
-						seen[sv.TargetID] = true
-						d.AlsoOn = append(d.AlsoOn, sv)
-					}
-				}
+		served, err := s.Core.ServedOn(ctx, t.CurrentFP)
+		if err != nil {
+			s.serverError(w, r, err)
+			return
+		}
+		seen := map[int64]bool{id: true}
+		for _, sv := range served {
+			if !seen[sv.TargetID] {
+				seen[sv.TargetID] = true
+				d.AlsoOn = append(d.AlsoOn, sv)
 			}
 		}
 	}
@@ -766,7 +763,7 @@ func (s *Server) apiTargetCheck(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"redirect": fmt.Sprintf("/targets/%d", id)})
 		return
 	}
-	html, err := s.fragment(r, "target-row", frag{P: s.fragPage(w, r), Item: targetRow{T: t}})
+	html, err := s.fragment(r, "target-row", frag{P: s.fragPage(r), Item: targetRow{T: t}})
 	if err != nil {
 		s.serverError(w, r, err)
 		return
@@ -814,7 +811,7 @@ func (s *Server) apiTargetTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res := s.testProbe(r.Context(), f.T)
-	html, err := s.fragment(r, "test-result", frag{P: s.fragPage(w, r), Item: res})
+	html, err := s.fragment(r, "test-result", frag{P: s.fragPage(r), Item: res})
 	if err != nil {
 		s.serverError(w, r, err)
 		return

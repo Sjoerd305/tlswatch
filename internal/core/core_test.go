@@ -707,21 +707,68 @@ func TestNextCheckSlotIsStable(t *testing.T) {
 
 func TestPruneKeepsCurrentState(t *testing.T) {
 	e := newEnv(t)
-	ca := newCA(t, "Sectigo")
+	oldCA, ca := newCA(t, "Old CA"), newCA(t, "Sectigo")
 	now := e.clock.Now()
 	tg := e.target(nil)
+	old := oldCA.leaf(t, now.Add(-days(10)), now.Add(days(1000)), "portal.example.nl")
+	e.apply(tg.ID, result(served("192.0.2.1", old, oldCA.cert)))
+	e.clock.Add(days(200))
 	c := ca.leaf(t, now.Add(-days(10)), now.Add(days(1000)), "portal.example.nl")
 	e.apply(tg.ID, result(served("192.0.2.1", c, ca.cert)))
-	e.clock.Add(days(400))
+	e.clock.Add(days(200))
 	if err := e.svc.Prune(e.ctx); err != nil {
 		t.Fatal(err)
 	}
 	obs, _ := e.svc.LastCheck(e.ctx, tg.ID)
-	if len(obs) != 1 {
+	if len(obs) != 1 || obs[0].LeafFP != probe.Fingerprint(c) {
 		t.Fatal("latest check pruned")
 	}
-	if _, err := e.svc.Certificate(e.ctx, probe.Fingerprint(c)); err != nil {
-		t.Fatal("current certificate pruned")
+	var n int
+	_ = e.svc.DB.R.QueryRow("SELECT COUNT(*) FROM observations").Scan(&n)
+	if n != 1 {
+		t.Fatalf("%d observations left, want the latest only", n)
+	}
+	for _, kept := range []*x509.Certificate{c, ca.cert} {
+		if _, err := e.svc.Certificate(e.ctx, probe.Fingerprint(kept)); err != nil {
+			t.Fatalf("%s pruned while the latest check serves it", kept.Subject.CommonName)
+		}
+	}
+	for _, gone := range []*x509.Certificate{old, oldCA.cert} {
+		if _, err := e.svc.Certificate(e.ctx, probe.Fingerprint(gone)); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("%s kept: %v", gone.Subject.CommonName, err)
+		}
+	}
+}
+
+// The live-page stamp moves with every change the pages show.
+func TestStampChanges(t *testing.T) {
+	e := newEnv(t)
+	stamp := func() string {
+		st, _, err := e.svc.Stamp(e.ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return st
+	}
+	s0 := stamp()
+	tg := e.target(nil)
+	s1 := stamp()
+	ca := newCA(t, "Sectigo")
+	now := e.clock.Now()
+	e.apply(tg.ID, result(served("192.0.2.1", ca.leaf(t, now.Add(-days(360)), now.Add(days(3)), "portal.example.nl"), ca.cert)))
+	s2 := stamp()
+	f := e.open(tg.ID)[check.Expiring]
+	if _, err := e.svc.Acknowledge(e.ctx, f.ID, "test", time.Time{}, ""); err != nil {
+		t.Fatal(err)
+	}
+	s3 := stamp()
+	e.flush()
+	s4 := stamp()
+	if s0 == s1 || s1 == s2 || s2 == s3 || s3 == s4 {
+		t.Fatalf("stamp did not move: %s %s %s %s %s", s0, s1, s2, s3, s4)
+	}
+	if stamp() != s4 {
+		t.Fatal("stamp moved without a change")
 	}
 }
 
