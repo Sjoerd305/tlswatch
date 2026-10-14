@@ -22,6 +22,7 @@
             <td data-label="Sent, 30 d" class="num mono">{{.Sent30d}}</td>
             <td data-label=""><span class="btn-row"><form method="post" action="/settings/channels/{{.ID}}/test">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-xs">Test</button></form><a href="?edit={{.ID}}" class="btn btn-xs" data-row-link>Edit</a></span></td>
           </tr>
+          {{- if .Unreadable}}<tr><td colspan="7" class="wrap small"><span class="st crit">{{.Name}}: {{.Unreadable}}.</span> Edit the channel and enter its credentials again.</td></tr>{{end}}
           {{- if and .LastError (eq .LastState "failed" "retrying")}}<tr class="muted"><td colspan="7" class="wrap small">{{.Name}}: {{.LastError}}</td></tr>{{end}}
         {{- end}}
         </tbody>

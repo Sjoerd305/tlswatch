@@ -172,7 +172,9 @@ func (d *Dispatcher) deliver(ctx context.Context, chID int64, ps []pending) {
 		}
 	}
 	now := d.now()
+	var ids, gaveUp []int64
 	for _, p := range ps {
+		ids = append(ids, p.id)
 		if sendErr == nil {
 			_, err = d.DB.W.ExecContext(ctx, "UPDATE alerts SET state='sent', sent_at=?, attempts=attempts+1, error='' WHERE id=?", now.Unix(), p.id)
 		} else {
@@ -181,6 +183,7 @@ func (d *Dispatcher) deliver(ctx context.Context, chID int64, ps []pending) {
 			state := "pending"
 			if sendErr == errDisabled || next.After(time.Unix(p.createdAt, 0).Add(GiveUpAfter)) {
 				state = "failed"
+				gaveUp = append(gaveUp, p.id)
 			}
 			_, err = d.DB.W.ExecContext(ctx, "UPDATE alerts SET state=?, attempts=?, next_attempt=?, error=? WHERE id=?", state, n, next.Unix(), sendErr.Error(), p.id)
 		}
@@ -188,10 +191,14 @@ func (d *Dispatcher) deliver(ctx context.Context, chID int64, ps []pending) {
 			d.Log.Error("update alert", "id", p.id, "err", err)
 		}
 	}
-	if sendErr != nil {
-		d.Log.Warn("alert delivery failed", "channel", c.Name, "alerts", len(ps), "err", sendErr)
-	} else {
-		d.Log.Info("alert delivered", "channel", c.Name, "alerts", len(ps))
+	log := d.Log.With("channel_id", chID, "channel", c.Name, "alerts", ids)
+	switch {
+	case sendErr == nil:
+		log.Info("alert delivered")
+	case len(gaveUp) > 0:
+		log.Error("alert delivery given up", "failed", gaveUp, "err", sendErr)
+	default:
+		log.Warn("alert delivery failed, will retry", "attempt", ps[0].attempts+1, "err", sendErr)
 	}
 }
 

@@ -538,6 +538,36 @@ func TestRetryBackoffAndFailure(t *testing.T) {
 	}
 }
 
+// A channel whose settings cannot be decrypted (the secret key changed) does
+// not stop checks or the other channels; its alerts fail visibly.
+func TestUnreadableChannelDoesNotStopChecks(t *testing.T) {
+	e := newEnv(t)
+	if _, err := e.svc.DB.W.Exec("UPDATE channels SET settings = x'00' WHERE id = ?", e.chC); err != nil {
+		t.Fatal(err)
+	}
+	ca := newCA(t, "Sectigo")
+	now := e.clock.Now()
+	tg := e.target(nil)
+	c := ca.leaf(t, now.Add(-days(360)), now.Add(days(3)), "portal.example.nl")
+	tg = e.apply(tg.ID, result(served("192.0.2.1", c, ca.cert)))
+	if _, ok := e.open(tg.ID)[check.Expiring]; !ok {
+		t.Fatal("check not stored")
+	}
+	e.flush()
+	if len(e.take("mail")) != 1 {
+		t.Fatal("readable channel not served")
+	}
+	chans, err := e.svc.Channels.List(e.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ch := range chans {
+		if ch.ID == e.chC && (ch.Unreadable == "" || ch.LastState != "retrying" || !strings.Contains(ch.LastError, "decrypt")) {
+			t.Fatalf("unreadable channel: %+v", ch)
+		}
+	}
+}
+
 type senderFunc func() error
 
 func (f senderFunc) Send(context.Context, notify.Message) error { return f() }

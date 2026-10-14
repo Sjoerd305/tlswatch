@@ -31,6 +31,10 @@ type Channel struct {
 	Telegram    TelegramSettings
 	CreatedAt   int64
 	UpdatedAt   int64
+	// Unreadable is set when the stored settings cannot be decrypted, for
+	// example after the secret key changed. Sending through the channel
+	// fails until an admin enters its credentials again.
+	Unreadable string
 	// Delivery state, filled by List.
 	LastState   string
 	LastAt      int64
@@ -110,10 +114,15 @@ func (s *Channels) seal(c Channel) ([]byte, error) {
 	return s.Key.Seal(b), nil
 }
 
+// ErrUnreadable is wrapped by errors for a channel whose settings cannot be
+// decrypted; the channel is still returned, with Unreadable set.
+var ErrUnreadable = errors.New("cannot decrypt channel settings (secret key changed?)")
+
 func (s *Channels) unseal(c *Channel, blob []byte) error {
 	pt, err := s.Key.Open(blob)
 	if err != nil {
-		return fmt.Errorf("channel %q: cannot decrypt settings (secret key changed?)", c.Name)
+		c.Unreadable = ErrUnreadable.Error()
+		return fmt.Errorf("channel %q: %w", c.Name, ErrUnreadable)
 	}
 	var v sealedSettings
 	if err := json.Unmarshal(pt, &v); err != nil {
@@ -142,7 +151,9 @@ func (s *Channels) scan(row interface{ Scan(...any) error }) (Channel, error) {
 	return c, nil
 }
 
-// List returns every channel with its last delivery state.
+// List returns every channel with its last delivery state. A channel whose
+// settings cannot be decrypted is listed with Unreadable set, so one bad
+// channel does not hide the others or stop the checks that route alerts.
 func (s *Channels) List(ctx context.Context) ([]Channel, error) {
 	rows, err := s.DB.R.QueryContext(ctx, "SELECT "+channelCols+" FROM channels ORDER BY name")
 	if err != nil {
@@ -152,7 +163,7 @@ func (s *Channels) List(ctx context.Context) ([]Channel, error) {
 	var out []Channel
 	for rows.Next() {
 		c, err := s.scan(rows)
-		if err != nil {
+		if err != nil && !errors.Is(err, ErrUnreadable) {
 			return nil, err
 		}
 		out = append(out, c)
@@ -167,10 +178,11 @@ func (s *Channels) List(ctx context.Context) ([]Channel, error) {
 		_ = s.DB.R.QueryRowContext(ctx, `SELECT state, CASE WHEN sent_at > 0 THEN sent_at ELSE created_at END, error, next_attempt
 			FROM alerts WHERE channel_id = ? AND state != 'pending'
 			ORDER BY id DESC LIMIT 1`, c.ID).Scan(&c.LastState, &c.LastAt, &c.LastError, &c.NextAttempt)
-		var pendingRetry int64
-		if err := s.DB.R.QueryRowContext(ctx, "SELECT COALESCE(MIN(next_attempt),0) FROM alerts WHERE channel_id = ? AND state = 'pending' AND attempts > 0", c.ID).Scan(&pendingRetry); err == nil && pendingRetry > 0 {
-			c.LastState = "retrying"
-			c.NextAttempt = pendingRetry
+		var retryAt int64
+		var retryErr string
+		if err := s.DB.R.QueryRowContext(ctx, `SELECT next_attempt, error FROM alerts WHERE channel_id = ? AND state = 'pending' AND attempts > 0
+			ORDER BY next_attempt LIMIT 1`, c.ID).Scan(&retryAt, &retryErr); err == nil {
+			c.LastState, c.NextAttempt, c.LastError = "retrying", retryAt, retryErr
 		}
 		_ = s.DB.R.QueryRowContext(ctx, "SELECT COUNT(*) FROM alerts WHERE channel_id = ? AND state = 'sent' AND sent_at >= ?", c.ID, since).Scan(&c.Sent30d)
 	}
@@ -192,7 +204,8 @@ func (s *Channels) Enabled(ctx context.Context) ([]Channel, error) {
 	return out, nil
 }
 
-// Get returns one channel.
+// Get returns one channel. For a channel whose settings cannot be
+// decrypted it returns the channel and an error wrapping ErrUnreadable.
 func (s *Channels) Get(ctx context.Context, id int64) (Channel, error) {
 	return s.scan(s.DB.R.QueryRowContext(ctx, "SELECT "+channelCols+" FROM channels WHERE id = ?", id))
 }
@@ -201,8 +214,9 @@ func (s *Channels) Get(ctx context.Context, id int64) (Channel, error) {
 // password or Telegram token keeps the stored value.
 func (s *Channels) Save(ctx context.Context, c Channel) (int64, error) {
 	if c.ID != 0 {
+		// Unreadable settings are replaced by what the admin enters now.
 		old, err := s.Get(ctx, c.ID)
-		if err != nil {
+		if err != nil && !errors.Is(err, ErrUnreadable) {
 			return 0, err
 		}
 		c.Kind = old.Kind

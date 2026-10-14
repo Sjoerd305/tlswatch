@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"database/sql"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -204,8 +205,12 @@ func (s *Server) channelDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c, err := s.Core.Channels.Get(r.Context(), id)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		s.fail(w, r, http.StatusNotFound, "No such channel.")
+		return
+	}
+	if err != nil && !errors.Is(err, notify.ErrUnreadable) {
+		s.serverError(w, r, err)
 		return
 	}
 	if err := s.Core.Channels.Delete(r.Context(), id); err != nil {

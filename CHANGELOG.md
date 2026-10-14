@@ -4,6 +4,7 @@ Newest first, one line per change.
 
 ## Unreleased
 
+- Fix: a channel whose settings cannot be decrypted (for example after the secret key changed) no longer stops every check from being stored. It is marked on the Channels page, its alerts fail with a visible error, and the other channels keep working. Delivery logs name the channel ID and the alert IDs, and giving up after 24 hours is logged as an error.
 - Change detection: an open certificate or issuer change is resolved without an acknowledgement only by an automatic renewal. A manually replaced certificate no longer resolves an open issuer change.
 - Users without SMTP: when no SMTP channel is set up, the admin sets a new user's first password (or creates a link to pass on) and can set a new password for a local user later. With SMTP, users get an e-mailed invite link and choose their own password, as before.
 - Live pages: Overview, Targets, a target, Certificates and Findings update themselves when checks land or findings change (every 4 s while checks run, otherwise every minute; paused in background tabs, never while you type or have unsaved input). The background polling does not extend the session idle timeout.
