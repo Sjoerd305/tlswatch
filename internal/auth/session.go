@@ -186,7 +186,7 @@ func (s *Service) session(ctx context.Context, raw string, touch bool) (*Session
 	}
 	u.Role, u.Enabled, u.HasPassword = authz.Role(role), enabled == 1, hash != ""
 	now := s.now()
-	if !u.Enabled || now-sess.LastSeen > int64(s.IdleTimeout/time.Second) {
+	if !u.Enabled || now-sess.LastSeen > int64(s.IdleTimeout/time.Second) || s.MaxAge > 0 && now-sess.CreatedAt > int64(s.MaxAge/time.Second) {
 		_, _ = s.DB.W.ExecContext(ctx, "DELETE FROM sessions WHERE hash = ?", h)
 		return nil, ErrNoSession
 	}
@@ -219,10 +219,15 @@ func (s *Service) DeleteUserSessions(ctx context.Context, userID int64) error {
 	return err
 }
 
-// PruneSessions removes idle sessions and spent tokens.
+// PruneSessions removes idle and expired sessions and spent tokens.
 func (s *Service) PruneSessions(ctx context.Context) error {
 	now := s.now()
-	if _, err := s.DB.W.ExecContext(ctx, "DELETE FROM sessions WHERE last_seen < ?", now-int64(s.IdleTimeout/time.Second)); err != nil {
+	maxAge := int64(s.MaxAge / time.Second)
+	if maxAge == 0 {
+		maxAge = now
+	}
+	if _, err := s.DB.W.ExecContext(ctx, "DELETE FROM sessions WHERE last_seen < ? OR created_at < ?",
+		now-int64(s.IdleTimeout/time.Second), now-maxAge); err != nil {
 		return err
 	}
 	_, err := s.DB.W.ExecContext(ctx, "DELETE FROM tokens WHERE expires_at < ? OR (used_at > 0 AND used_at < ?)", now-86400, now-86400)

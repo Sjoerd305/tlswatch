@@ -288,6 +288,34 @@ func TestSessions(t *testing.T) {
 	}
 }
 
+// An active session still ends MaxAge after sign-in.
+func TestSessionMaxAge(t *testing.T) {
+	s, c := newService(t)
+	ctx := context.Background()
+	u := mkLocal(t, s, "v@example.nl", authz.Viewer)
+	raw, _, _ := s.NewSession(ctx, u.ID)
+	for elapsed := time.Duration(0); elapsed+6*time.Hour < s.MaxAge; elapsed += 6 * time.Hour {
+		c.add(6 * time.Hour)
+		if _, err := s.Session(ctx, raw); err != nil {
+			t.Fatalf("active session ended after %v: %v", elapsed, err)
+		}
+	}
+	c.add(7 * time.Hour)
+	if _, err := s.Session(ctx, raw); err != ErrNoSession {
+		t.Fatalf("session alive past its maximum age: %v", err)
+	}
+	stale, _, _ := s.NewSession(ctx, u.ID)
+	c.add(s.MaxAge + time.Hour)
+	if err := s.PruneSessions(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	_ = s.DB.R.QueryRow("SELECT COUNT(*) FROM sessions WHERE hash = ?", hashToken(stale)).Scan(&n)
+	if n != 0 {
+		t.Fatal("expired session not pruned")
+	}
+}
+
 func TestLastAdmin(t *testing.T) {
 	s, _ := newService(t)
 	ctx := context.Background()

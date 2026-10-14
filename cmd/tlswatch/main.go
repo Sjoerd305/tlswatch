@@ -141,7 +141,7 @@ func open() (*app, error) {
 		}
 		return st.General.BaseURL + "/findings"
 	}
-	a.sched = &sched.Scheduler{Core: a.core, Log: a.log}
+	a.sched = &sched.Scheduler{Core: a.core, Log: a.log, PruneSessions: a.auth.PruneSessions}
 	return a, nil
 }
 

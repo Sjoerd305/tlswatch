@@ -42,7 +42,8 @@ const (
 	ipMaxFailures   = 20
 	ipWindow        = 15 * time.Minute
 	defaultIdle     = 8 * time.Hour
-	sessionTouchMin = 60 // seconds between last_seen updates
+	defaultMaxAge   = 7 * 24 * time.Hour // a session ends this long after sign-in, active or not
+	sessionTouchMin = 60                 // seconds between last_seen updates
 )
 
 // User is a person who signs in.
@@ -79,6 +80,7 @@ type Service struct {
 	Key         *secret.Key
 	Now         func() time.Time
 	IdleTimeout time.Duration
+	MaxAge      time.Duration
 	Breached    *Breached
 
 	mu      sync.Mutex
@@ -87,7 +89,7 @@ type Service struct {
 
 // New returns a service with defaults.
 func New(d *db.DB, k *secret.Key) *Service {
-	return &Service{DB: d, Key: k, Now: time.Now, IdleTimeout: defaultIdle, Breached: DefaultBreached()}
+	return &Service{DB: d, Key: k, Now: time.Now, IdleTimeout: defaultIdle, MaxAge: defaultMaxAge, Breached: DefaultBreached()}
 }
 
 func (s *Service) now() int64 { return s.Now().Unix() }

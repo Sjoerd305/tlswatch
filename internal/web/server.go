@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -115,7 +116,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		start := s.now()
 		defer func() {
 			if v := recover(); v != nil {
-				s.Log.Error("panic", "path", r.URL.Path, "err", v)
+				s.Log.Error("panic", "method", r.Method, "path", r.URL.Path, "err", v, "stack", string(debug.Stack()))
 				http.Error(w, "Internal error", http.StatusInternalServerError)
 			}
 		}()
@@ -137,23 +138,30 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			h.Set("Strict-Transport-Security", "max-age=31536000")
 		}
 
+		if strings.HasPrefix(r.URL.Path, "/static/") {
+			s.static.ServeHTTP(w, r)
+			return
+		}
+
 		if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
 			lookup := s.Auth.Session
 			if passiveRequest(r) {
 				lookup = s.Auth.SessionPassive
 			}
-			if sess, err := lookup(r.Context(), c.Value); err == nil {
+			sess, err := lookup(r.Context(), c.Value)
+			switch {
+			case err == nil:
 				ri.session = sess
-			} else {
+			case errors.Is(err, auth.ErrNoSession):
 				s.clearCookie(w, sessionCookie, ri)
+			default:
+				// A database hiccup is not a sign-out: keep the cookie.
+				s.Log.Error("session lookup", "path", r.URL.Path, "err", err)
+				http.Error(w, "tlswatch is temporarily unavailable; try again shortly.", http.StatusServiceUnavailable)
+				return
 			}
 		}
 		r = r.WithContext(context.WithValue(r.Context(), keyReq, ri))
-
-		if strings.HasPrefix(r.URL.Path, "/static/") {
-			s.static.ServeHTTP(w, r)
-			return
-		}
 		h.Set("Cache-Control", "no-store")
 
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {

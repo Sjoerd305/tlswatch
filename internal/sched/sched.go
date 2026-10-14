@@ -46,6 +46,9 @@ type Scheduler struct {
 	Now  func() time.Time
 	// Probe is replaceable in tests.
 	Probe func(ctx context.Context, req probe.Request) probe.Result
+	// PruneSessions removes expired sessions and tokens; run hourly with
+	// the retention.
+	PruneSessions func(ctx context.Context) error
 
 	mu       sync.Mutex
 	q        queue
@@ -412,8 +415,10 @@ func (s *Scheduler) prune(ctx context.Context) {
 	if err := s.Core.Prune(ctx); err != nil {
 		s.Log.Error("retention", "err", err)
 	}
-	if _, err := s.Core.DB.W.ExecContext(ctx, "DELETE FROM sessions WHERE last_seen < ?", s.now().Add(-8*time.Hour).Unix()); err != nil {
-		s.Log.Error("prune sessions", "err", err)
+	if s.PruneSessions != nil {
+		if err := s.PruneSessions(ctx); err != nil {
+			s.Log.Error("prune sessions", "err", err)
+		}
 	}
 }
 

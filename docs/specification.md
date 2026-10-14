@@ -198,7 +198,7 @@ Three roles, one per user, no organisations or tenants: the tool is single-tenan
 
 **TOTP** as second factor for local accounts is not in version 1 (open point); the tool holds no secrets beyond its own channel credentials.
 
-**Sessions**: server-side session store in SQLite, cookie `HttpOnly; Secure; SameSite=Lax`, 8 hours idle timeout (the live-page polling does not count as activity, so an open tab does not keep a session alive), CSRF token on every state-changing form and JSON call. While no account exists, every page redirects to a setup screen where the first admin is created with their own e-mail address and password and signed in directly; the screen disappears once an account exists. The check and the insert are one transaction, so concurrent attempts create one admin only. Scripted installs can use the `create-admin` subcommand, which prints a one-time password link.
+**Sessions**: server-side session store in SQLite, cookie `HttpOnly; Secure; SameSite=Lax`, 8 hours idle timeout (the live-page polling does not count as activity, so an open tab does not keep a session alive) and a 7-day maximum age after sign-in, CSRF token on every state-changing form and JSON call. While no account exists, every page redirects to a setup screen where the first admin is created with their own e-mail address and password and signed in directly; the screen disappears once an account exists. The check and the insert are one transaction, so concurrent attempts create one admin only. Scripted installs can use the `create-admin` subcommand, which prints a one-time password link.
 
 **Authorisation** is one decision function role × action, called by every handler and covered by a negative test suite (every role tried against every action it must not have).
 
