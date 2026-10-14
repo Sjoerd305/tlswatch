@@ -34,15 +34,34 @@ func startTLS(conn net.Conn, p Protocol) error {
 	return fmt.Errorf("unknown protocol %q", p)
 }
 
+// Limits on what a server may send before STARTTLS, so a hostile or broken
+// one cannot stream data at the prober until the deadline.
+const (
+	maxLineBytes  = 4096
+	maxReplyLines = 100
+)
+
+var errTooManyLines = fmt.Errorf("server sent more than %d lines in one reply", maxReplyLines)
+
 func readLine(r *bufio.Reader) (string, error) {
-	line, err := r.ReadString('\n')
-	if err != nil {
-		if errors.Is(err, io.EOF) && line == "" {
-			return "", errors.New("connection closed by server")
+	var line []byte
+	for {
+		chunk, err := r.ReadSlice('\n')
+		line = append(line, chunk...)
+		if len(line) > maxLineBytes {
+			return "", fmt.Errorf("server sent a line longer than %d bytes", maxLineBytes)
 		}
-		return "", err
+		if errors.Is(err, bufio.ErrBufferFull) {
+			continue
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) && len(line) == 0 {
+				return "", errors.New("connection closed by server")
+			}
+			return "", err
+		}
+		return strings.TrimRight(string(line), "\r\n"), nil
 	}
-	return strings.TrimRight(line, "\r\n"), nil
 }
 
 // readReply reads an SMTP/FTP style reply: "123-..." continuation lines up to
@@ -51,6 +70,9 @@ func readReply(r *bufio.Reader) (int, []string, error) {
 	var lines []string
 	first := ""
 	for {
+		if len(lines) >= maxReplyLines {
+			return 0, lines, errTooManyLines
+		}
 		line, err := readLine(r)
 		if err != nil {
 			return 0, lines, err
@@ -154,6 +176,9 @@ func imapStartTLS(conn net.Conn) error {
 	readTagged := func(tag string) ([]string, string, error) {
 		var untagged []string
 		for {
+			if len(untagged) >= maxReplyLines {
+				return untagged, "", errTooManyLines
+			}
 			line, err := readLine(r)
 			if err != nil {
 				return untagged, "", err
@@ -215,7 +240,10 @@ func pop3StartTLS(conn net.Conn) error {
 	}
 	if strings.HasPrefix(line, "+OK") {
 		offered := false
-		for {
+		for n := 0; ; n++ {
+			if n >= maxReplyLines {
+				return errTooManyLines
+			}
 			l, err := readLine(r)
 			if err != nil {
 				return err

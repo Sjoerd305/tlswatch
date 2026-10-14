@@ -528,3 +528,17 @@ func TestProtocols(t *testing.T) {
 		t.Fatal("IsLocalIP")
 	}
 }
+
+func TestReadLineLimits(t *testing.T) {
+	long := strings.Repeat("x", maxLineBytes+1) + "\r\n"
+	if _, err := readLine(bufio.NewReader(strings.NewReader(long))); err == nil {
+		t.Fatal("over-long line accepted")
+	}
+	if l, err := readLine(bufio.NewReader(strings.NewReader(strings.Repeat("y", 5000)[:4000] + "\r\n"))); err != nil || len(l) != 4000 {
+		t.Fatalf("line longer than the reader buffer: %d %v", len(l), err)
+	}
+	endless := strings.Repeat("250-EXTENSION\r\n", maxReplyLines+1)
+	if _, _, err := readReply(bufio.NewReader(strings.NewReader(endless))); !errors.Is(err, errTooManyLines) {
+		t.Fatalf("endless reply: %v", err)
+	}
+}
