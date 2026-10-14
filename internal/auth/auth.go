@@ -87,6 +87,10 @@ type Service struct {
 	mu      sync.Mutex
 	ipFails map[string][]int64
 	phantom map[string]phantomLock // lockout of e-mail addresses without a local account
+	// lastGoodIP is the address each account last signed in from. The
+	// account lockout does not apply there, so failures from elsewhere
+	// cannot keep someone out; the per-address limit still does.
+	lastGoodIP map[int64]string
 }
 
 // phantomLock mirrors users.failed_count and locked_until for an address
@@ -359,7 +363,7 @@ func (s *Service) Login(ctx context.Context, email, pw, ip string) (User, error)
 	if err != nil {
 		return User{}, err
 	}
-	if lockedUntil > now {
+	if lockedUntil > now && !s.trustedIP(u.ID, ip) {
 		VerifyPassword(dummyHash(), pw)
 		return User{}, ErrLocked
 	}
@@ -374,7 +378,7 @@ func (s *Service) Login(ctx context.Context, email, pw, ip string) (User, error)
 		if _, err := s.DB.W.ExecContext(ctx, "UPDATE users SET failed_count = ?, locked_until = ? WHERE id = ?", failed, lock, u.ID); err != nil {
 			return User{}, err
 		}
-		if lock > 0 {
+		if lock > 0 && !s.trustedIP(u.ID, ip) {
 			return User{}, ErrLocked
 		}
 		return User{}, ErrInvalidCredentials
@@ -385,7 +389,22 @@ func (s *Service) Login(ctx context.Context, email, pw, ip string) (User, error)
 	if _, err := s.DB.W.ExecContext(ctx, "UPDATE users SET failed_count = 0, locked_until = 0 WHERE id = ?", u.ID); err != nil {
 		return User{}, err
 	}
+	s.mu.Lock()
+	if s.lastGoodIP == nil {
+		s.lastGoodIP = map[int64]string{}
+	}
+	if ip != "" {
+		s.lastGoodIP[u.ID] = ip
+	}
+	s.mu.Unlock()
 	return u, nil
+}
+
+// trustedIP reports whether ip is where the account last signed in.
+func (s *Service) trustedIP(userID int64, ip string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return ip != "" && s.lastGoodIP[userID] == ip
 }
 
 // phantomFail counts a failed sign-in for an address without a local

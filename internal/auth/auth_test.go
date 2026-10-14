@@ -112,19 +112,20 @@ func TestLoginLockout(t *testing.T) {
 	if _, err := s.Login(ctx, "OP@example.nl", goodPW, "10.0.0.1"); err != nil {
 		t.Fatalf("good login: %v", err)
 	}
+	// Failures from another address than the last good one lock the account.
 	for i := 1; i <= 4; i++ {
-		if _, err := s.Login(ctx, "op@example.nl", "wrong", "10.0.0.1"); !errors.Is(err, ErrInvalidCredentials) {
+		if _, err := s.Login(ctx, "op@example.nl", "wrong", "10.0.0.2"); !errors.Is(err, ErrInvalidCredentials) {
 			t.Fatalf("attempt %d: %v", i, err)
 		}
 	}
-	if _, err := s.Login(ctx, "op@example.nl", "wrong", "10.0.0.1"); !errors.Is(err, ErrLocked) {
+	if _, err := s.Login(ctx, "op@example.nl", "wrong", "10.0.0.2"); !errors.Is(err, ErrLocked) {
 		t.Fatalf("5th failure: %v", err)
 	}
-	if _, err := s.Login(ctx, "op@example.nl", goodPW, "10.0.0.1"); !errors.Is(err, ErrLocked) {
+	if _, err := s.Login(ctx, "op@example.nl", goodPW, "10.0.0.2"); !errors.Is(err, ErrLocked) {
 		t.Fatalf("locked account let in: %v", err)
 	}
 	c.add(15*time.Minute + time.Second)
-	if _, err := s.Login(ctx, "op@example.nl", goodPW, "10.0.0.1"); err != nil {
+	if _, err := s.Login(ctx, "op@example.nl", goodPW, "10.0.0.2"); err != nil {
 		t.Fatalf("after lock expiry: %v", err)
 	}
 }
@@ -154,6 +155,26 @@ func TestLockoutDoesNotRevealAccounts(t *testing.T) {
 	c.add(lockDuration + time.Second)
 	if _, err := s.Login(ctx, "nobody@example.nl", "wrong", ""); !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("after the lock: %v", err)
+	}
+}
+
+// Failures from other addresses cannot lock an account out of the address
+// it last signed in from.
+func TestLockoutSparesLastGoodAddress(t *testing.T) {
+	s, _ := newService(t)
+	ctx := context.Background()
+	mkLocal(t, s, "admin@example.nl", authz.Admin)
+	if _, err := s.Login(ctx, "admin@example.nl", goodPW, "10.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < maxFailures; i++ {
+		_, _ = s.Login(ctx, "admin@example.nl", "wrong", "203.0.113.9")
+	}
+	if _, err := s.Login(ctx, "admin@example.nl", goodPW, "198.51.100.7"); !errors.Is(err, ErrLocked) {
+		t.Fatalf("other address: %v", err)
+	}
+	if _, err := s.Login(ctx, "admin@example.nl", goodPW, "10.0.0.1"); err != nil {
+		t.Fatalf("last good address locked out: %v", err)
 	}
 }
 
