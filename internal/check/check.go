@@ -6,7 +6,7 @@ package check
 import (
 	"crypto/x509"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -237,122 +237,172 @@ func DaysLeft(notAfter, now time.Time) int {
 	return int(d / (24 * time.Hour))
 }
 
-// Evaluate applies every check to one probe result.
+// Evaluate applies every check to one probe result. The caller resolves
+// every open finding the outcome neither opens nor keeps.
 func Evaluate(t Target, prev Previous, r probe.Result, now time.Time) Outcome {
-	out := Outcome{Addresses: map[string]AddressOutcome{}}
-	debounce := t.Debounce
-	if debounce < 1 {
-		debounce = 1
-	}
-	keep := func(k Kind) {
-		if prev.Open[k] {
-			out.Keep = append(out.Keep, k)
-		}
-	}
+	e := &evaluation{t: t, prev: prev, now: now, debounce: max(t.Debounce, 1)}
+	e.out.Addresses = map[string]AddressOutcome{}
 
-	// DNS.
 	if r.DNSError != "" && len(r.Addresses) == 0 {
-		out.DNSFail = prev.DNSFail + 1
-		out.Error = r.DNSError
-		if prev.Open[DNSFailed] || out.DNSFail >= debounce {
-			out.Open = append(out.Open, Finding{Kind: DNSFailed, Severity: Critical, Details: "the name did not resolve: " + r.DNSError})
-		}
-		out.FailStreak, out.OkStreak = prev.FailStreak, prev.OkStreak
-		for _, k := range Kinds {
-			if k != DNSFailed {
-				keep(k)
-			}
-		}
-		return out
+		e.dnsFailed(r.DNSError)
+		return e.out
 	}
-	out.DNSOk = prev.DNSOk + 1
-	if prev.Open[DNSFailed] && out.DNSOk < debounce {
-		keep(DNSFailed)
-	}
+	e.out.DNSOk, e.out.DNSFail = prev.DNSOk+1, 0
+	e.recovering(DNSFailed, e.out.DNSOk)
 
+	ok := e.sortAddresses(r.Addresses)
+	if len(ok) == 0 {
+		e.nothingAnswered(r)
+		return e.out
+	}
+	e.out.Answered = true
+	e.out.OkStreak, e.out.FailStreak = prev.OkStreak+1, 0
+	e.recovering(Unreachable, e.out.OkStreak)
+
+	cur := pickLeaf(ok)
+	info := probe.Describe(cur.Chain[0])
+	e.out.Leaf, e.out.LeafFP, e.out.TLSVersion = cur.Chain[0], info.Fingerprint, cur.TLSVersion
+	e.out.RenewalManaged, e.out.Thresholds = thresholds(t, info)
+
+	e.inconsistent(ok)
+	e.facts(ok)
+	e.expectedIssuer(info)
+	e.changes(info)
+	return e.out
+}
+
+// evaluation is the state of one Evaluate call.
+type evaluation struct {
+	t        Target
+	prev     Previous
+	now      time.Time
+	debounce int
+	out      Outcome
+}
+
+func (e *evaluation) open(f Finding) { e.out.Open = append(e.out.Open, f) }
+
+// keep leaves k untouched if it is open.
+func (e *evaluation) keep(k Kind) {
+	if e.prev.Open[k] {
+		e.out.Keep = append(e.out.Keep, k)
+	}
+}
+
+// keepAllBut keeps every open kind except the given ones.
+func (e *evaluation) keepAllBut(except ...Kind) {
+	for _, k := range Kinds {
+		if !slices.Contains(except, k) {
+			e.keep(k)
+		}
+	}
+}
+
+// failing opens a debounced finding once streak consecutive checks failed;
+// an open one stays open on every further failure.
+func (e *evaluation) failing(k Kind, streak int, details string) {
+	if e.prev.Open[k] || streak >= e.debounce {
+		e.open(Finding{Kind: k, Severity: Critical, Details: details})
+	}
+}
+
+// recovering keeps a debounced finding open until streak consecutive checks
+// passed.
+func (e *evaluation) recovering(k Kind, streak int) {
+	if streak < e.debounce {
+		e.keep(k)
+	}
+}
+
+// dnsFailed handles a name that did not resolve: nothing else was tested,
+// so every other finding and the network streaks stand.
+func (e *evaluation) dnsFailed(err string) {
+	e.out.DNSFail, e.out.DNSOk = e.prev.DNSFail+1, 0
+	e.out.FailStreak, e.out.OkStreak = e.prev.FailStreak, e.prev.OkStreak
+	e.out.Error = err
+	e.failing(DNSFailed, e.out.DNSFail, "the name did not resolve: "+err)
+	e.keepAllBut(DNSFailed)
+}
+
+// sortAddresses records the failed addresses, opens tls_unavailable for those
+// that refused STARTTLS, and returns the ones that answered.
+func (e *evaluation) sortAddresses(addrs []probe.Address) []probe.Address {
 	var ok []probe.Address
 	var starttls []string
-	var failures []string
-	for _, a := range r.Addresses {
+	for _, a := range addrs {
 		switch {
 		case a.OK:
 			ok = append(ok, a)
 		case a.ErrorKind == probe.ErrStartTLS:
 			starttls = append(starttls, a.IP)
-			out.Addresses[a.IP] = AddressOutcome{Status: "critical"}
+			e.out.Addresses[a.IP] = AddressOutcome{Status: "critical"}
 		default:
-			failures = append(failures, a.IP+": "+a.Error)
-			out.Addresses[a.IP] = AddressOutcome{Status: "error"}
+			e.out.Addresses[a.IP] = AddressOutcome{Status: "error"}
 		}
 	}
-
 	if len(starttls) > 0 {
-		out.Open = append(out.Open, Finding{Kind: TLSUnavailable, Severity: Critical, Details: "STARTTLS not offered on " + strings.Join(starttls, ", ")})
+		e.open(Finding{Kind: TLSUnavailable, Severity: Critical, Details: "STARTTLS not offered on " + strings.Join(starttls, ", ")})
 	}
+	return ok
+}
 
-	// Unreachable on every address that did not refuse STARTTLS.
-	if len(ok) == 0 {
-		if len(starttls) == 0 {
-			out.FailStreak = prev.FailStreak + 1
-			out.Error = strings.Join(failures, "; ")
-			details := summarise(failures)
-			if hint := PortHint(r.Protocol, r.Port); hint != "" {
-				out.Error += ". " + hint
-				details += ". " + hint
-			}
-			if prev.Open[Unreachable] || out.FailStreak >= debounce {
-				out.Open = append(out.Open, Finding{Kind: Unreachable, Severity: Critical, Details: details})
-			}
+// nothingAnswered handles a check where no address completed a handshake.
+// The target is unreachable unless an address refused STARTTLS: that one
+// answered, so the network streaks stand. No certificate was read, so the
+// certificate findings stand.
+func (e *evaluation) nothingAnswered(r probe.Result) {
+	var failures []string
+	starttls := false
+	for _, a := range r.Addresses {
+		if a.ErrorKind == probe.ErrStartTLS {
+			starttls = true
 		} else {
-			out.FailStreak, out.OkStreak = prev.FailStreak, prev.OkStreak
-			keep(Unreachable)
+			failures = append(failures, a.IP+": "+a.Error)
 		}
-		// Nothing was read: certificate findings stay as they are.
-		for _, k := range Kinds {
-			if !k.Network() && k != TLSUnavailable {
-				keep(k)
-			}
+	}
+	if starttls {
+		e.out.FailStreak, e.out.OkStreak = e.prev.FailStreak, e.prev.OkStreak
+		e.keep(Unreachable)
+	} else {
+		e.out.FailStreak, e.out.OkStreak = e.prev.FailStreak+1, 0
+		e.out.Error = strings.Join(failures, "; ")
+		details := summarise(failures)
+		if hint := PortHint(r.Protocol, r.Port); hint != "" {
+			e.out.Error += ". " + hint
+			details += ". " + hint
 		}
-		return out
+		e.failing(Unreachable, e.out.FailStreak, details)
 	}
-	out.Answered = true
-	out.OkStreak = prev.OkStreak + 1
-	if prev.Open[Unreachable] && out.OkStreak < debounce {
-		keep(Unreachable)
-	}
+	e.keepAllBut(Unreachable, DNSFailed, TLSUnavailable)
+}
 
-	// Pick the current leaf: the one most addresses serve; ties go to the
-	// latest expiry so a stale node does not become "current".
+// pickLeaf returns the address serving the current leaf: the one most
+// addresses serve, ties going to the latest expiry so a stale node does not
+// become current.
+func pickLeaf(ok []probe.Address) probe.Address {
 	counts := map[string]int{}
-	leafOf := map[string]probe.Address{}
 	for _, a := range ok {
-		fp := probe.Fingerprint(a.Chain[0])
-		counts[fp]++
-		leafOf[fp] = a
+		counts[probe.Fingerprint(a.Chain[0])]++
 	}
-	fps := make([]string, 0, len(counts))
-	for fp := range counts {
-		fps = append(fps, fp)
-	}
-	sort.Slice(fps, func(i, j int) bool {
-		if counts[fps[i]] != counts[fps[j]] {
-			return counts[fps[i]] > counts[fps[j]]
+	best := ok[0]
+	for _, a := range ok[1:] {
+		ca, cb := counts[probe.Fingerprint(a.Chain[0])], counts[probe.Fingerprint(best.Chain[0])]
+		if ca > cb || ca == cb && a.Chain[0].NotAfter.After(best.Chain[0].NotAfter) {
+			best = a
 		}
-		return leafOf[fps[i]].Chain[0].NotAfter.After(leafOf[fps[j]].Chain[0].NotAfter)
-	})
-	cur := leafOf[fps[0]]
-	leaf := cur.Chain[0]
-	out.Leaf = leaf
-	out.LeafFP = fps[0]
-	out.TLSVersion = cur.TLSVersion
-	info := probe.Describe(leaf)
+	}
+	return best
+}
 
-	out.RenewalManaged = t.RenewalManaged
+// thresholds decides whether the certificate is renewal managed and which
+// thresholds apply to it.
+func thresholds(t Target, info probe.CertInfo) (bool, Thresholds) {
+	managed := t.RenewalManaged
 	if !t.RenewalSet {
-		out.RenewalManaged = IsACMEIssuer(info.IssuerOrg, info.IssuerCN)
+		managed = IsACMEIssuer(info.IssuerOrg, info.IssuerCN)
 	}
 	th := t.Manual
-	if out.RenewalManaged {
+	if managed {
 		th = t.Managed
 	}
 	if t.Warn != nil {
@@ -361,92 +411,121 @@ func Evaluate(t Target, prev Previous, r probe.Result, now time.Time) Outcome {
 	if t.Crit != nil {
 		th.Crit = *t.Crit
 	}
-	out.Thresholds = th
+	return managed, th
+}
 
-	if len(fps) > 1 {
-		var parts []string
-		for _, a := range ok {
-			fp := probe.Fingerprint(a.Chain[0])
-			parts = append(parts, fmt.Sprintf("%s serves %s (%d d)", a.IP, fp[:8], DaysLeft(a.Chain[0].NotAfter, now)))
-		}
-		out.Open = append(out.Open, Finding{Kind: Inconsistent, Severity: Warning, Details: strings.Join(parts, ", ")})
+// inconsistent opens a finding when the addresses serve different leaves.
+func (e *evaluation) inconsistent(ok []probe.Address) {
+	if !slices.ContainsFunc(ok, func(a probe.Address) bool { return probe.Fingerprint(a.Chain[0]) != e.out.LeafFP }) {
+		return
 	}
-
-	// Fact findings, per address, merged to the worst.
-	facts := map[Kind]Finding{}
-	merge := func(f Finding) {
-		if old, ok := facts[f.Kind]; !ok || f.Severity.Rank() > old.Severity.Rank() ||
-			(f.DaysLeft != nil && old.DaysLeft != nil && *f.DaysLeft < *old.DaysLeft) {
-			facts[f.Kind] = f
-		}
-	}
-	earliest := time.Time{}
+	var parts []string
 	for _, a := range ok {
-		fs, na := addressFacts(t, a, th, now)
-		if earliest.IsZero() || na.Before(earliest) {
-			earliest = na
+		parts = append(parts, fmt.Sprintf("%s serves %s (%d d)", a.IP, probe.Fingerprint(a.Chain[0])[:8], DaysLeft(a.Chain[0].NotAfter, e.now)))
+	}
+	e.open(Finding{Kind: Inconsistent, Severity: Warning, Details: strings.Join(parts, ", ")})
+}
+
+// facts runs the certificate checks on every answered address, records each
+// address's status and opens each kind at its worst across the addresses.
+func (e *evaluation) facts(ok []probe.Address) {
+	worst := map[Kind]Finding{}
+	for _, a := range ok {
+		fs, notAfter := addressFacts(e.t, a, e.out.Thresholds, e.now)
+		if e.out.NotAfter.IsZero() || notAfter.Before(e.out.NotAfter) {
+			e.out.NotAfter = notAfter
 		}
-		worst := "ok"
+		status := "ok"
+		var sev Severity
 		for _, f := range fs {
-			merge(f)
-			if f.Severity == Critical {
-				worst = "critical"
-			} else if f.Severity == Warning && worst != "critical" {
-				worst = "warning"
+			if old, seen := worst[f.Kind]; !seen || worse(f, old) {
+				worst[f.Kind] = f
+			}
+			if f.Severity.Rank() > sev.Rank() {
+				sev = f.Severity
 			}
 		}
-		out.Addresses[a.IP] = AddressOutcome{Status: worst, LeafFP: probe.Fingerprint(a.Chain[0])}
+		if sev.Rank() >= Warning.Rank() {
+			status = string(sev)
+		}
+		e.out.Addresses[a.IP] = AddressOutcome{Status: status, LeafFP: probe.Fingerprint(a.Chain[0])}
 	}
-	out.NotAfter = earliest
 	for _, k := range Kinds {
-		if f, ok := facts[k]; ok {
-			out.Open = append(out.Open, f)
+		if f, found := worst[k]; found {
+			e.open(f)
 		}
 	}
+}
 
-	// Expected issuer is a state check.
-	if t.ExpectedIssuer != "" {
-		exp := strings.ToLower(t.ExpectedIssuer)
-		if !strings.Contains(strings.ToLower(info.IssuerCN), exp) && !strings.Contains(strings.ToLower(info.IssuerOrg), exp) && !strings.Contains(strings.ToLower(info.Issuer), exp) {
-			out.Open = append(out.Open, Finding{Kind: IssuerChanged, Severity: Warning, Fingerprint: out.LeafFP,
-				Details: fmt.Sprintf("issued by %s, expected %s", issuerName(info), t.ExpectedIssuer)})
+// worse reports whether f is worse than old, a finding of the same kind:
+// higher severity, or as severe with fewer days left.
+func worse(f, old Finding) bool {
+	if f.Severity.Rank() != old.Severity.Rank() {
+		return f.Severity.Rank() > old.Severity.Rank()
+	}
+	return f.DaysLeft != nil && old.DaysLeft != nil && *f.DaysLeft < *old.DaysLeft
+}
+
+// expectedIssuer opens issuer_changed while the leaf is not from the
+// configured issuer. It is a state check: it resolves once the issuer
+// matches again.
+func (e *evaluation) expectedIssuer(info probe.CertInfo) {
+	if e.t.ExpectedIssuer == "" {
+		return
+	}
+	exp := strings.ToLower(e.t.ExpectedIssuer)
+	for _, s := range []string{info.IssuerCN, info.IssuerOrg, info.Issuer} {
+		if strings.Contains(strings.ToLower(s), exp) {
+			return
 		}
 	}
+	e.open(Finding{Kind: IssuerChanged, Severity: Warning, Fingerprint: e.out.LeafFP,
+		Details: fmt.Sprintf("issued by %s, expected %s", issuerName(info), e.t.ExpectedIssuer)})
+}
 
-	// Change detection.
-	changed := false
+// changes compares the leaf with the pinned one (self-signed trust) or with
+// the previous leaf. Change findings stay open until acknowledged or until
+// an automatic renewal confirms the certificate is back on its normal cycle.
+func (e *evaluation) changes(info probe.CertInfo) {
+	fp, prev := e.out.LeafFP, e.prev
+	renewed := false
 	switch {
-	case t.Trust == probe.TrustSelfSigned:
-		if t.PinnedFP == "" {
-			out.PinFP = out.LeafFP
-		} else if out.LeafFP != t.PinnedFP {
-			changed = true
-			out.Open = append(out.Open, Finding{Kind: CertificateChanged, Severity: Warning, Fingerprint: out.LeafFP,
-				Details: fmt.Sprintf("pinned %s replaced by %s, %s", t.PinnedFP[:8], out.LeafFP[:8], describeChange(prev, info))})
+	case e.t.Trust == probe.TrustSelfSigned:
+		if e.t.PinnedFP == "" {
+			e.out.PinFP = fp
+		} else if fp != e.t.PinnedFP {
+			e.open(Finding{Kind: CertificateChanged, Severity: Warning, Fingerprint: fp,
+				Details: fmt.Sprintf("pinned %s replaced by %s, %s", e.t.PinnedFP[:8], fp[:8], describeChange(prev, info))})
 		}
-	case prev.LeafFP != "" && out.LeafFP != prev.LeafFP:
-		changed = true
+	case prev.LeafFP != "" && fp != prev.LeafFP:
 		sameIssuer := prev.IssuerOrg != "" && strings.EqualFold(prev.IssuerOrg, info.IssuerOrg)
-		if out.RenewalManaged && sameIssuer && superset(info.SANs, prev.SANs) {
-			out.Events = append(out.Events, Finding{Kind: CertificateChanged, Severity: Info, Fingerprint: out.LeafFP,
+		if e.out.RenewalManaged && sameIssuer && superset(info.SANs, prev.SANs) {
+			renewed = true
+			e.out.Events = append(e.out.Events, Finding{Kind: CertificateChanged, Severity: Info, Fingerprint: fp,
 				Details: fmt.Sprintf("renewed by %s, %s → %s", issuerName(info), shortCN(prev.IssuerCN), shortCN(info.IssuerCN))})
 		} else {
-			out.Open = append(out.Open, Finding{Kind: CertificateChanged, Severity: Warning, Fingerprint: out.LeafFP,
-				Details: fmt.Sprintf("new leaf %s from %s, %s", out.LeafFP[:8], issuerName(info), describeChange(prev, info))})
+			e.open(Finding{Kind: CertificateChanged, Severity: Warning, Fingerprint: fp,
+				Details: fmt.Sprintf("new leaf %s from %s, %s", fp[:8], issuerName(info), describeChange(prev, info))})
 		}
-		if t.ExpectedIssuer == "" && prev.IssuerOrg != "" && !sameIssuer {
-			out.Open = append(out.Open, Finding{Kind: IssuerChanged, Severity: Warning, Fingerprint: out.LeafFP,
+		if e.t.ExpectedIssuer == "" && prev.IssuerOrg != "" && !sameIssuer {
+			e.open(Finding{Kind: IssuerChanged, Severity: Warning, Fingerprint: fp,
 				Details: fmt.Sprintf("issuer changed from %s to %s", prev.IssuerOrg, issuerName(info))})
 		}
 	}
-	// Change findings stay open until acknowledged.
-	if !changed {
-		keep(CertificateChanged)
-		if t.ExpectedIssuer == "" {
-			keep(IssuerChanged)
-		}
+	if renewed {
+		return
 	}
-	return out
+	e.keepUnlessOpened(CertificateChanged)
+	if e.t.ExpectedIssuer == "" {
+		e.keepUnlessOpened(IssuerChanged)
+	}
+}
+
+// keepUnlessOpened keeps k when this evaluation did not open it again.
+func (e *evaluation) keepUnlessOpened(k Kind) {
+	if !slices.ContainsFunc(e.out.Open, func(f Finding) bool { return f.Kind == k }) {
+		e.keep(k)
+	}
 }
 
 // addressFacts runs the certificate checks on one answered address and

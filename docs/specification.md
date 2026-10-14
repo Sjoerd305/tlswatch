@@ -96,6 +96,8 @@ Every observation runs the full set of checks; each failed check is a finding of
 - Not renewal managed: any new leaf is a `warning` finding, so an operator confirms the replacement was intended. Acknowledging it resolves the finding.
 - `self-signed` targets: pinned fingerprint; any change is a warning.
 
+A `certificate_changed` or `issuer_changed` warning (without an expected issuer) stays open until acknowledged or until an automatic renewal (the `info` case above) confirms the certificate is back on its normal cycle; that renewal resolves it without an acknowledgement. Any other new leaf leaves it open: a new `certificate_changed` warning replaces the old one's details, and an open `issuer_changed` stays as it is, so whoever acknowledges the new certificate still sees that the issuer moved.
+
 Fact findings (`expired`, `chain_untrusted`, `hostname_mismatch`, `weak_signature`, `expiring`) are raised on the first observation that shows them: there is no network noise in a certificate that is read successfully. Only the network-shaped findings are debounced.
 
 The negotiated TLS version and cipher suite, the key type and size, and the full chain are stored with every observation and shown in the UI, without a finding attached. Grading them is a later feature.
