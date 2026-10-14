@@ -249,14 +249,16 @@ func (s *Server) settingsBundles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) bundleSave(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(2 << 20); err != nil && !errors.Is(err, http.ErrNotMultipart) {
-		s.fail(w, r, http.StatusBadRequest, "The upload is too large (2 MB at most).")
-		return
-	}
+	// The middleware read the form and capped its size.
 	name := r.FormValue("name")
 	data := r.FormValue("pem")
-	if f, _, err := r.FormFile("file"); err == nil {
-		b, _ := io.ReadAll(io.LimitReader(f, 2<<20))
+	if f, h, err := r.FormFile("file"); err == nil {
+		if h.Size > 2<<20 {
+			f.Close()
+			s.fail(w, r, http.StatusRequestEntityTooLarge, "The upload is too large (2 MB at most).")
+			return
+		}
+		b, _ := io.ReadAll(f)
 		f.Close()
 		if len(b) > 0 {
 			data = string(b)

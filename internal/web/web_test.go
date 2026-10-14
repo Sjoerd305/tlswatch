@@ -221,6 +221,22 @@ func TestCSRFRequired(t *testing.T) {
 	}
 }
 
+// Request bodies are capped before the CSRF check reads them, signed in or
+// not; CA bundle uploads get more room.
+func TestBodyLimit(t *testing.T) {
+	hs := newHarness(t)
+	big := url.Values{"notes": {strings.Repeat("x", 2<<20)}}
+	if rec := hs.do(authz.Admin, "POST", "/targets/check-all", big, true); rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("2 MB form: %d", rec.Code)
+	}
+	if rec := hs.do("", "POST", "/login", big, false); rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("2 MB form, signed out: %d", rec.Code)
+	}
+	if bodyLimit("/settings/bundles") <= 2<<20 || bodyLimit("/login") > 1<<20 {
+		t.Fatal("limits")
+	}
+}
+
 func TestSecurityHeaders(t *testing.T) {
 	hs := newHarness(t)
 	rec := hs.do(authz.Viewer, "GET", "/", nil, false)

@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"log/slog"
@@ -165,6 +166,19 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		h.Set("Cache-Control", "no-store")
 
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			// Cap the body before anything reads it, signed in or not.
+			limit := bodyLimit(r.URL.Path)
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
+			if r.Header.Get("X-CSRF-Token") == "" {
+				if err := parseForm(r, limit); err != nil {
+					if mbe := (*http.MaxBytesError)(nil); errors.As(err, &mbe) {
+						s.fail(w, r, http.StatusRequestEntityTooLarge, fmt.Sprintf("The request is too large (%d MB at most).", limit>>20))
+					} else {
+						s.fail(w, r, http.StatusBadRequest, "The form could not be read.")
+					}
+					return
+				}
+			}
 			if !s.csrfOK(r, ri) {
 				s.fail(w, r, http.StatusForbidden, "The form has expired. Reload the page and try again.")
 				return
@@ -176,6 +190,26 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			s.Log.Debug("http", "method", r.Method, "path", r.URL.Path, "status", lw.status, "ms", s.now().Sub(start).Milliseconds(), "ip", ri.ip)
 		}
 	})
+}
+
+// bodyLimit is the largest request body accepted on path: CA bundles are
+// uploaded as files, everything else is a small form or JSON call.
+func bodyLimit(path string) int64 {
+	if strings.HasPrefix(path, "/settings/bundles") {
+		return 3 << 20 // a 2 MB file plus the form around it
+	}
+	return 1 << 20
+}
+
+// parseForm reads a form body, keeping multipart uploads in memory up to
+// limit.
+func parseForm(r *http.Request, limit int64) error {
+	// ParseMultipartForm on another content type swallows ParseForm's
+	// error, so pick the parser by type.
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		return r.ParseMultipartForm(limit)
+	}
+	return r.ParseForm()
 }
 
 // refreshHeader marks the live-page refresh of the TypeScript.

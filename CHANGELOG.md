@@ -4,6 +4,7 @@ Newest first, one line per change.
 
 ## Unreleased
 
+- Request bodies are capped at 1 MB (3 MB for CA bundle uploads) before anything reads them, also for signed-out requests; a larger request gets a 413. The 2 MB limit on bundle files now actually applies.
 - Fix: deleting a CA bundle while a target using it was being saved could leave that target with an empty trust store, so every check reported an untrusted chain. The in-use check and the delete are now one statement, and a missing bundle is an error in the log instead of an empty trust store.
 - Fix: a certificate restricted to client authentication was reported as trusted. Chains are now verified for server authentication, as a browser does; such a certificate raises `chain_untrusted`.
 - Fix: when one chat of a Telegram channel failed, every retry sent the alert again to the chats that already had it. Each chat is now tried, the ones reached are remembered, and a retry goes only to the rest. Telegram's `retry_after` on rate limits is honoured.
