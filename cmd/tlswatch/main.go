@@ -114,6 +114,9 @@ type app struct {
 }
 
 func open() (*app, error) {
+	if err := config.CheckEnv(); err != nil {
+		return nil, fmt.Errorf("invalid environment: %w", err)
+	}
 	b := config.LoadBootstrap()
 	a := &app{boot: b, log: logger(b)}
 	d, err := db.Open(b.DBPath)

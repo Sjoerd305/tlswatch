@@ -4,6 +4,7 @@ Newest first, one line per change.
 
 ## Unreleased
 
+- Environment overrides are validated like the UI fields. An invalid value (for example `TLSWATCH_RETENTION_DAYS=1`, `TLSWATCH_BEHIND_PROXY=yes`, an unreadable secret file) stops tlswatch at start with a message naming the variable, instead of being ignored or, for the booleans, silently turning the setting off.
 - Sessions: a database error while loading the session no longer signs the user out (the request gets a 503 and is logged). A session now also ends 7 days after sign-in, however active; expired sessions are pruned hourly. Static files are served without a session lookup. Panics are logged with their stack.
 - Fix: a check that was running while its target was disabled, or moved to another host, port, protocol, server name or trust setting, is discarded. Before, it re-opened the findings that disabling resolved, or stored the old endpoint's certificate and raised a false certificate change on the next check.
 - Fix: the scheduler's one-minute refresh no longer undoes Check all or the spread of overdue checks after a restart. A check that cannot be stored (for example a full disk) is retried after 1, 2, 4 … minutes, up to an hour, instead of straight away. `/healthz` reports `overdue_s` and answers 503 when a due check has waited more than an hour.

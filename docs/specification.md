@@ -286,7 +286,7 @@ Secrets entered in the UI (SMTP passwords, Telegram bot tokens, the Google clien
 
 **Zero-configuration start.** `tlswatch serve` with no environment works. The data directory is created. A 32-byte secret key is generated into `data/secret.key` (mode 0600) when no key file exists. When no users exist yet, the server shows a setup screen at the first visit where the first admin creates their account and password; the log prints the URL. Because the default bind is loopback, nobody else can reach that screen before the admin exists. `create-admin` remains for scripted installs.
 
-**Environment variables are optional overrides**, for container and GitOps deployments. A setting supplied by the environment wins over the database value and is shown in the UI as read-only with the note "set by environment".
+**Environment variables are optional overrides**, for container and GitOps deployments. A setting supplied by the environment wins over the database value and is shown in the UI as read-only with the note "set by environment". Values are validated like the UI fields; an invalid one stops startup with a message naming the variable (except `TZ`, which is ignored when unknown).
 
 | Variable | Default | Where else | Purpose |
 | --- | --- | --- | --- |

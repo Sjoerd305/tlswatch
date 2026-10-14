@@ -345,54 +345,91 @@ func (s *Store) SaveDefaults(ctx context.Context, d Defaults) error {
 // HasGoogleSecret reports whether a client secret is stored or set by env.
 func (s Settings) HasGoogleSecret() bool { return s.SignIn.GoogleClientSecret != "" }
 
-func applyEnv(st *Settings) {
-	set := func(name, envName string, apply func(string) bool) {
-		if v, ok := os.LookupEnv(envName); ok && v != "" && apply(v) {
-			st.Env[name] = envName
+// envVar is one environment override of a UI setting. apply changes st
+// only when v is valid.
+type envVar struct {
+	name, env string
+	apply     func(st *Settings, v string) error
+}
+
+func boolVar(dst func(*Settings) *bool) func(*Settings, string) error {
+	return func(st *Settings, v string) error {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return errors.New("must be true or false")
 		}
+		*dst(st) = b
+		return nil
 	}
-	set("base_url", "TLSWATCH_BASE_URL", func(v string) bool { st.General.BaseURL = strings.TrimRight(v, "/"); return true })
-	set("behind_proxy", "TLSWATCH_BEHIND_PROXY", func(v string) bool {
-		b, err := strconv.ParseBool(v)
-		st.General.BehindProxy = b
-		return err == nil
-	})
-	set("allow_local", "TLSWATCH_ALLOW_LOCAL", func(v string) bool {
-		b, err := strconv.ParseBool(v)
-		st.General.AllowLocal = b
-		return err == nil
-	})
-	set("time_zone", "TZ", func(v string) bool {
-		_, err := time.LoadLocation(v)
-		if err == nil {
-			st.General.TimeZone = v
-		}
-		return err == nil
-	})
-	set("workers", "TLSWATCH_WORKERS", func(v string) bool {
+}
+
+func intVar(lo, hi int, dst func(*Settings) *int) func(*Settings, string) error {
+	return func(st *Settings, v string) error {
 		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 {
-			return false
+		if err != nil || n < lo || n > hi {
+			return fmt.Errorf("must be a number from %d to %d", lo, hi)
 		}
-		st.Defaults.Workers = n
-		return true
-	})
-	set("retention_days", "TLSWATCH_RETENTION_DAYS", func(v string) bool {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 {
-			return false
+		*dst(st) = n
+		return nil
+	}
+}
+
+var envVars = []envVar{
+	{"base_url", "TLSWATCH_BASE_URL", func(st *Settings, v string) error {
+		g := st.General
+		g.BaseURL = strings.TrimRight(v, "/")
+		if err := g.Validate(); err != nil {
+			return err
 		}
-		st.Defaults.RetentionDays = n
-		return true
-	})
-	set("google_client_id", "TLSWATCH_GOOGLE_CLIENT_ID", func(v string) bool { st.SignIn.GoogleClientID = v; return true })
-	set("google_domain", "TLSWATCH_GOOGLE_DOMAIN", func(v string) bool { st.SignIn.GoogleDomain = v; return true })
-	set("google_client_secret", "TLSWATCH_GOOGLE_SECRET_FILE", func(v string) bool {
+		st.General.BaseURL = g.BaseURL
+		return nil
+	}},
+	{"behind_proxy", "TLSWATCH_BEHIND_PROXY", boolVar(func(st *Settings) *bool { return &st.General.BehindProxy })},
+	{"allow_local", "TLSWATCH_ALLOW_LOCAL", boolVar(func(st *Settings) *bool { return &st.General.AllowLocal })},
+	{"time_zone", "TZ", func(st *Settings, v string) error {
+		if _, err := time.LoadLocation(v); err != nil {
+			return fmt.Errorf("unknown time zone %q", v)
+		}
+		st.General.TimeZone = v
+		return nil
+	}},
+	{"workers", "TLSWATCH_WORKERS", intVar(1, 256, func(st *Settings) *int { return &st.Defaults.Workers })},
+	{"retention_days", "TLSWATCH_RETENTION_DAYS", intVar(7, 3650, func(st *Settings) *int { return &st.Defaults.RetentionDays })},
+	{"google_client_id", "TLSWATCH_GOOGLE_CLIENT_ID", func(st *Settings, v string) error { st.SignIn.GoogleClientID = v; return nil }},
+	{"google_domain", "TLSWATCH_GOOGLE_DOMAIN", func(st *Settings, v string) error { st.SignIn.GoogleDomain = v; return nil }},
+	{"google_client_secret", "TLSWATCH_GOOGLE_SECRET_FILE", func(st *Settings, v string) error {
 		b, err := os.ReadFile(v) // #nosec G304 -- path from the operator's own environment
 		if err != nil {
-			return false
+			return fmt.Errorf("cannot read %s: %w", v, err)
 		}
 		st.SignIn.GoogleClientSecret = strings.TrimSpace(string(b))
-		return true
-	})
+		return nil
+	}},
+}
+
+// applyEnv applies the valid environment overrides; CheckEnv reports the
+// invalid ones at startup.
+func applyEnv(st *Settings) {
+	for _, e := range envVars {
+		if v, ok := os.LookupEnv(e.env); ok && v != "" && e.apply(st, v) == nil {
+			st.Env[e.name] = e.env
+		}
+	}
+}
+
+// CheckEnv validates the environment overrides, so a typo stops startup
+// instead of being silently ignored. TZ is left out: it is shared with the
+// rest of the system and may use forms Go does not load; an unknown zone is
+// ignored.
+func CheckEnv() error {
+	var errs []error
+	for _, e := range envVars {
+		if v, ok := os.LookupEnv(e.env); ok && v != "" && e.env != "TZ" {
+			st := DefaultSettings()
+			if err := e.apply(&st, v); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", e.env, err))
+			}
+		}
+	}
+	return errors.Join(errs...)
 }

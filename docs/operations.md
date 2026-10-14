@@ -26,6 +26,8 @@ Only `TLSWATCH_LISTEN`, `TLSWATCH_DB`, `TLSWATCH_SECRET_KEY_FILE` and `TLSWATCH_
 | `TLSWATCH_RETENTION_DAYS` | Defaults › History retention |
 | `TLSWATCH_GOOGLE_CLIENT_ID`, `TLSWATCH_GOOGLE_SECRET_FILE`, `TLSWATCH_GOOGLE_DOMAIN` | Sign-in › Google |
 
+Values are checked against the same ranges as the UI (retention 7 to 3650 days, workers 1 to 256, booleans `true` or `false`, an absolute base URL, a readable secret file). An invalid value stops tlswatch at start with a message naming the variable. `TZ` is the exception: it is shared with the rest of the system, so an unknown zone is ignored.
+
 ## Backups and upgrades
 
 - `tlswatch backup /backups/tlswatch-$(date +%F).db` writes a consistent copy while the server runs (SQLite `VACUUM INTO`). Run it daily from cron.
