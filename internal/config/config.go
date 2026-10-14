@@ -303,6 +303,30 @@ func (s *Store) invalidate() {
 	s.mu.Unlock()
 }
 
+// Reencrypt re-seals the stored secrets (the Google client secret) from old
+// to new within tx, for a key rotation. It reports whether there was one.
+func Reencrypt(ctx context.Context, tx *sql.Tx, old, new *secret.Key) (bool, error) {
+	var v string
+	err := tx.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", keySecret).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) || err == nil && v == "" {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var raw []byte
+	if err := json.Unmarshal([]byte(v), &raw); err != nil {
+		return false, err
+	}
+	pt, err := old.Open(raw)
+	if err != nil {
+		return false, fmt.Errorf("the stored Google client secret cannot be decrypted with the current key: %w", err)
+	}
+	b, _ := json.Marshal(new.Seal(pt))
+	_, err = tx.ExecContext(ctx, "UPDATE settings SET value = ? WHERE key = ?", string(b), keySecret)
+	return err == nil, err
+}
+
 func (s *Store) open(v string) ([]byte, error) {
 	var raw []byte
 	if err := json.Unmarshal([]byte(v), &raw); err != nil {

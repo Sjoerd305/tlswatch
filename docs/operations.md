@@ -31,7 +31,8 @@ Values are checked against the same ranges as the UI (retention 7 to 3650 days, 
 ## Backups and upgrades
 
 - `tlswatch backup /backups/tlswatch-$(date +%F).db` writes a consistent copy while the server runs (SQLite `VACUUM INTO`). Run it daily from cron. It does not migrate or otherwise change the database it copies.
-- Keep `secret.key` with the backups. Without it the database still works, but stored SMTP passwords, Telegram tokens and the Google secret must be entered again.
+- Keep `secret.key` with the backups. Without it the database still works, but stored SMTP passwords, Telegram tokens and the Google secret must be entered again. A channel whose credentials cannot be decrypted is marked on Settings › Channels; its alerts fail until its credentials are entered again, and the other channels keep working.
+- To replace the key (for example after it was exposed), stop tlswatch and run `tlswatch rotate-key`. It re-encrypts the stored credentials under a new key in one transaction, then swaps the key file and keeps the old one as `secret.key.old-<time>`; keep that file as long as backups made with it, then delete it. The command refuses to run while tlswatch answers on `TLSWATCH_LISTEN`.
 - Upgrades are a binary swap. Migrations run at start, are forward only, and a binary refuses a database written by a newer version.
 
 ## Monitoring tlswatch

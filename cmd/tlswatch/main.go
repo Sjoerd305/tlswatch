@@ -46,6 +46,8 @@ Usage:
   tlswatch migrate                     apply database migrations (also done at start)
   tlswatch backup PATH                 write a consistent copy of the database
   tlswatch healthcheck                 exit 0 when the running server's /healthz is OK
+  tlswatch rotate-key                  re-encrypt stored credentials under a new secret key
+                                       (stop the server first)
   tlswatch check HOST[:PORT] [flags]   probe one endpoint, print JSON, exit 0/1/2 by severity
   tlswatch seed                        add a few public demo targets
   tlswatch version                     print the version
@@ -75,6 +77,8 @@ func main() {
 		err = backup(args)
 	case "healthcheck":
 		err = healthcheck()
+	case "rotate-key":
+		err = rotateKey()
 	case "check":
 		os.Exit(checkCmd(args, os.Stdout, os.Stderr))
 	case "seed":
@@ -288,6 +292,72 @@ func healthcheck() error {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unhealthy (%s): %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
+// rotateKey replaces the secret key: the stored credentials are re-sealed
+// under a new key in one transaction, then the key file is swapped and the
+// old one kept next to it. A running server would keep using the old key,
+// so it refuses while one answers on TLSWATCH_LISTEN.
+func rotateKey() error {
+	if healthcheck() == nil {
+		return errors.New("tlswatch is running on TLSWATCH_LISTEN; stop it before rotating the key")
+	}
+	b := config.LoadBootstrap()
+	if _, err := os.Stat(b.SecretKeyFile); err != nil {
+		return fmt.Errorf("no secret key to rotate: %w", err)
+	}
+	old, _, err := secret.LoadOrCreate(b.SecretKeyFile)
+	if err != nil {
+		return err
+	}
+	next, raw, err := secret.Generate()
+	if err != nil {
+		return err
+	}
+	d, err := db.OpenExisting(b.DBPath)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	ctx := context.Background()
+	tx, err := d.W.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	n, unreadable, err := notify.Reencrypt(ctx, tx, old, next)
+	if err != nil {
+		return err
+	}
+	google, err := config.Reencrypt(ctx, tx, old, next)
+	if err != nil {
+		return err
+	}
+	// The new key is on disk before the database depends on it.
+	pending := b.SecretKeyFile + ".new"
+	if err := secret.WriteFile(pending, raw); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		_ = os.Remove(pending)
+		return err
+	}
+	kept := b.SecretKeyFile + ".old-" + time.Now().UTC().Format("20060102T150405Z")
+	if err := os.Rename(b.SecretKeyFile, kept); err != nil {
+		return fmt.Errorf("the database now uses the key in %s; move it to %s by hand: %w", pending, b.SecretKeyFile, err)
+	}
+	if err := os.Rename(pending, b.SecretKeyFile); err != nil {
+		return fmt.Errorf("the database now uses the key in %s; move it to %s by hand: %w", pending, b.SecretKeyFile, err)
+	}
+	fmt.Printf("secret key rotated: %d channel(s) re-encrypted", n)
+	if google {
+		fmt.Print(", Google client secret re-encrypted")
+	}
+	fmt.Printf(".\nThe old key is kept in %s; delete it once backups made with it have expired.\n", kept)
+	if len(unreadable) > 0 {
+		fmt.Printf("Not re-encrypted, the old key could not read them either: %s. Enter their credentials again.\n", strings.Join(unreadable, ", "))
 	}
 	return nil
 }

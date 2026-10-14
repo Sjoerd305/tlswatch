@@ -2,6 +2,7 @@ package notify
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -149,6 +150,46 @@ func (s *Channels) scan(row interface{ Scan(...any) error }) (Channel, error) {
 		return c, err
 	}
 	return c, nil
+}
+
+// Reencrypt re-seals every channel's settings from old to new within tx,
+// for a key rotation. It returns the names of channels that old cannot
+// decrypt; those are left as they are.
+func Reencrypt(ctx context.Context, tx *sql.Tx, old, new *secret.Key) (n int, unreadable []string, err error) {
+	rows, err := tx.QueryContext(ctx, "SELECT id, name, settings FROM channels")
+	if err != nil {
+		return 0, nil, err
+	}
+	type row struct {
+		id   int64
+		name string
+		blob []byte
+	}
+	var all []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.name, &r.blob); err != nil {
+			rows.Close()
+			return 0, nil, err
+		}
+		all = append(all, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, nil, err
+	}
+	for _, r := range all {
+		pt, err := old.Open(r.blob)
+		if err != nil {
+			unreadable = append(unreadable, r.name)
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE channels SET settings = ? WHERE id = ?", new.Seal(pt), r.id); err != nil {
+			return n, unreadable, err
+		}
+		n++
+	}
+	return n, unreadable, nil
 }
 
 // List returns every channel with its last delivery state. A channel whose

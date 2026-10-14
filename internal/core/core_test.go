@@ -830,6 +830,35 @@ func TestApplySummary(t *testing.T) {
 	}
 }
 
+// Key rotation re-seals channel settings so the new key reads them.
+func TestReencryptChannels(t *testing.T) {
+	e := newEnv(t)
+	old := e.svc.Channels.Key
+	next, _, err := secret.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := e.svc.DB.W.BeginTx(e.ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, unreadable, err := notify.Reencrypt(e.ctx, tx, old, next)
+	if err != nil || n != 2 || len(unreadable) != 0 {
+		t.Fatalf("re-encrypted %d, unreadable %v: %v", n, unreadable, err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	rotated := &notify.Channels{DB: e.svc.DB, Key: next}
+	c, err := rotated.Get(e.ctx, e.chC)
+	if err != nil || c.Telegram.Token != "123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ" {
+		t.Fatalf("after rotation: %+v %v", c.Telegram, err)
+	}
+	if _, err := e.svc.Channels.Get(e.ctx, e.chC); !errors.Is(err, notify.ErrUnreadable) {
+		t.Fatalf("old key still reads the channel: %v", err)
+	}
+}
+
 func TestParseBundleRejectsKeys(t *testing.T) {
 	if _, err := ParseBundle("-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n"); err == nil {
 		t.Fatal("private key accepted")

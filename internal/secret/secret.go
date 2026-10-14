@@ -27,18 +27,14 @@ type Key struct {
 func LoadOrCreate(path string) (*Key, bool, error) {
 	b, err := os.ReadFile(path) // #nosec G304 -- path from the operator's own environment
 	if errors.Is(err, os.ErrNotExist) {
-		var raw [32]byte
-		if _, err := rand.Read(raw[:]); err != nil {
+		k, raw, err := Generate()
+		if err != nil {
 			return nil, false, err
 		}
-		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		if err := WriteFile(path, raw); err != nil {
 			return nil, false, err
 		}
-		if err := os.WriteFile(path, []byte(hex.EncodeToString(raw[:])+"\n"), 0o600); err != nil {
-			return nil, false, fmt.Errorf("write secret key: %w", err)
-		}
-		k, err := New(raw[:])
-		return k, true, err
+		return k, true, nil
 	}
 	if err != nil {
 		return nil, false, fmt.Errorf("read secret key: %w", err)
@@ -51,6 +47,33 @@ func LoadOrCreate(path string) (*Key, bool, error) {
 	}
 	k, err := New(b)
 	return k, false, err
+}
+
+// Generate returns a new random key and its raw bytes.
+func Generate() (*Key, []byte, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return nil, nil, err
+	}
+	k, err := New(raw)
+	return k, raw, err
+}
+
+// WriteFile writes a key file (hex, mode 0600), creating its directory.
+// It refuses to overwrite an existing file.
+func WriteFile(path string, raw []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- path from the operator's own environment
+	if err != nil {
+		return fmt.Errorf("write secret key: %w", err)
+	}
+	if _, err := f.WriteString(hex.EncodeToString(raw) + "\n"); err != nil {
+		f.Close()
+		return fmt.Errorf("write secret key: %w", err)
+	}
+	return f.Close()
 }
 
 // New builds a key from 32 raw bytes.
@@ -91,11 +114,4 @@ func (k *Key) Open(sealed []byte) ([]byte, error) {
 		return nil, errors.New("ciphertext too short")
 	}
 	return k.aead.Open(nil, sealed[:n], sealed[n:], nil)
-}
-
-// MAC returns a hex HMAC of msg under a key derived for purpose.
-func (k *Key) MAC(purpose, msg string) string {
-	m := hmac.New(sha256.New, k.derive(purpose))
-	m.Write([]byte(msg))
-	return hex.EncodeToString(m.Sum(nil))
 }
