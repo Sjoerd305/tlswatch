@@ -52,7 +52,7 @@ func UninstallCommands(server string) (binary, script string) {
 
 // Commands are the ways to install a node, as the Add node screen shows them.
 type Commands struct {
-	Script string // the one command, as root, on a host with systemd
+	Script string // the one command, on a host with systemd; sudo runs the shell, not curl
 	Docker string
 	Manual string // without systemd or without root
 }
@@ -65,7 +65,7 @@ func InstallCommands(server, token, version string) Commands {
 	if IsRelease(version) {
 		tag = version
 	}
-	script := fmt.Sprintf("curl -fsSL %s%s/install/%s | sh", server, Prefix, token)
+	script := fmt.Sprintf("curl -fsSL %s%s/install/%s | sudo sh", server, Prefix, token)
 	return Commands{
 		Script: script,
 		Docker: fmt.Sprintf("docker run -d --name tlswatch-node --restart unless-stopped -v tlswatch-node:/data %s:%s node -server %s -token %s",

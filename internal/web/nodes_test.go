@@ -44,7 +44,7 @@ func TestAddNodeFlow(t *testing.T) {
 		t.Fatalf("token: %q %v", tok, err)
 	}
 	page := hs.do(authz.Admin, http.MethodGet, loc, nil, false).Body.String()
-	for _, want := range []string{"curl -fsSL https://tlswatch.example.nl/agent/v1/install/" + tok + " | sh", "Waiting for the node to connect", "docker run"} {
+	for _, want := range []string{"curl -fsSL https://tlswatch.example.nl/agent/v1/install/" + tok + " | sudo sh", "Waiting for the node to connect", "docker run"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("command screen lacks %q", want)
 		}

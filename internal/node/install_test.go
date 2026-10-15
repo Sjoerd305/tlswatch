@@ -127,3 +127,28 @@ echo "Enrolled with $4"`)
 		t.Errorf("uninstall calls:\n%s", calls)
 	}
 }
+
+// Run as a normal user (sudo before curl instead of before sh), the
+// script stops at once and prints the command as it should be.
+func TestInstallScriptNotRoot(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not found")
+	}
+	bin := t.TempDir()
+	stub(t, bin, "id", `echo 1000`)
+	script := InstallScript("https://tlswatch.example.nl", "tok123")
+	cmd := exec.Command("sh", "-s")
+	cmd.Stdin, cmd.Env = strings.NewReader(script), append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"))
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("ran as a normal user")
+	}
+	if want := "curl -fsSL https://tlswatch.example.nl/agent/v1/install/tok123 | sudo sh"; !strings.Contains(string(out), want) {
+		t.Fatalf("no corrected command in:\n%s", out)
+	}
+	cmd = exec.Command("sh", "-s")
+	cmd.Stdin, cmd.Env = strings.NewReader(UninstallScript("https://tlswatch.example.nl")), append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"))
+	if out, _ := cmd.CombinedOutput(); !strings.Contains(string(out), "/agent/v1/uninstall | sudo sh") {
+		t.Fatalf("uninstall: no corrected command in:\n%s", out)
+	}
+}

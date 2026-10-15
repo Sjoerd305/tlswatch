@@ -37,9 +37,9 @@
 {{- else if and (eq $n.State "enrolling") (not $n.ConfirmedAt)}}
 {{- if $d.Cmd}}
 <section class="card form">
-  <h3 class="h3">Run this as root on the machine inside the network</h3>
+  <h3 class="h3">Run this on the machine inside the network</h3>
   {{template "cmd" $d.Cmd.Script}}
-  <span class="help">It downloads tlswatch from this server, verifies its checksum, installs it as the service tlswatch-node under its own system user and enrols it. The command holds a one-time token, valid until {{datetime $p.Loc $n.TokenExpires}}. To read the script first, open the URL without <span class="mono">| sh</span>. The machine needs to reach this server over HTTPS, nothing else; an <span class="mono">HTTPS_PROXY</span> is honoured.</span>
+  <span class="help">It downloads tlswatch from this server, verifies its checksum, installs it as the service tlswatch-node under its own system user and enrols it. It needs root: <span class="mono">sudo</span> runs the shell, so it stays after the pipe (logged in as root, drop it). The command holds a one-time token, valid until {{datetime $p.Loc $n.TokenExpires}}. To read the script first, open the URL without <span class="mono">| sh</span>. The machine needs to reach this server over HTTPS, nothing else; an <span class="mono">HTTPS_PROXY</span> is honoured.</span>
   <details>
     <summary class="label">Docker</summary>
     {{template "cmd" $d.Cmd.Docker}}
@@ -74,7 +74,7 @@
   <div class="stack">
     {{- if $d.Cmd}}
     <section class="card form">
-      <h3 class="h3">Run this as root on the node to enrol it again</h3>
+      <h3 class="h3">Run this on the node to enrol it again</h3>
       {{template "cmd" $d.Cmd.Script}}
       <span class="help">Valid until {{datetime $p.Loc $n.TokenExpires}}. You confirm the machine again once it enrolled. In a container, recreate it with <span class="mono">-token</span> from: </span>
       {{template "cmd" $d.Cmd.Docker}}

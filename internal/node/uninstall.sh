@@ -18,7 +18,10 @@ NODE_USER=tlswatch-node
 step() { printf '\n==> %s\n' "$*"; }
 die() { printf '\ntlswatch: %s\n' "$*" >&2; exit 1; }
 
-[ "$(id -u)" = 0 ] || die "run this as root: curl -fsSL ... | sudo sh"
+[ "$(id -u)" = 0 ] || die "this must run as root. Put sudo before sh, not before curl:
+
+    curl -fsSL @SERVER@/agent/v1/uninstall | sudo sh
+"
 
 step "Stopping the service tlswatch-node"
 if command -v systemctl >/dev/null 2>&1; then

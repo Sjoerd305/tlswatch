@@ -22,7 +22,10 @@ untrusted() {
 }
 
 step "Checking this machine"
-[ "$(id -u)" = 0 ] || die "run this as root: curl -fsSL ... | sudo sh"
+[ "$(id -u)" = 0 ] || die "this must run as root. Put sudo before sh, not before curl:
+
+    curl -fsSL $SERVER/agent/v1/install/$TOKEN | sudo sh
+"
 if command -v curl >/dev/null 2>&1; then
 	FETCH=curl
 elif command -v wget >/dev/null 2>&1; then

@@ -113,7 +113,7 @@ A job is an envelope with an id and a kind. Version 1 has three kinds: `probe`, 
 **Installing a node is one command.** Nobody creates keys or edits files on the node. Settings › Nodes › Add node generates a one-time enrolment token, valid for one hour, and shows one command to run as root on the machine inside the network:
 
 ```
-curl -fsSL https://tlswatch.example.nl/agent/v1/install/<token> | sh
+curl -fsSL https://tlswatch.example.nl/agent/v1/install/<token> | sudo sh
 ```
 
 The server generates that script per token with its own URL and the token embedded, so the command is complete as shown. The screen also offers a Docker command (`docker run -d --restart unless-stopped -v tlswatch-node:/data ghcr.io/sjoerd305/tlswatch node -server … -token …`) and a manual variant (download the binary, run `tlswatch node enrol`, then `tlswatch node`) for hosts without systemd or without root. Add node is refused with a pointer to Settings › General while the public base URL is not set, because the script needs it. The screen also says which platforms the server can serve from its own binary and that any other needs the node host to reach GitHub, so an air-gapped network with a different architecture learns this before the script fails.
