@@ -119,8 +119,11 @@ func (s *Server) settingsChannels(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case q.Get("new") == notify.KindSMTP:
 		d.Edit = &notify.Channel{Kind: notify.KindSMTP, MinSeverity: "warning", Enabled: true, SMTP: notify.SMTPSettings{Port: 587, Encryption: "starttls"}}
-	case q.Get("new") == notify.KindTelegram:
-		d.Edit = &notify.Channel{Kind: notify.KindTelegram, MinSeverity: "critical", Enabled: true}
+	case q.Get("new") == notify.KindNtfy:
+		d.Edit = &notify.Channel{Kind: notify.KindNtfy, MinSeverity: "critical", Enabled: true, Ntfy: notify.NtfySettings{Server: notify.DefaultNtfyServer}}
+	case notify.KnownKind(q.Get("new")):
+		// Chat channels default to critical only, as the mailbox takes the rest.
+		d.Edit = &notify.Channel{Kind: q.Get("new"), MinSeverity: "critical", Enabled: true}
 	case q.Get("edit") != "":
 		id, _ := strconv.ParseInt(q.Get("edit"), 10, 64)
 		for i := range chans {
@@ -141,9 +144,18 @@ func (s *Server) channelSave(w http.ResponseWriter, r *http.Request) {
 		Enabled: v.Get("enabled") == "1",
 	}
 	c.ID, _ = strconv.ParseInt(v.Get("id"), 10, 64)
-	if c.Kind == notify.KindTelegram {
+	switch c.Kind {
+	case notify.KindTelegram:
 		c.Telegram = notify.TelegramSettings{Token: strings.TrimSpace(v.Get("token")), ChatIDs: splitList(v.Get("chat_ids"))}
-	} else {
+	case notify.KindSlack:
+		c.Slack = notify.SlackSettings{WebhookURL: strings.TrimSpace(v.Get("webhook_url"))}
+	case notify.KindDiscord:
+		c.Discord = notify.DiscordSettings{WebhookURL: strings.TrimSpace(v.Get("webhook_url"))}
+	case notify.KindNtfy:
+		c.Ntfy = notify.NtfySettings{Server: strings.TrimSpace(v.Get("server")), Topic: strings.TrimSpace(v.Get("topic")), Token: strings.TrimSpace(v.Get("token"))}
+	case notify.KindWebhook:
+		c.Webhook = notify.WebhookSettings{URL: strings.TrimSpace(v.Get("url")), Secret: strings.TrimSpace(v.Get("secret"))}
+	default:
 		c.Kind = notify.KindSMTP
 		port, _ := strconv.Atoi(strings.TrimSpace(v.Get("port")))
 		if port == 0 {
@@ -163,7 +175,7 @@ func (s *Server) channelSave(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if msg, ok := s.formError(w, r, err); ok {
 			chans, _ := s.Core.Channels.List(r.Context())
-			c.SMTP.Password, c.Telegram.Token = "", ""
+			c.ClearSecrets()
 			s.settingsPage(w, r, http.StatusBadRequest, "settings-channels", "channels", "Settings", channelsData{Channels: chans, Edit: &c, Error: msg})
 		}
 		return
@@ -173,7 +185,7 @@ func (s *Server) channelSave(w http.ResponseWriter, r *http.Request) {
 		action = "channel.create"
 	}
 	detail := fmt.Sprintf("kind=%s floor=%s enabled=%v", c.Kind, c.MinSeverity, c.Enabled)
-	if c.SMTP.Password != "" || c.Telegram.Token != "" {
+	if c.HasSecret() {
 		detail += " credentials=[changed]"
 	}
 	s.Core.Audit(r.Context(), user(r).Email, action, fmt.Sprintf("channel %d %s", id, c.Name), detail)

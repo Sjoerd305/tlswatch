@@ -40,6 +40,15 @@ type PartialSender interface {
 	SendSkipping(ctx context.Context, m Message, done []string) (reached, refs []string, err error)
 }
 
+// RefSender is a Sender that returns the transport's reference for a
+// delivery (Discord's or ntfy's message ID, the reference a webhook payload
+// carried), to show in the alert log. A plain Sender is logged under the
+// SMTP Message-ID form of the message's Ref.
+type RefSender interface {
+	Sender
+	SendRef(ctx context.Context, m Message) (ref string, err error)
+}
+
 // RetryAfterError is a delivery error from a transport that asked to wait
 // before the next attempt (a rate limit).
 type RetryAfterError struct {

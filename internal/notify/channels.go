@@ -18,10 +18,30 @@ import (
 const (
 	KindSMTP     = "smtp"
 	KindTelegram = "telegram"
+	KindSlack    = "slack"
+	KindDiscord  = "discord"
+	KindNtfy     = "ntfy"
+	KindWebhook  = "webhook"
 )
 
+// Kinds lists the channel kinds in the order the UI offers them, with their
+// display names.
+var Kinds = []struct{ Kind, Label string }{
+	{KindSMTP, "SMTP"}, {KindTelegram, "Telegram"}, {KindSlack, "Slack"}, {KindDiscord, "Discord"}, {KindNtfy, "ntfy"}, {KindWebhook, "Webhook"},
+}
+
+// KnownKind reports whether k is a channel kind.
+func KnownKind(k string) bool {
+	for _, x := range Kinds {
+		if x.Kind == k {
+			return true
+		}
+	}
+	return false
+}
+
 // Channel is a delivery route configured by an admin. The credentials are
-// stored encrypted; SMTP or Telegram is set according to Kind.
+// stored encrypted; the settings struct matching Kind is set.
 type Channel struct {
 	ID          int64
 	Name        string
@@ -31,6 +51,10 @@ type Channel struct {
 	Enabled     bool
 	SMTP        SMTPSettings
 	Telegram    TelegramSettings
+	Slack       SlackSettings
+	Discord     DiscordSettings
+	Ntfy        NtfySettings
+	Webhook     WebhookSettings
 	CreatedAt   int64
 	UpdatedAt   int64
 	// Unreadable is set when the stored settings cannot be decrypted, for
@@ -47,10 +71,12 @@ type Channel struct {
 
 // KindLabel is the display name of the channel type.
 func (c Channel) KindLabel() string {
-	if c.Kind == KindTelegram {
-		return "Telegram"
+	for _, k := range Kinds {
+		if k.Kind == c.Kind {
+			return k.Label
+		}
 	}
-	return "SMTP"
+	return c.Kind
 }
 
 // Validate checks the channel and its settings.
@@ -68,20 +94,89 @@ func (c Channel) Validate() error {
 		return c.SMTP.Validate()
 	case KindTelegram:
 		return c.Telegram.Validate()
+	case KindSlack:
+		return c.Slack.Validate()
+	case KindDiscord:
+		return c.Discord.Validate()
+	case KindNtfy:
+		return c.Ntfy.Validate()
+	case KindWebhook:
+		return c.Webhook.Validate()
 	}
 	return errors.New("unknown channel type")
 }
 
 // Sender returns a transport for the channel.
 func (c Channel) Sender() Sender {
-	if c.Kind == KindTelegram {
+	switch c.Kind {
+	case KindTelegram:
 		return &TelegramSender{S: c.Telegram}
+	case KindSlack:
+		return &SlackSender{S: c.Slack}
+	case KindDiscord:
+		return &DiscordSender{S: c.Discord}
+	case KindNtfy:
+		return &NtfySender{S: c.Ntfy}
+	case KindWebhook:
+		return &WebhookSender{S: c.Webhook}
 	}
 	return &SMTPSender{S: c.SMTP}
 }
 
+// destination is the summary of the settings for the channel table.
+func (c Channel) destination() string {
+	switch c.Kind {
+	case KindTelegram:
+		return c.Telegram.Destination()
+	case KindSlack:
+		return c.Slack.Destination()
+	case KindDiscord:
+		return c.Discord.Destination()
+	case KindNtfy:
+		return c.Ntfy.Destination()
+	case KindWebhook:
+		return c.Webhook.Destination()
+	}
+	return c.SMTP.Destination()
+}
+
 // Secrets lists the credential values to redact from logs.
-func (c Channel) Secrets() []string { return []string{c.SMTP.Password, c.Telegram.Token} }
+func (c Channel) Secrets() []string {
+	return []string{c.SMTP.Password, c.Telegram.Token, c.Slack.WebhookURL, c.Discord.WebhookURL, c.Ntfy.Token, c.Webhook.Secret}
+}
+
+// HasSecret reports whether a credential is set: a password, token, signing
+// secret, or a webhook URL that is itself the credential.
+func (c Channel) HasSecret() bool {
+	for _, s := range c.Secrets() {
+		if s != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// ClearSecrets empties the credentials, for a form shown again after an
+// error: a secret is never echoed back.
+func (c *Channel) ClearSecrets() {
+	c.SMTP.Password, c.Telegram.Token, c.Slack.WebhookURL, c.Discord.WebhookURL, c.Ntfy.Token, c.Webhook.Secret = "", "", "", "", "", ""
+}
+
+// keepSecrets fills every empty credential of c from old, so that a form
+// field left empty keeps the stored value.
+func (c *Channel) keepSecrets(old Channel) {
+	keep := func(dst *string, src string) {
+		if *dst == "" {
+			*dst = src
+		}
+	}
+	keep(&c.SMTP.Password, old.SMTP.Password)
+	keep(&c.Telegram.Token, old.Telegram.Token)
+	keep(&c.Slack.WebhookURL, old.Slack.WebhookURL)
+	keep(&c.Discord.WebhookURL, old.Discord.WebhookURL)
+	keep(&c.Ntfy.Token, old.Ntfy.Token)
+	keep(&c.Webhook.Secret, old.Webhook.Secret)
+}
 
 // Channels stores channels with their settings encrypted under the key.
 type Channels struct {
@@ -100,14 +195,27 @@ func (s *Channels) now() time.Time {
 type sealedSettings struct {
 	SMTP     *SMTPSettings     `json:"smtp,omitempty"`
 	Telegram *TelegramSettings `json:"telegram,omitempty"`
+	Slack    *SlackSettings    `json:"slack,omitempty"`
+	Discord  *DiscordSettings  `json:"discord,omitempty"`
+	Ntfy     *NtfySettings     `json:"ntfy,omitempty"`
+	Webhook  *WebhookSettings  `json:"webhook,omitempty"`
 }
 
 func (s *Channels) seal(c Channel) ([]byte, error) {
 	var v sealedSettings
-	if c.Kind == KindSMTP {
-		v.SMTP = &c.SMTP
-	} else {
+	switch c.Kind {
+	case KindTelegram:
 		v.Telegram = &c.Telegram
+	case KindSlack:
+		v.Slack = &c.Slack
+	case KindDiscord:
+		v.Discord = &c.Discord
+	case KindNtfy:
+		v.Ntfy = &c.Ntfy
+	case KindWebhook:
+		v.Webhook = &c.Webhook
+	default:
+		v.SMTP = &c.SMTP
 	}
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -135,6 +243,18 @@ func (s *Channels) unseal(c *Channel, blob []byte) error {
 	}
 	if v.Telegram != nil {
 		c.Telegram = *v.Telegram
+	}
+	if v.Slack != nil {
+		c.Slack = *v.Slack
+	}
+	if v.Discord != nil {
+		c.Discord = *v.Discord
+	}
+	if v.Ntfy != nil {
+		c.Ntfy = *v.Ntfy
+	}
+	if v.Webhook != nil {
+		c.Webhook = *v.Webhook
 	}
 	return nil
 }
@@ -252,8 +372,8 @@ func (s *Channels) Get(ctx context.Context, id int64) (Channel, error) {
 	return s.scan(s.DB.R.QueryRowContext(ctx, "SELECT "+channelCols+" FROM channels WHERE id = ?", id))
 }
 
-// Save creates (ID 0) or updates a channel. On update, an empty SMTP
-// password or Telegram token keeps the stored value.
+// Save creates (ID 0) or updates a channel. On update, an empty credential
+// (SMTP password, token, webhook URL or secret) keeps the stored value.
 func (s *Channels) Save(ctx context.Context, c Channel) (int64, error) {
 	if c.ID != 0 {
 		// Unreadable settings are replaced by what the admin enters now.
@@ -262,12 +382,7 @@ func (s *Channels) Save(ctx context.Context, c Channel) (int64, error) {
 			return 0, err
 		}
 		c.Kind = old.Kind
-		if c.SMTP.Password == "" {
-			c.SMTP.Password = old.SMTP.Password
-		}
-		if c.Telegram.Token == "" {
-			c.Telegram.Token = old.Telegram.Token
-		}
+		c.keepSecrets(old)
 	}
 	if err := c.Validate(); err != nil {
 		return 0, usererr.Wrap(err)
@@ -276,10 +391,7 @@ func (s *Channels) Save(ctx context.Context, c Channel) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	dest := c.SMTP.Destination()
-	if c.Kind == KindTelegram {
-		dest = c.Telegram.Destination()
-	}
+	dest := c.destination()
 	now := s.now().Unix()
 	if c.ID == 0 {
 		res, err := s.DB.W.ExecContext(ctx, `INSERT INTO channels(name, kind, min_severity, settings, destination, enabled, created_at, updated_at)

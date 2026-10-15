@@ -1,6 +1,6 @@
 # tlswatch
 
-tlswatch watches the TLS certificates that are actually served on your hostnames and IP addresses. It checks expiry, the chain of trust, the hostname and signature strength, notices when a certificate changes or a server still accepts TLS 1.0, and alerts by e-mail and Telegram before something expires. It is one self-hosted Go binary with a web UI and a SQLite file; nothing else to run.
+tlswatch watches the TLS certificates that are actually served on your hostnames and IP addresses. It checks expiry, the chain of trust, the hostname and signature strength, notices when a certificate changes or a server still accepts TLS 1.0, and alerts by e-mail, Telegram, Slack, Discord, ntfy or a webhook before something expires. It is one self-hosted Go binary with a web UI and a SQLite file; nothing else to run.
 
 - Any port, implicit TLS or STARTTLS (SMTP, IMAP, POP3, FTP, PostgreSQL).
 - Every address behind a name is probed, so the one stale node behind a load balancer is caught.
@@ -11,7 +11,7 @@ tlswatch watches the TLS certificates that are actually served on your hostnames
 - Alerts on transitions, with reminders, recovery notices, acknowledgements (also in bulk) and an optional weekly digest. Mail has a plain-text and an HTML part.
 - Live pages that update as checks land.
 - Roles (viewer, operator, admin), local accounts and Google sign-in, an audit log.
-- **Configured in the browser**: SMTP relays, Telegram bots, Google sign-in, thresholds and the public URL all live under Settings.
+- **Configured in the browser**: SMTP relays, Telegram bots, Slack and Discord webhooks, ntfy topics, your own webhooks, Google sign-in, thresholds and the public URL all live under Settings.
 - Encrypted backup and restore from the UI, also from the setup screen of a new installation.
 - Optional Prometheus metrics at `/metrics`.
 
@@ -56,7 +56,7 @@ Put a reverse proxy with TLS in front before exposing tlswatch, then set the pub
 ## Backups
 
 - **Settings › Backup** downloads the whole instance as one file encrypted with a passphrase, and restores such a file in place. Stored credentials are re-encrypted for the instance that restores it, so the file moves between hosts without the secret key.
-- **`tlswatch backup PATH`** writes a plain database copy, safe while the server runs, for a nightly cron. Keep the secret key with it: stored SMTP passwords, Telegram tokens and the Google client secret are encrypted with it. `tlswatch rotate-key` replaces the key with the server stopped.
+- **`tlswatch backup PATH`** writes a plain database copy, safe while the server runs, for a nightly cron. Keep the secret key with it: stored SMTP passwords, Telegram tokens, webhook URLs and the Google client secret are encrypted with it. `tlswatch rotate-key` replaces the key with the server stopped.
 
 ## Commands
 

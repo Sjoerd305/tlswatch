@@ -6,7 +6,7 @@ Working title: tlswatch. This document started as an export of the original desi
 
 ## Purpose and scope
 
-The tool monitors the certificates that are actually served on a list of hostnames and IP addresses, judges whether they are valid, and alerts by e-mail and Telegram before they expire or when something changes. It is a single self-hosted Go binary with a web UI, built for 10 to 100 endpoints in a small operations team but designed to scale to thousands.
+The tool monitors the certificates that are actually served on a list of hostnames and IP addresses, judges whether they are valid, and alerts by e-mail, Telegram, Slack, Discord, ntfy or a webhook before they expire or when something changes. It is a single self-hosted Go binary with a web UI, built for 10 to 100 endpoints in a small operations team but designed to scale to thousands.
 
 In scope for version 1:
 
@@ -14,7 +14,7 @@ In scope for version 1:
 - Checking expiry (leaf and intermediates), chain of trust, hostname match, and signature strength, with self-signed and private-CA certificates as expected states.
 - Detecting a changed certificate, with an exception for endpoints whose certificate is renewed automatically (Let's Encrypt and other ACME clients).
 - A certificate inventory: every certificate seen, where it is served, when it expires.
-- Alerts on SMTP and Telegram, with reminders, recovery notices and acknowledgement.
+- Alerts on SMTP, Telegram, Slack, Discord, ntfy and generic webhooks, with reminders, recovery notices and acknowledgement.
 - Users with the roles admin, operator and viewer; local login and Google sign-in.
 - A daily check per target by default, 180 days of history.
 
@@ -33,7 +33,7 @@ The certificate is the primary entity; a target is where it is observed. One cer
 | Certificate | One X.509 certificate, keyed by SHA-256 fingerprint | fingerprint, subject, issuer, serial, not before, not after, SANs, key type and size, signature algorithm, PEM, first seen, last seen |
 | Finding | A problem on a target that is open until it resolves | target, kind, severity, opened at, resolved at, acknowledged by and until, details |
 | Alert | One delivery of a finding or recovery to one channel | finding, channel, sent at, result |
-| Channel | A delivery route: an SMTP recipient list or a Telegram chat | kind, settings, minimum severity |
+| Channel | A delivery route: an SMTP recipient list, a Telegram chat, a Slack or Discord webhook, an ntfy topic or a webhook URL | kind, settings, minimum severity |
 | CA bundle | A PEM bundle of private roots and intermediates, uploaded by an admin | name, PEM, fingerprints |
 | User | A person who signs in | e-mail, name, role, login method, password hash, enabled |
 | Audit entry | Who changed what in the tool itself (targets, users, settings, acknowledgements) | when, user, action, object, details |
@@ -149,12 +149,18 @@ Alerts fire on state transitions, not on every check, so a daily check never pro
 | --- | --- | --- |
 | SMTP | Go standard library over STARTTLS or implicit TLS, with optional PLAIN/LOGIN auth | host, port, user, password, from, recipients, minimum severity |
 | Telegram | HTTPS call to `api.telegram.org/bot<token>/sendMessage`, no library | bot token, chat IDs, minimum severity |
+| Slack | JSON `{"text"}` POST to an incoming webhook; `&`, `<`, `>` escaped. Mattermost and Rocket.Chat incoming webhooks take the same message | webhook URL (the credential), minimum severity |
+| Discord | JSON `{"content"}` POST to a channel webhook with `wait=true`, so Discord returns the message ID; messages cut at 2000 characters | webhook URL (the credential), minimum severity |
+| ntfy | JSON POST to the server root: topic, title (the subject without its tag), message (cut at 4000 characters), priority 5/4/3 for critical/warning/other, one tag per severity; optional bearer token | server (default `https://ntfy.sh`), topic, access token, minimum severity |
+| Webhook | JSON POST `{source, ref, severity, subject, text, sent_at}` with `X-TLSWatch-Ref` and `X-TLSWatch-Severity` headers; with a secret, `X-TLSWatch-Signature: sha256=<hex HMAC-SHA256 of the body>` | URL, signing secret, minimum severity |
+
+Every HTTP transport treats a 429, or a 503 with Retry-After, as a request to wait: the retry is postponed by at least the time asked. Other non-2xx statuses are failures retried with the normal backoff. Errors never contain the credential, also when the URL itself is the credential: connection errors are reported without the URL, and the URL and its path are redacted from any other text. URLs must be `http://` or `https://` without embedded credentials; an admin chooses them, and there is no other restriction on the host, since self-hosted services on private names are the common case.
 
 One message per finding; a run that opens many findings at once (a new bundle of targets, an outage) is collapsed into one message per channel listing them, capped at 50 lines.
 
-**Message content**: target name and `host:port`, finding kind and severity, days left and the expiry date, issuer and subject CN, fingerprint (short), the address that failed, and a link to the target in the UI. Mail is `multipart/alternative`: a plain-text part and an HTML part styled like the UI (the dark top bar with the shield mark and the wordmark, a white card, a status pill, a large countdown for expiry, uppercase labels with mono identifiers, an "Open in tlswatch" button; dark tokens for clients that support `prefers-color-scheme`; inline styles, system fonts). The shield mark of the UI and favicon is a PNG carried in the mail itself (`multipart/related`, referenced by Content-ID), because most mail clients do not show inline SVG and many block remote images. Batches, the weekly digest (stat tiles and three lists) and the channel test message use the same layout. Telegram messages are plain text with the same fields on separate lines. The subject line starts with the severity in brackets so mail rules can route it: `[critical] portal.example.nl:443 expires in 6 days`.
+**Message content**: target name and `host:port`, finding kind and severity, days left and the expiry date, issuer and subject CN, fingerprint (short), the address that failed, and a link to the target in the UI. Mail is `multipart/alternative`: a plain-text part and an HTML part styled like the UI (the dark top bar with the shield mark and the wordmark, a white card, a status pill, a large countdown for expiry, uppercase labels with mono identifiers, an "Open in tlswatch" button; dark tokens for clients that support `prefers-color-scheme`; inline styles, system fonts). The shield mark of the UI and favicon is a PNG carried in the mail itself (`multipart/related`, referenced by Content-ID), because most mail clients do not show inline SVG and many block remote images. Batches, the weekly digest (stat tiles and three lists) and the channel test message use the same layout. Telegram, Slack and Discord messages are plain text with the same fields on separate lines, the subject first; ntfy gets the subject as the title and the fields as the message; a webhook gets the subject and the plain text in its JSON document. The subject line starts with the severity in brackets so mail rules can route it: `[critical] portal.example.nl:443 expires in 6 days`.
 
-**Delivery** is queued in SQLite and retried with backoff (1 min, 5 min, 30 min, then hourly for 24 hours), or later when the transport asks for it (a Telegram rate limit); after 24 hours the alert is marked failed and logged as given up. A channel that is down does not block another. A Telegram channel with several chats tries every chat; a retry goes only to the chats that did not get the message yet. A test button per channel sends a sample message. Every delivery and its result is kept in the alert log for 180 days.
+**Delivery** is queued in SQLite and retried with backoff (1 min, 5 min, 30 min, then hourly for 24 hours), or later when the transport asks for it (a Telegram rate limit, a 429 from a webhook); after 24 hours the alert is marked failed and logged as given up. A channel that is down does not block another. A Telegram channel with several chats tries every chat; a retry goes only to the chats that did not get the message yet. A test button per channel sends a sample message. Every delivery and its result is kept in the alert log for 180 days.
 
 ## Inventory and user interface
 
@@ -172,7 +178,7 @@ The UI is an operations console: the home screen answers "what needs attention n
 | Certificates | viewer+ | The inventory: one row per unique certificate: subject, issuer, days left, lifetime bar, not after, key, number of targets serving it, short fingerprint, first seen. Filter field and chips for expiry window, issuer, key type; a switch to include or hide certificates no longer served. Row expands to full fingerprint, SANs, chain and the targets and addresses where it is served. Export as CSV. |
 | Findings | viewer+ | Open findings first, sorted by severity then days left; each row: severity, kind with detail, target, since, last alert, acknowledgement. The acknowledge form (until-date, comment) and the alert timeline open in a side panel (operator+), closed with × or Escape. Filter field (target, host, finding), a target filter linked from the target page, and chips for open/resolved, severity and kind. Bulk acknowledgement (operator+): a checkbox per open finding and "select all shown"; a bar with one until-date and comment acknowledges the selection. Certificate changes in it are confirmed and resolved, as when acknowledged one by one. |
 | Settings: General | admin | Public base URL, time zone, proxy trust, local targets; values set by environment shown read-only. |
-| Settings: Channels | admin | SMTP and Telegram channels with severity floor, last delivery, Test button, edit form below the table: SMTP host, port (following the encryption), encryption, username, password, from, recipients; Telegram bot token and chat IDs. Deleting a channel asks first. |
+| Settings: Channels | admin | Channels of every kind with severity floor, destination, last delivery, Test button; "Add SMTP", "Add Telegram" and a "More types" menu for Slack, Discord, ntfy and Webhook. Edit form below the table: SMTP host, port (following the encryption), encryption, username, password, from, recipients; Telegram bot token and chat IDs; Slack or Discord webhook URL; ntfy server, topic and access token; webhook URL and signing secret. Credentials, including webhook URLs that grant posting rights, are never shown back; left empty they keep the stored value. The destination column shows the host only for Slack and Discord, and the URL without its query for a webhook. Deleting a channel asks first. |
 | Settings: Sign-in | admin | Google client ID, client secret, Workspace domain, redirect URI to register. |
 | Settings: CA bundles | admin | Upload PEM, list of the certificates inside with validity; replace a bundle; delete one no target uses, after a confirmation. |
 | Settings: Defaults | admin | The global thresholds table, digest schedule and channels, "Send digest now", probe concurrency, retention. |
@@ -293,9 +299,9 @@ Everything else is a form, and every one of these works as a plain link or form 
 
 ## Configuration, deployment and operations
 
-**Everything is configured in the UI, as far as possible.** Only what the process needs before it can open its database stays outside it: the listen address, the database path and the secret key. All the rest lives in the database and is edited under Settings by an admin: the SMTP relays (host, port, encryption, username, password, sender, recipients), the Telegram bot token and chat IDs, Google sign-in (client ID, client secret, Workspace domain), the public base URL, probe concurrency, retention, proxy trust and local-target policy, thresholds and the digest.
+**Everything is configured in the UI, as far as possible.** Only what the process needs before it can open its database stays outside it: the listen address, the database path and the secret key. All the rest lives in the database and is edited under Settings by an admin: the SMTP relays (host, port, encryption, username, password, sender, recipients), the Telegram bot token and chat IDs, the Slack, Discord and webhook URLs, the ntfy server and topic, Google sign-in (client ID, client secret, Workspace domain), the public base URL, probe concurrency, retention, proxy trust and local-target policy, thresholds and the digest.
 
-Secrets entered in the UI (SMTP passwords, Telegram bot tokens, the Google client secret) are stored encrypted with AES-256-GCM under the secret key. They are never shown back; a password field left empty keeps the stored value. A copy of the database alone does not leak them. The `rotate-key` subcommand re-encrypts them under a new key while the server is stopped.
+Secrets entered in the UI (SMTP passwords, Telegram bot tokens, Slack and Discord webhook URLs, ntfy access tokens, webhook signing secrets, the Google client secret) are stored encrypted with AES-256-GCM under the secret key. They are never shown back; a password field left empty keeps the stored value. A copy of the database alone does not leak them. The `rotate-key` subcommand re-encrypts them under a new key while the server is stopped.
 
 **Zero-configuration start.** `tlswatch serve` with no environment works. The data directory is created. A 32-byte secret key is generated into `data/secret.key` (mode 0600) when no key file exists. When no users exist yet, the server shows a setup screen at the first visit where the first admin creates their account and password; the log prints the URL. Because the default bind is loopback, nobody else can reach that screen before the admin exists. `create-admin` remains for scripted installs.
 
@@ -315,7 +321,7 @@ Secrets entered in the UI (SMTP passwords, Telegram bot tokens, the Google clien
 | `TLSWATCH_RETENTION_DAYS` | `180` | Settings › Defaults | History retention |
 | `TLSWATCH_GOOGLE_CLIENT_ID` / `_SECRET_FILE` / `_DOMAIN` | empty | Settings › Sign-in | Google sign-in; off while no client ID is set |
 
-Settings pages added for this: **General** (base URL, proxy trust, local targets, metrics) and **Sign-in** (Google client ID, secret, domain, with the redirect URI to register shown read-only). Channels gain the SMTP encryption choice (STARTTLS, implicit TLS, none) and username/password as in the mockup; Telegram channels take the bot token and one or more chat IDs. Every change is audited, secrets redacted.
+Settings pages added for this: **General** (base URL, proxy trust, local targets, metrics) and **Sign-in** (Google client ID, secret, domain, with the redirect URI to register shown read-only). Channels gain the SMTP encryption choice (STARTTLS, implicit TLS, none) and username/password as in the mockup; Telegram channels take the bot token and one or more chat IDs. Slack, Discord, ntfy and Webhook channels (added later, not in the mockups) follow the same form layout with their own fields. Every change is audited, secrets redacted.
 
 **Packaging**: `go build` produces one static binary with the frontend embedded via `embed`; releases ship binaries for linux/amd64, linux/arm64 and darwin/arm64, plus a Docker image from `scratch` with CA certificates, published to GitHub Container Registry. The compose file in the repository runs the image with one volume for `data/`; TLS termination is left to the user's proxy.
 
@@ -335,7 +341,7 @@ The tool holds a list of hosts, their certificates (public data) and the credent
 - **Passwords**: Argon2id, 12-character minimum, leaked-password list, rate limit per account and per IP.
 - **Probe as scanner**: only operators and admins can add targets, and every addition is in the audit log. Targets are probed with one TLS handshake and no application traffic beyond the STARTTLS preamble. Loopback and link-local addresses are refused as targets unless `TLSWATCH_ALLOW_LOCAL=true`; private ranges are allowed because monitoring internal addresses is the point.
 - **Secrets at rest**: channel credentials and the Google client secret are encrypted with AES-256-GCM under the secret key file; the key is never in the database or in a backup. Logs redact tokens and passwords.
-- **Outbound connections** are limited to the targets, the SMTP server, `api.telegram.org` and Google's OIDC endpoints. No telemetry, no update check.
+- **Outbound connections** are limited to the targets, the SMTP server, `api.telegram.org`, the webhook and ntfy URLs an admin configured, and Google's OIDC endpoints. No telemetry, no update check.
 - **Input**: hostnames validated as DNS names or IP literals, ports 1 to 65535, PEM bundles parsed and rejected when they contain private keys, tags limited to 40 characters.
 - **Backups**: a UI backup holds everything, including password hashes and the alert credentials, so it is encrypted with the admin's passphrase; downloads and restores are in the audit log. A restore needs the admin role, or happens on the setup screen while no account exists, with the same trust as creating the first admin there.
 - **Audit log**: every change to targets, users (including unlocks and deletions), channels, bundles, defaults, backup downloads and restores, and every acknowledgement (bulk ones marked as such), with user and timestamp; readable by admins, exportable as CSV, pruned with the retention.
@@ -406,4 +412,4 @@ Where the requirements said "not sure" or "what do you recommend", this document
 - [ ] Whether `info` findings (expected ACME renewals) should appear in the weekly digest.
 - [ ] Which public hosts to use in the seed data and README screenshot.
 
-**Later versions**, in rough priority: a public REST API with tokens; bulk import and export of targets as YAML; remote probe agents for isolated networks; OCSP and CRL checks; Certificate Transparency monitoring for own domains; TLS configuration grading; webhook and ntfy channels; ticket creation in a service desk on critical findings.
+**Later versions**, in rough priority: a public REST API with tokens; bulk import and export of targets as YAML; remote probe agents for isolated networks; OCSP and CRL checks; Certificate Transparency monitoring for own domains; TLS configuration grading; Microsoft Teams, PagerDuty and Matrix channels; ticket creation in a service desk on critical findings.

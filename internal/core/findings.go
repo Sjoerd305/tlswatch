@@ -128,7 +128,7 @@ type AlertEntry struct {
 	Error       string
 	Subject     string
 	NextAttempt int64
-	Ref         string // the SMTP Message-ID, or Telegram "chat:message_id" per chat
+	Ref         string // the SMTP Message-ID, Telegram "chat:message_id" per chat, a Discord or ntfy message ID, or the ref a webhook payload carried
 }
 
 // Alerts returns the alert log of a finding or of all findings of a target.

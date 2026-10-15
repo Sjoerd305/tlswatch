@@ -130,10 +130,12 @@ func migrationVersion(name string) int {
 
 // Migrate applies pending migrations, forward only, each in its own
 // transaction. It refuses a database written by a newer version of
-// tlswatch. A migration that rebuilds a table cannot switch foreign keys
-// off from inside its transaction (SQLite ignores PRAGMA foreign_keys
-// there); such a migration needs PRAGMA defer_foreign_keys, or handling
-// here outside the transaction.
+// tlswatch. Migrations run with foreign keys off, as SQLite's procedure for
+// rebuilding a table prescribes: with them on, dropping the old copy of a
+// table would cascade into the rows that reference it. PRAGMA foreign_keys
+// is ignored inside a transaction, so it is switched on the pinned
+// connection around each one, and a foreign_key_check before the commit
+// catches a migration that left a dangling reference.
 func (d *DB) Migrate(ctx context.Context) error {
 	var current int
 	if err := d.W.QueryRowContext(ctx, "PRAGMA user_version").Scan(&current); err != nil {
@@ -147,6 +149,11 @@ func (d *DB) Migrate(ctx context.Context) error {
 		return err
 	}
 	sort.Slice(files, func(i, j int) bool { return migrationVersion(files[i]) < migrationVersion(files[j]) })
+	conn, err := d.W.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
 	for _, f := range files {
 		v := migrationVersion(f)
 		if v <= current {
@@ -156,23 +163,36 @@ func (d *DB) Migrate(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		tx, err := d.W.BeginTx(ctx, nil)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, string(body)); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("migration %s: %w", filepath.Base(f), err)
-		}
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", v)); err != nil {
-			tx.Rollback()
-			return err
-		}
-		if err := tx.Commit(); err != nil {
+		if err := d.applyMigration(ctx, conn, filepath.Base(f), string(body), v); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (d *DB) applyMigration(ctx context.Context, conn *sql.Conn, name, body string, v int) error {
+	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys = OFF"); err != nil {
+		return err
+	}
+	defer conn.ExecContext(ctx, "PRAGMA foreign_keys = ON")
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, body); err != nil {
+		return fmt.Errorf("migration %s: %w", name, err)
+	}
+	var table string
+	if err := tx.QueryRowContext(ctx, "SELECT \"table\" FROM pragma_foreign_key_check LIMIT 1").Scan(&table); err == nil {
+		return fmt.Errorf("migration %s: dangling foreign key in %s", name, table)
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("migration %s: foreign key check: %w", name, err)
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", v)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // Backup writes a consistent copy of the database to path (VACUUM INTO),

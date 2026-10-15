@@ -218,13 +218,18 @@ func (d *Dispatcher) send(ctx context.Context, c Channel, delivered string, ps [
 	sctx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
 	a := attempt{delivered: delivered}
-	if partial, ok := d.sender(c).(PartialSender); ok {
+	switch snd := d.sender(c).(type) {
+	case PartialSender:
 		var reached, refs []string
-		reached, refs, a.err = partial.SendSkipping(sctx, m, splitList(delivered))
+		reached, refs, a.err = snd.SendSkipping(sctx, m, splitList(delivered))
 		a.delivered = joinList(append(splitList(delivered), reached...))
 		a.ref = joinList(append(splitList(ps[0].ref), refs...))
-	} else if a.err = d.sender(c).Send(sctx, m); a.err == nil {
-		a.ref = MessageID(m.Ref)
+	case RefSender:
+		a.ref, a.err = snd.SendRef(sctx, m)
+	default:
+		if a.err = snd.Send(sctx, m); a.err == nil {
+			a.ref = MessageID(m.Ref)
+		}
 	}
 	if ra := (*RetryAfterError)(nil); errors.As(a.err, &ra) {
 		a.wait = ra.After
@@ -299,10 +304,18 @@ func (d *Dispatcher) SendTest(ctx context.Context, chID int64, link string) erro
 	sctx, cancel := context.WithTimeout(ctx, sendTimeout)
 	var refs []string
 	var sendErr error
-	if partial, ok := d.sender(c).(PartialSender); ok {
-		_, refs, sendErr = partial.SendSkipping(sctx, m, nil)
-	} else if sendErr = d.sender(c).Send(sctx, m); sendErr == nil {
-		refs = []string{MessageID(m.Ref)}
+	switch snd := d.sender(c).(type) {
+	case PartialSender:
+		_, refs, sendErr = snd.SendSkipping(sctx, m, nil)
+	case RefSender:
+		var ref string
+		if ref, sendErr = snd.SendRef(sctx, m); sendErr == nil && ref != "" {
+			refs = []string{ref}
+		}
+	default:
+		if sendErr = snd.Send(sctx, m); sendErr == nil {
+			refs = []string{MessageID(m.Ref)}
+		}
 	}
 	cancel()
 	now := d.now().Unix()

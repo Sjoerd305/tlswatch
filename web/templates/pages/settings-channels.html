@@ -5,7 +5,8 @@
   <div class="stack">
     <div class="row between">
       <div><h2 class="h2">Channels</h2><span class="summary">Where alerts go. Each target picks its channels; a channel only carries severities at or above its floor.</span></div>
-      <div class="row gap-sm"><a href="?new=smtp" class="btn btn-primary">Add SMTP</a><a href="?new=telegram" class="btn">Add Telegram</a></div>
+      <div class="row gap-sm"><a href="?new=smtp" class="btn btn-primary">Add SMTP</a><a href="?new=telegram" class="btn">Add Telegram</a>
+        <details class="menu"><summary class="btn">More types…</summary><div class="menu-list"><a href="?new=slack">Slack</a><a href="?new=discord">Discord</a><a href="?new=ntfy">ntfy</a><a href="?new=webhook">Webhook</a></div></details></div>
     </div>
     {{- if $d.Channels}}
     <div class="card clip">
@@ -29,7 +30,7 @@
       </table>
     </div>
     {{- else if not $d.Edit}}
-    <section class="card"><div class="empty"><span class="h3">No channels yet</span><span>Findings are recorded but not delivered. Add an SMTP relay or a Telegram bot to receive alerts.</span></div></section>
+    <section class="card"><div class="empty"><span class="h3">No channels yet</span><span>Findings are recorded but not delivered. Add an SMTP relay, a Telegram bot, a Slack or Discord webhook, an ntfy topic or a webhook of your own to receive alerts.</span></div></section>
     {{- end}}
 
     {{- with $d.Edit}}{{$c := .}}
@@ -38,7 +39,7 @@
       <h3 class="h3">{{if $c.ID}}{{$c.Name}}{{else}}New {{$c.KindLabel}} channel{{end}}</h3>
       {{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
       <div class="fgrid c2">
-        <div class="field"><label class="label" for="cname">Name</label><input id="cname" name="name" class="input" value="{{$c.Name}}" required placeholder="{{if eq $c.Kind "smtp"}}Ops mailbox{{else}}Telegram ops{{end}}"></div>
+        <div class="field"><label class="label" for="cname">Name</label><input id="cname" name="name" class="input" value="{{$c.Name}}" required placeholder="{{if eq $c.Kind "smtp"}}Ops mailbox{{else if eq $c.Kind "webhook"}}Automation{{else}}{{$c.KindLabel}} ops{{end}}"></div>
         <div class="field"><label class="label" for="csev">Severity floor</label>
           <select id="csev" name="min_severity" class="input">
             <option value="info"{{if eq $c.MinSeverity "info"}} selected{{end}}>info, everything</option>
@@ -66,9 +67,22 @@
         <div class="field"><label class="label" for="to">Recipients</label><input id="to" name="recipients" class="input" value="{{join $c.SMTP.Recipients ", "}}" required placeholder="ops@example.nl, noc@example.nl"></div>
       </div>
       <label class="check"><input type="checkbox" name="insecure_skip_verify" value="1"{{if $c.SMTP.InsecureSkipVerify}} checked{{end}}> Accept the relay's certificate without verifying it (private relays only)</label>
-      {{- else}}
+      {{- else if eq $c.Kind "telegram"}}
       <div class="field"><label class="label" for="token">Bot token</label><input id="token" name="token" class="input mono" type="password" value="" autocomplete="new-password" placeholder="{{if $c.ID}}stored · leave empty to keep{{else}}123456789:AA…{{end}}"{{if not $c.ID}} required{{end}}><span class="help">From @BotFather. Stored encrypted with the secret key{{if $c.ID}}; leave empty to keep{{end}}.</span></div>
       <div class="field"><label class="label" for="chats">Chat IDs</label><input id="chats" name="chat_ids" class="input mono" value="{{join $c.Telegram.ChatIDs ", "}}" required placeholder="-1001234567890, @opschannel"><span class="help">Add the bot to the chat first. A group ID starts with -100; a public channel can be given as @name.</span></div>
+      {{- else if eq $c.Kind "slack"}}
+      <div class="field"><label class="label" for="hook">Webhook URL</label><input id="hook" name="webhook_url" class="input mono" type="password" value="" autocomplete="new-password" spellcheck="false" placeholder="{{if $c.ID}}stored · leave empty to keep{{else}}https://hooks.slack.com/services/T…/B…/…{{end}}"{{if not $c.ID}} required{{end}}><span class="help">An incoming webhook of a Slack app; Mattermost and Rocket.Chat incoming webhooks work too. The URL lets anyone post to the channel, so it is stored encrypted and not shown again{{if $c.ID}}; leave empty to keep{{end}}.</span></div>
+      {{- else if eq $c.Kind "discord"}}
+      <div class="field"><label class="label" for="hook">Webhook URL</label><input id="hook" name="webhook_url" class="input mono" type="password" value="" autocomplete="new-password" spellcheck="false" placeholder="{{if $c.ID}}stored · leave empty to keep{{else}}https://discord.com/api/webhooks/…{{end}}"{{if not $c.ID}} required{{end}}><span class="help">Channel settings › Integrations › Webhooks in Discord. The URL lets anyone post to the channel, so it is stored encrypted and not shown again{{if $c.ID}}; leave empty to keep{{end}}.</span></div>
+      {{- else if eq $c.Kind "ntfy"}}
+      <div class="fgrid c2">
+        <div class="field"><label class="label" for="server">Server</label><input id="server" name="server" class="input mono" value="{{$c.Ntfy.Server}}" spellcheck="false" placeholder="https://ntfy.sh"><span class="help">ntfy.sh or your own ntfy server.</span></div>
+        <div class="field"><label class="label" for="topic">Topic</label><input id="topic" name="topic" class="input mono" value="{{$c.Ntfy.Topic}}" required spellcheck="false" placeholder="tlswatch-ops"><span class="help">On a public server, pick a topic name nobody can guess.</span></div>
+      </div>
+      <div class="field"><label class="label" for="token">Access token</label><input id="token" name="token" class="input mono" type="password" value="" autocomplete="new-password" placeholder="{{if $c.ID}}stored · leave empty to keep{{else}}tk_… (optional){{end}}"><span class="help">For a protected topic. Stored encrypted with the secret key{{if $c.ID}}; leave empty to keep{{end}}.</span></div>
+      {{- else if eq $c.Kind "webhook"}}
+      <div class="field"><label class="label" for="url">URL</label><input id="url" name="url" class="input mono" value="{{$c.Webhook.URL}}" required spellcheck="false" placeholder="https://automation.example.nl/hooks/tlswatch"><span class="help">Receives a JSON POST per alert: <span class="mono">source, ref, severity, subject, text, sent_at</span>, with the severity also in the <span class="mono">X-TLSWatch-Severity</span> header.</span></div>
+      <div class="field"><label class="label" for="secret">Signing secret</label><input id="secret" name="secret" class="input mono" type="password" value="" autocomplete="new-password" placeholder="{{if $c.ID}}stored · leave empty to keep{{else}}optional{{end}}"><span class="help">When set, <span class="mono">X-TLSWatch-Signature</span> carries <span class="mono">sha256=</span> and the hex HMAC-SHA256 of the body under it. Stored encrypted with the secret key{{if $c.ID}}; leave empty to keep{{end}}.</span></div>
       {{- end}}
       <label class="check"><input type="checkbox" name="enabled" value="1"{{if $c.Enabled}} checked{{end}}> Enabled</label>
       <div class="form-foot">
