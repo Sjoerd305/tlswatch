@@ -22,7 +22,7 @@
 {{- else}}
 <div class="tiles">
   <a class="card tile" href="/targets?status=critical"><span class="st crit">Critical</span><span class="n">{{$o.Critical}}</span><span class="l">{{if $o.Critical}}expired, failing or due within the critical threshold{{else}}nothing critical{{end}}</span></a>
-  <a class="card tile" href="/targets?status=warning"><span class="st warn">Warning</span><span class="n">{{$o.Warning}}</span><span class="l">{{if $o.Warning}}{{sub $o.Warning $o.Changed}} expiring or degraded · {{$o.Changed}} changed{{else}}nothing to look at{{end}}</span></a>
+  <a class="card tile" href="/targets?status=warning"><span class="st warn">Warning</span><span class="n">{{$o.Warning}}</span><span class="l">{{if $o.Warning}}{{sub $o.Warning $o.Changed}} expiring or degraded{{if $o.Changed}} · {{$o.Changed}} changed{{end}}{{else}}nothing to look at{{end}}</span></a>
   <a class="card tile" href="/targets?status=healthy"><span class="st ok">Healthy</span><span class="n">{{$o.Healthy}}</span><span class="l">{{if eq $o.DueWithin30 0}}nothing due within 30 days{{else}}{{$o.DueWithin30}} due within 30 days{{end}}</span></a>
   <a class="card tile" href="/targets?status=unreachable"><span class="st off">Unreachable</span><span class="n">{{$o.Unreachable}}</span><span class="l">{{if $o.Disabled}}{{$o.Disabled}} {{plural $o.Disabled "target" "targets"}} disabled{{else if $o.Pending}}{{$o.Pending}} not checked yet{{else}}every target answered{{end}}</span></a>
 </div>
@@ -33,17 +33,17 @@
   <section class="card clip">
     <div class="sec"><h2>Expiring next</h2><a href="/certificates" class="small">All certificates</a></div>
     {{- if $o.Targets}}
-    <table class="tbl cards">
+    <table class="tbl cards compact">
       <thead><tr><th>Target</th><th>Host</th><th class="num">Days</th><th>Lifetime used</th><th>Expires</th><th>Issuer</th></tr></thead>
       <tbody>
       {{- range $o.Targets}}{{$c := .ExpiryClass $p.Settings.Defaults $p.Now}}
         <tr>
-          <td data-label="Target"><a href="/targets/{{.ID}}" class="ink strong" data-row-link>{{.Name}}</a></td>
-          <td data-label="Host" class="mono muted">{{.HostPort}}</td>
-          <td data-label="Days" class="num mono days{{if $c}} {{$c}}-t{{end}}">{{template "days-left" (days $p.Now .NotAfter)}}</td>
-          <td data-label="Lifetime">{{template "bar" (dict "Used" (used $p.Now .Cert.NotBefore .Cert.NotAfter) "Class" (.BarClass $p.Settings.Defaults $p.Now) "Wide" "w140")}}</td>
-          <td data-label="Expires" class="mono">{{date $p.Loc .NotAfter}}</td>
-          <td data-label="Issuer" class="muted">{{.Cert.IssuerName}}{{if .RenewalManaged}} · auto{{end}}</td>
+          <td data-label="Target" class="m-lead"><a href="/targets/{{.ID}}" class="ink strong" data-row-link>{{.Name}}</a></td>
+          <td data-label="Host" class="mono muted m-full">{{.HostPort}}</td>
+          <td data-label="Days" class="num mono days m-lead m-end{{if $c}} {{$c}}-t{{end}}">{{template "days-left" (days $p.Now .NotAfter)}}</td>
+          <td data-label="Lifetime" class="m-hide">{{template "bar" (dict "Used" (used $p.Now .Cert.NotBefore .Cert.NotAfter) "Class" (.BarClass $p.Settings.Defaults $p.Now) "Wide" "w140")}}</td>
+          <td data-label="Expires" class="mono m-hide">{{date $p.Loc .NotAfter}}</td>
+          <td data-label="Issuer" class="muted">{{.Cert.IssuerName}}{{if .RenewalManaged}} <span class="tag">auto</span>{{end}}</td>
         </tr>
       {{- end}}
       </tbody>

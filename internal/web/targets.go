@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html/template"
 	"net"
 	"net/http"
 	"sort"
@@ -52,7 +53,12 @@ type targetsData struct {
 	Tags      []Chip
 	Query     string
 	Group     bool
+	Sort      Sort
 }
+
+// targetSortKeys are the sortable columns of the targets table; "days" is
+// the list's own order (expiry, unknown and disabled last).
+var targetSortKeys = []string{"status", "name", "host", "days", "lifetime", "expires", "issuer", "tls", "tags", "checked"}
 
 func (s *Server) targets(w http.ResponseWriter, r *http.Request) {
 	ts, err := s.Core.Targets(r.Context())
@@ -62,7 +68,7 @@ func (s *Server) targets(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	status, tag, text := q.Get("status"), q.Get("tag"), strings.ToLower(strings.TrimSpace(q.Get("q")))
-	d := targetsData{Query: q.Get("q")}
+	d := targetsData{Query: q.Get("q"), Sort: sortFrom(r, "days", targetSortKeys...)}
 	counts := map[string]int{}
 	for _, t := range ts {
 		counts[chipStatus(t.Status)]++
@@ -88,13 +94,15 @@ func (s *Server) targets(w http.ResponseWriter, r *http.Request) {
 	}
 	// Server-side filtering mirrors the TypeScript filter, so the page
 	// works without JavaScript; rows are rendered hidden, not dropped.
+	now := s.now()
 	for _, t := range ts {
-		row := targetRow{T: t, Hidden: !targetMatches(t, status, tag, text)}
+		row := targetRow{T: t, Now: now, Hidden: !targetMatches(t, status, tag, text)}
 		if !row.Hidden {
 			d.Shown++
 		}
 		d.Targets = append(d.Targets, row)
 	}
+	sortRows(d.Sort, d.Targets, targetRow.sortVal)
 	d.Group = q.Get("group") == "tag"
 	if d.Group {
 		d.GroupHref = chipHref(r, "group", "")
@@ -171,11 +179,46 @@ func chipHref(r *http.Request, key, value string) string {
 // targetRow is a row in the targets table, also rendered alone by the API.
 type targetRow struct {
 	T      core.Target
+	Now    time.Time
 	Hidden bool
 }
 
 // Search is the text the live filter matches.
 func (r targetRow) Search() string { return targetSearch(r.T) }
+
+// SortAttrs are the row's data-sort-* attributes.
+func (r targetRow) SortAttrs() template.HTMLAttr { return sortAttrs(targetSortKeys, r.sortVal) }
+
+func (r targetRow) sortVal(key string) sortVal {
+	t := r.T
+	switch key {
+	case "status":
+		return num(float64(statusRank(t.Status)))
+	case "name":
+		return txt(t.Name)
+	case "host":
+		return txt(t.HostPort())
+	case "days", "expires":
+		return numIf(t.NotAfter > 0, float64(t.NotAfter))
+	case "lifetime":
+		if t.Cert == nil {
+			return sortVal{}
+		}
+		return num(float64(t.Cert.LifetimeUsed(r.Now)))
+	case "issuer":
+		if t.Cert == nil {
+			return sortVal{}
+		}
+		return txt(t.Cert.IssuerName())
+	case "tls":
+		return txt(t.TLSVersion)
+	case "tags":
+		return txt(strings.Join(t.Tags, " "))
+	case "checked":
+		return numIf(t.LastCheck > 0, float64(t.LastCheck))
+	}
+	return sortVal{}
+}
 
 // StatusToken is the chip value of the row's status.
 func (r targetRow) StatusToken() string { return chipStatus(r.T.Status) }
@@ -765,7 +808,7 @@ func (s *Server) apiTargetCheck(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"redirect": fmt.Sprintf("/targets/%d", id)})
 		return
 	}
-	html, err := s.fragment(r, "target-row", frag{P: s.fragPage(r), Item: targetRow{T: t}})
+	html, err := s.fragment(r, "target-row", frag{P: s.fragPage(r), Item: targetRow{T: t, Now: s.now()}})
 	if err != nil {
 		s.serverError(w, r, err)
 		return

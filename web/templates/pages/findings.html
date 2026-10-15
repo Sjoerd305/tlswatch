@@ -1,17 +1,19 @@
-{{define "content"}}{{$p := .}}{{$d := .Data}}
+{{define "content"}}{{$p := .}}{{$d := .Data}}{{$s := $d.Sort}}{{$since := "Since"}}{{if $d.Resolved}}{{$since = "Resolved"}}{{end}}
 <div class="page-head">
   <div><h1>Findings</h1><span class="summary">{{$d.OpenCount}} open{{if $d.AckCount}} · {{$d.AckCount}} acknowledged{{end}} · {{if $d.ResCapped}}latest {{$d.ResCount}}{{else}}{{$d.ResCount}}{{end}} resolved in the last {{$d.Retention}} days</span></div>
 </div>
-<form class="row" method="get" action="/findings" role="search" data-keep-filter="state sev kind target sel">
+<form class="row" method="get" action="/findings" role="search" data-keep-filter="state sev kind target sel group">
   {{- if $d.Resolved}}<input type="hidden" name="state" value="resolved">{{end}}
   {{- with $d.Target}}<input type="hidden" name="target" value="{{.ID}}">{{end}}
-  <div class="filter">{{template "search-icon"}}<input class="input" type="search" name="q" value="{{$d.Query}}" placeholder="Filter: target, host, finding" aria-label="Filter findings" aria-keyshortcuts="/" title="Press / to filter" data-filter="#findings"></div>
+  {{- if $d.Group}}<input type="hidden" name="group" value="kind">{{end}}
+  <div class="filter">{{template "search-icon"}}<input class="input" type="search" name="q" value="{{$d.Query}}" placeholder="Filter: target, host, finding" aria-label="Filter findings" aria-keyshortcuts="/" title="Press / to filter" data-filter="#findings">{{template "key-hint"}}</div>
   {{- with $d.Target}}<a class="chip on" href="{{$d.ClearTarget}}" title="Show findings of every target">target: {{.Name}} <span class="x" aria-hidden="true">×</span><span class="sr-only">, remove</span></a>{{end}}
   <noscript><button type="submit" class="btn btn-xs">Filter</button></noscript>
   <span class="row gap-sm">{{template "chips" $d.State}}</span>
   {{- if or $d.Sev $d.Kinds}}<span class="divider"></span>{{end}}
   <span class="row gap-sm">{{template "sevchips" $d.Sev}}</span>
   <span class="row gap-sm">{{template "chips" $d.Kinds}}</span>
+  {{- if $d.Items}}<span class="spacer small"><a href="{{$d.GroupHref}}">{{if $d.Group}}ungroup{{else}}group by kind{{end}}</a></span>{{end}}
 </form>
 <div class="grid-main-side">
   <div class="card clip">
@@ -26,25 +28,29 @@
       <span class="help">Reminders stop until the date, or until resolved when empty. Certificate changes are confirmed and resolved.</span>
     </form>
     {{- end}}
-    <table class="tbl vtop cards" id="findings">
-      <thead><tr>{{if $d.Bulk}}<th class="chk"><input type="checkbox" data-select-all="#findings" aria-label="Select all shown findings"></th>{{end}}<th>Sev</th><th>Finding</th><th>Target</th><th>{{if $d.Resolved}}Resolved{{else}}Since{{end}}</th><th>Last alert</th><th>Ack</th><th><span class="sr-only">Actions</span></th></tr></thead>
+    <table class="tbl vtop cards compact" id="findings" data-sort-default="sev" data-sort-key="{{$s.Key}}" data-sort-dir="{{if $s.Desc}}desc{{else}}asc{{end}}">
+      <thead><tr>
+        {{- if $d.Bulk}}<th class="chk"><input type="checkbox" data-select-all="#findings" aria-label="Select all shown findings"></th>{{end}}
+        {{- template "th" (dict "S" $s "K" "sev" "L" "Sev" "N" true)}}
+        {{- template "th" (dict "S" $s "K" "finding" "L" "Finding")}}
+        {{- template "th" (dict "S" $s "K" "target" "L" "Target")}}
+        {{- template "th" (dict "S" $s "K" "since" "L" $since "N" true)}}
+        {{- template "th" (dict "S" $s "K" "alert" "L" "Last alert" "N" true)}}
+        {{- template "th" (dict "S" $s "K" "ack" "L" "Ack")}}
+        <th><span class="sr-only">Actions</span></th>
+      </tr></thead>
+      {{- if $d.Group}}
+      {{- range $d.Groups}}
       <tbody>
-      {{- range $d.Items}}{{$acked := .Acked $p.Now}}
-        <tr class="{{if and $d.Sel (eq $d.Sel.F.ID .ID)}}sel{{else if or $acked $d.Resolved}}muted{{end}}" data-search="{{.Search}}"{{if .Hidden}} hidden{{end}}>
-          {{- if $d.Bulk}}<td class="chk" data-label=""><label class="rowcheck"><input type="checkbox" name="id" value="{{.ID}}" form="bulk-ack" aria-label="Select {{lower .Kind.Label}} on {{.TargetName}}"></label></td>{{end}}
-          <td data-label="Severity"><span class="pill {{.Severity.Class}}">{{.Severity.Short}}</span></td>
-          <td data-label="Finding" class="wrap"><div class="strong">{{.Kind.Label}}</div><div class="muted wrap-any">{{.Details}}</div></td>
-          <td data-label="Target" class="wrap"><a href="/targets/{{.TargetID}}" class="ink strong">{{.TargetName}}</a><div class="mono small muted">{{.HostPort}}</div></td>
-          <td data-label="{{if $d.Resolved}}Resolved{{else}}Since{{end}}" class="mono nowrap">{{if $d.Resolved}}{{when $p.Loc $p.Now .ResolvedAt}}{{else}}{{when $p.Loc $p.Now .OpenedAt}}{{end}}</td>
-          <td data-label="Last alert" class="muted nowrap">{{if .LastAlertVia}}{{whenTime $p.Loc $p.Now .LastAlertAt}}<br>{{.LastAlertVia}}{{else}}—{{end}}</td>
-          <td data-label="Ack" class="nowrap">{{if .AckAt}}<span class="pill off">{{.AckBy}}</span>{{if .AckUntil}}<div class="small">until {{when $p.Loc $p.Now .AckUntil}}</div>{{end}}{{else}}—{{end}}</td>
-          <td data-label="">
-            {{- $label := "Details"}}{{if and .Open ($p.Can "findings.ack")}}{{if .Kind.AckResolves}}{{$label = "Confirm"}}{{else if .AckAt}}{{$label = "Unack"}}{{else}}{{$label = "Acknowledge"}}{{end}}{{end}}
-            <a href="{{$d.SelPrefix}}sel={{.ID}}" class="btn btn-xs{{if and $d.Sel (eq $d.Sel.F.ID .ID)}} btn-primary{{end}}" data-row-link data-panel="#finding-panel" data-panel-url="/api/v1/findings/{{.ID}}/panel">{{$label}}</a>
-          </td>
-        </tr>
-      {{- end}}
+        <tr class="group-head"><th colspan="{{if $d.Bulk}}8{{else}}7{{end}}">{{.Kind.Label}} <span class="muted">{{len .Rows}}</span></th></tr>
+        {{- range .Rows}}{{template "finding-row" (frag $p .)}}{{end}}
       </tbody>
+      {{- end}}
+      {{- else}}
+      <tbody>
+      {{- range $d.Items}}{{template "finding-row" (frag $p .)}}{{end}}
+      </tbody>
+      {{- end}}
     </table>
     <div class="empty" data-empty-for="#findings"{{if $d.Shown}} hidden{{end}}>No findings match the filter.</div>
     {{- else if $d.Resolved}}
@@ -59,4 +65,21 @@
     {{- with $d.Sel}}{{template "finding-panel" (frag $p .)}}{{end}}
   </aside>
 </div>
+{{end}}
+
+{{/* finding-row: one row of the findings table. frag{P, Item: findingRow}; the page data is P.Data. */}}
+{{define "finding-row"}}{{$p := .P}}{{$d := $p.Data}}{{$f := .Item}}{{$acked := $f.Acked $p.Now}}
+        <tr class="{{if and $d.Sel (eq $d.Sel.F.ID $f.ID)}}sel{{else if or $acked $d.Resolved}}muted{{end}}" data-search="{{$f.Search}}"{{$f.SortAttrs}}{{if $f.Hidden}} hidden{{end}}>
+          {{- if $d.Bulk}}<td class="chk m-lead" data-label=""><label class="rowcheck"><input type="checkbox" name="id" value="{{$f.ID}}" form="bulk-ack" aria-label="Select {{lower $f.Kind.Label}} on {{$f.TargetName}}"></label></td>{{end}}
+          <td data-label="Severity" class="m-lead"><span class="pill {{$f.Severity.Class}}">{{$f.Severity.Short}}</span></td>
+          <td data-label="Finding" class="wrap m-full"><div class="strong">{{$f.Kind.Label}}</div><div class="muted wrap-any">{{$f.Details}}</div></td>
+          <td data-label="Target" class="wrap m-lead"><a href="/targets/{{$f.TargetID}}" class="ink strong">{{$f.TargetName}}</a><div class="mono small muted">{{$f.HostPort}}</div></td>
+          <td data-label="{{if $d.Resolved}}Resolved{{else}}Since{{end}}" class="mono nowrap m-lead m-end">{{if $d.Resolved}}{{when $p.Loc $p.Now $f.ResolvedAt}}{{else}}{{when $p.Loc $p.Now $f.OpenedAt}}{{end}}</td>
+          <td data-label="Last alert" class="muted nowrap m-hide">{{if $f.LastAlertVia}}{{whenTime $p.Loc $p.Now $f.LastAlertAt}}<br>{{$f.LastAlertVia}}{{else}}—{{end}}</td>
+          <td data-label="Ack" class="nowrap{{if not $f.AckAt}} m-hide{{end}}">{{if $f.AckAt}}<span class="pill off">{{$f.AckBy}}</span>{{if $f.AckUntil}}<div class="small">until {{when $p.Loc $p.Now $f.AckUntil}}</div>{{end}}{{else}}—{{end}}</td>
+          <td data-label="" class="m-end">
+            {{- $label := "Details"}}{{if and $f.Open ($p.Can "findings.ack")}}{{if $f.Kind.AckResolves}}{{$label = "Confirm"}}{{else if $f.AckAt}}{{$label = "Unack"}}{{else}}{{$label = "Acknowledge"}}{{end}}{{end}}
+            <a href="{{$d.SelPrefix}}sel={{$f.ID}}" class="btn btn-xs{{if and $d.Sel (eq $d.Sel.F.ID $f.ID)}} btn-primary{{end}}" data-row-link data-panel="#finding-panel" data-panel-url="/api/v1/findings/{{$f.ID}}/panel">{{$label}}</a>
+          </td>
+        </tr>
 {{end}}

@@ -821,6 +821,19 @@ func (s *Server) accountSave(w http.ResponseWriter, r *http.Request) {
 	s.back(w, r, "/account", "Account saved.", "ok")
 }
 
+// accountTheme sets the theme from the account menu and returns to the page
+// it was chosen on.
+func (s *Server) accountTheme(w http.ResponseWriter, r *http.Request) {
+	theme := r.PostFormValue("theme")
+	next := safeNext(r.PostFormValue("next"))
+	if err := s.Auth.SetTheme(r.Context(), user(r).ID, theme); err != nil {
+		s.back(w, r, next, "Choose system, light or dark.", "crit")
+		return
+	}
+	http.SetCookie(w, &http.Cookie{Name: themeCookie, Value: theme, Path: "/", Secure: info(r).https, SameSite: http.SameSiteLaxMode, MaxAge: 365 * 86400})
+	http.Redirect(w, r, next, http.StatusSeeOther)
+}
+
 func (s *Server) accountPassword(w http.ResponseWriter, r *http.Request) {
 	u := user(r)
 	if u.Method != auth.MethodLocal {

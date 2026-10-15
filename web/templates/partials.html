@@ -10,6 +10,15 @@
 
 {{define "search-icon"}}<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>{{end}}
 
+{{/* key-hint: the "/" shortcut shown in a filter field; hidden while typing and on touch screens. */}}
+{{define "key-hint"}}<kbd class="key" aria-hidden="true">/</kbd>{{end}}
+
+{{/* chevron: the expand glyph of a row; CSS turns it when the row is open. */}}
+{{define "chevron"}}<svg class="chev" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>{{end}}
+
+{{/* th: a sortable column head. dict "S" Sort "K" key "L" label, optional "C" extra class, "N" true for a numeric column. */}}
+{{define "th"}}<th class="sortable{{with .C}} {{.}}{{end}}{{if .S.Dir .K}} sorted{{end}}"{{if .N}} data-num{{end}}{{with .S.Dir .K}} aria-sort="{{.}}"{{end}}><a href="{{.S.Href .K}}" data-sort="{{.K}}">{{.L}}<span class="arrow" aria-hidden="true">{{with .S.Dir .K}}{{if eq . "descending"}}▼{{else}}▲{{end}}{{end}}</span></a></th>{{end}}
+
 {{/* days-left: whole days until expiry, or "expired" once past. */}}
 {{define "days-left"}}{{if lt . 0}}<span title="{{.}} days">expired</span>{{else}}{{.}}{{end}}{{end}}
 
@@ -21,22 +30,22 @@
 
 {{/* target-row: one row of the targets table. frag{P, Item: targetRow} */}}
 {{define "target-row"}}{{$p := .P}}{{$r := .Item}}{{$t := $r.T}}
-<tr id="target-{{$t.ID}}" data-search="{{$r.Search}}" data-status="{{$r.StatusToken}}" data-tag="{{join $t.Tags " "}}"{{if not $t.Enabled}} class="muted"{{end}}{{if $r.Hidden}} hidden{{end}}>
-  <td data-label="Status">{{template "status" $t.Status}}</td>
-  <td data-label="Name"><a href="/targets/{{$t.ID}}" class="ink strong" data-row-link>{{$t.Name}}</a></td>
-  <td data-label="Host" class="mono">{{$t.HostPort}}{{if ne (print $t.Protocol) "tls"}} <span class="muted">{{$t.Protocol}}</span>{{end}}{{if gt $t.AddressCount 1}} <span class="muted">{{$t.AddressCount}} addr</span>{{end}}</td>
+<tr id="target-{{$t.ID}}" data-search="{{$r.Search}}" data-status="{{$r.StatusToken}}" data-tag="{{join $t.Tags " "}}"{{$r.SortAttrs}}{{if not $t.Enabled}} class="muted"{{end}}{{if $r.Hidden}} hidden{{end}}>
+  <td data-label="Status" class="m-lead">{{template "status" $t.Status}}</td>
+  <td data-label="Name" class="m-lead"><a href="/targets/{{$t.ID}}" class="ink strong" data-row-link>{{$t.Name}}</a></td>
+  <td data-label="Host" class="mono m-full">{{$t.HostPort}}{{if ne (print $t.Protocol) "tls"}} <span class="tag">{{$t.Protocol}}</span>{{end}}{{if gt $t.AddressCount 1}} <span class="tag">{{$t.AddressCount}} addr</span>{{end}}</td>
   {{- if $t.NotAfter}}{{$c := $t.ExpiryClass $p.Settings.Defaults $p.Now}}
-  <td data-label="Days" class="num mono days{{if $c}} {{$c}}-t{{end}}">{{template "days-left" (days $p.Now $t.NotAfter)}}</td>
-  <td data-label="Lifetime">{{if $t.Cert}}{{template "bar" (dict "Used" (used $p.Now $t.Cert.NotBefore $t.Cert.NotAfter) "Class" ($t.BarClass $p.Settings.Defaults $p.Now))}}{{end}}</td>
-  <td data-label="Expires" class="mono">{{date $p.Loc $t.NotAfter}}</td>
-  <td data-label="Issuer">{{if $t.Cert}}{{$t.Cert.IssuerName}}{{if eq (print $t.Trust) "self-signed"}} <span class="muted">pinned</span>{{else if $t.RenewalManaged}} <span class="muted">auto</span>{{end}}{{end}}</td>
-  <td data-label="TLS" class="mono muted">{{$t.TLSVersion}}</td>
+  <td data-label="Days" class="num mono days m-lead m-end{{if $c}} {{$c}}-t{{end}}">{{template "days-left" (days $p.Now $t.NotAfter)}}</td>
+  <td data-label="Lifetime" class="m-hide">{{if $t.Cert}}{{template "bar" (dict "Used" (used $p.Now $t.Cert.NotBefore $t.Cert.NotAfter) "Class" ($t.BarClass $p.Settings.Defaults $p.Now))}}{{end}}</td>
+  <td data-label="Expires" class="mono m-hide">{{date $p.Loc $t.NotAfter}}</td>
+  <td data-label="Issuer" class="m-hide">{{if $t.Cert}}{{$t.Cert.IssuerName}}{{if eq (print $t.Trust) "self-signed"}} <span class="tag">pinned</span>{{else if $t.RenewalManaged}} <span class="tag">auto</span>{{end}}{{end}}</td>
+  <td data-label="TLS" class="mono muted m-hide">{{$t.TLSVersion}}</td>
   {{- else}}
-  <td data-label="Days" class="num mono">—</td><td data-label="Lifetime"></td><td data-label="Expires" class="mono">—</td><td data-label="Issuer">{{if $t.LastError}}<span class="muted ellipsis" title="{{$t.LastError}}">{{$t.LastError}}</span>{{else}}—{{end}}</td><td data-label="TLS"></td>
+  <td data-label="Days" class="num mono m-lead m-end">—</td><td data-label="Lifetime" class="m-hide"></td><td data-label="Expires" class="mono m-hide">—</td><td data-label="Issuer" class="m-full">{{if $t.LastError}}<span class="muted ellipsis" title="{{$t.LastError}}">{{$t.LastError}}</span>{{else}}—{{end}}</td><td data-label="TLS" class="m-hide"></td>
   {{- end}}
   <td data-label="Tags">{{if $t.Tags}}<span class="tags">{{range $t.Tags}}<a class="tag" href="/targets?tag={{.}}" data-chip-for="#targets" data-chip-key="tag" data-chip-value="{{.}}" title="Show only {{.}}">{{.}}</a>{{end}}</span>{{end}}</td>
-  <td data-label="Checked" class="mono muted">{{when $p.Loc $p.Now $t.LastCheck}}</td>
-  <td data-label="">{{if $p.Can "targets.edit"}}
+  <td data-label="Checked" class="mono muted m-hide">{{when $p.Loc $p.Now $t.LastCheck}}</td>
+  <td data-label="" class="m-end">{{if $p.Can "targets.edit"}}
     {{- if $t.Enabled}}<form method="post" action="/targets/{{$t.ID}}/check" data-api="/api/v1/targets/{{$t.ID}}/check" data-replace="row">{{template "csrf" $p.CSRF}}<input type="hidden" name="next" value="/targets"><button type="submit" class="btn btn-xs">Check</button></form>
     {{- else}}<form method="post" action="/targets/{{$t.ID}}/enable">{{template "csrf" $p.CSRF}}<input type="hidden" name="next" value="/targets"><button type="submit" class="btn btn-xs">Enable</button></form>{{end}}
   {{- end}}</td>

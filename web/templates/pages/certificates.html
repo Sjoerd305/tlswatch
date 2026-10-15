@@ -1,4 +1,4 @@
-{{define "content"}}{{$p := .}}{{$d := .Data}}
+{{define "content"}}{{$p := .}}{{$d := .Data}}{{$s := $d.Sort}}
 <div class="page-head">
   <div><h1>Certificates</h1><span class="summary">{{$d.Served}} unique {{plural $d.Served "certificate" "certificates"}} served on {{$d.Targets}} {{plural $d.Targets "target" "targets"}} · one row per fingerprint</span></div>
   <div class="actions row"><a href="/certificates.csv" class="btn">Export CSV</a></div>
@@ -7,30 +7,46 @@
 <section class="card"><div class="empty center"><span class="h3">No certificates seen yet</span><span>Certificates appear here after the first check of a target.</span></div></section>
 {{- else}}
 <form class="row" method="get" action="/certificates" role="search">
-  <div class="filter w300">{{template "search-icon"}}<input class="input" type="search" name="q" value="{{$d.Query}}" placeholder="Filter: subject, SAN, fingerprint, serial" aria-label="Filter certificates" aria-keyshortcuts="/" title="Press / to filter" data-filter="#certs"></div>
+  <div class="filter w300">{{template "search-icon"}}<input class="input" type="search" name="q" value="{{$d.Query}}" placeholder="Filter: subject, SAN, fingerprint, serial" aria-label="Filter certificates" aria-keyshortcuts="/" title="Press / to filter" data-filter="#certs">{{template "key-hint"}}</div>
   <span class="row gap-sm" data-chip-group="#certs">{{template "chips" $d.Windows}}</span>
   <span class="divider"></span>
+  {{- /* Up to eight issuers are chips; more become a select, as the design says. */}}
+  {{- if gt (len $d.Issuers) 9}}
+  <select class="input w-auto" name="issuer" aria-label="Issuer" data-chip-select="#certs" data-chip-key="issuer">{{range $d.Issuers}}<option value="{{.Value}}"{{if .On}} selected{{end}}>{{if .Value}}{{.Label}} ({{.Count}}){{else}}All issuers{{end}}</option>{{end}}</select>
+  {{- else}}
   <span class="row gap-sm" data-chip-group="#certs">{{template "chips" $d.Issuers}}</span>
+  {{- end}}
   <span class="divider"></span>
   <span class="row gap-sm" data-chip-group="#certs">{{template "chips" $d.Keys}}</span>
   <noscript><button type="submit" class="btn btn-xs">Filter</button></noscript>
 </form>
 <div class="card clip">
-  <table class="tbl cards" id="certs">
-    <thead><tr><th><span class="sr-only">Expand</span></th><th>Subject</th><th>Issuer</th><th class="num sorted">Days ▲</th><th>Lifetime</th><th>Not after</th><th>Key</th><th class="num">Targets</th><th>SHA-256</th><th>First seen</th></tr></thead>
+  <table class="tbl cards compact" id="certs" data-sort-default="days" data-sort-key="{{$s.Key}}" data-sort-dir="{{if $s.Desc}}desc{{else}}asc{{end}}">
+    <thead><tr>
+      <th><span class="sr-only">Expand</span></th>
+      {{- template "th" (dict "S" $s "K" "subject" "L" "Subject")}}
+      {{- template "th" (dict "S" $s "K" "issuer" "L" "Issuer")}}
+      {{- template "th" (dict "S" $s "K" "days" "L" "Days" "C" "num" "N" true)}}
+      {{- template "th" (dict "S" $s "K" "lifetime" "L" "Lifetime" "N" true)}}
+      {{- template "th" (dict "S" $s "K" "notafter" "L" "Not after" "N" true)}}
+      {{- template "th" (dict "S" $s "K" "key" "L" "Key")}}
+      {{- template "th" (dict "S" $s "K" "targets" "L" "Targets" "C" "num" "N" true)}}
+      {{- template "th" (dict "S" $s "K" "sha" "L" "SHA-256")}}
+      {{- template "th" (dict "S" $s "K" "first" "L" "First seen" "N" true)}}
+    </tr></thead>
     <tbody>
     {{- range $d.Items}}
-      <tr data-expand tabindex="0" aria-expanded="{{if .Open}}true{{else}}false{{end}}" data-search="{{.Search}}" data-window="{{.Window}}" data-issuer="{{.IssuerName}}" data-key="{{.KeyType}}"{{if .Hidden}} hidden{{end}}{{if not .Targets}} class="muted"{{end}}>
-        <td class="expander muted"><a href="?open={{short .Fingerprint}}" class="ink" aria-label="Details">{{if .Open}}▾{{else}}▸{{end}}</a></td>
-        <td data-label="Subject" class="strong">{{.SubjectCN}}{{if .SelfSigned}} <span class="pill off ml">self-signed</span>{{end}}{{if .Stale}} <span class="pill warn ml">stale node</span>{{end}}{{if not .Targets}} <span class="pill off ml">not served</span>{{end}}</td>
+      <tr data-expand tabindex="0" aria-expanded="{{if .Open}}true{{else}}false{{end}}" data-search="{{.Search}}" data-window="{{.Window}}" data-issuer="{{.IssuerName}}" data-key="{{.KeyType}}"{{.SortAttrs}}{{if .Hidden}} hidden{{end}}{{if not .Targets}} class="muted"{{end}}>
+        <td class="expander muted m-hide"><a href="?open={{short .Fingerprint}}" class="ink" aria-label="Details">{{template "chevron"}}</a></td>
+        <td data-label="Subject" class="strong m-lead">{{.SubjectCN}}{{if .SelfSigned}} <span class="pill off ml">self-signed</span>{{end}}{{if .Stale}} <span class="pill warn ml">stale node</span>{{end}}{{if not .Targets}} <span class="pill off ml">not served</span>{{end}}</td>
         <td data-label="Issuer">{{.IssuerName}}</td>
-        <td data-label="Days" class="num mono days{{if ne .Status "ok"}} {{.Status}}-t{{end}}">{{template "days-left" .Days}}</td>
-        <td data-label="Lifetime">{{template "bar" (dict "Used" (.LifetimeUsed $p.Now) "Class" .Status)}}</td>
+        <td data-label="Days" class="num mono days m-lead m-end{{if ne .Status "ok"}} {{.Status}}-t{{end}}">{{template "days-left" .Days}}</td>
+        <td data-label="Lifetime" class="m-hide">{{template "bar" (dict "Used" .Used "Class" .Status)}}</td>
         <td data-label="Not after" class="mono">{{date $p.Loc .NotAfter}}</td>
-        <td data-label="Key" class="mono small">{{.KeyDesc}}</td>
-        <td data-label="Targets" class="num mono">{{.Targets}}{{if .Stale}}{{range .Served}}{{if not .Current}} <span class="muted">({{.Address}})</span>{{end}}{{end}}{{end}}</td>
-        <td data-label="SHA-256" class="mono small muted">{{short .Fingerprint}}</td>
-        <td data-label="First seen" class="mono muted">{{date $p.Loc .FirstSeen}}</td>
+        <td data-label="Key" class="mono small m-hide">{{.KeyDesc}}</td>
+        <td data-label="Targets" class="num mono m-hide">{{.Targets}}{{if .Stale}}{{range .Served}}{{if not .Current}} <span class="muted">({{.Address}})</span>{{end}}{{end}}{{end}}</td>
+        <td data-label="SHA-256" class="mono small muted m-hide">{{short .Fingerprint}}</td>
+        <td data-label="First seen" class="mono muted m-hide">{{date $p.Loc .FirstSeen}}</td>
       </tr>
       <tr class="detail"{{if not .Open}} hidden{{end}}><td colspan="10">
         <div class="detail-grid">

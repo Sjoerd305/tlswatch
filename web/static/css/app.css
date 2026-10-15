@@ -18,6 +18,7 @@
  * Chrome     .top (48px bar) · .brand + svg.mark · .top nav · nav a.on
  *            .cnt / .cnt.crit (live counts) · .runinfo (last/next run)
  *            details.menu > summary.who + .role · .menu-list · .linkbtn
+ *            .menu-theme + .menu-label + .seg.sm (theme switch in the menu)
  * Layout     .page (main wrapper) · .page-head (+ h1, .summary, .actions)
  *            .crumbs · .grid-main-side (+ .w360) · .grid-form-side
  *            .grid-settings · .tiles · .stack · .row · .spacer · .divider
@@ -29,11 +30,15 @@
  *            .h3 (14px card heading) · .notes (notes block in side column)
  * Buttons    .btn · .btn-primary · .btn-danger · .btn-xs · .btn-link
  *            (on <a> and <button>) · .btn-row (inline button group)
- * Tables     .tbl (th, td, .num, th.sorted, tr.sel, tr.muted, tr.detail,
- *            td.expander, td.wrap, tr[data-expand] pointer, rows with an
+ * Tables     .tbl (th, td, .num, tr.sel, tr.muted, tr.detail, td.expander
+ *            + svg.chev, td.wrap, tr[data-expand] pointer, rows with an
  *            a[data-row-link] are clickable as a whole) · .tbl.vtop (top
  *            aligned cells) · .tbl.nested (auto width table inside detail)
+ *            th.sortable > a + .arrow · th.sorted (the active column)
  *            .tbl.cards (falls back to cards below 760px; td[data-label])
+ *            .tbl.cards.compact (a few cells per card, no labels:
+ *            td.m-lead first line · .m-end pushed right · .m-full own line
+ *            · .m-hide not on phones) · tr.group-head (grouped lists)
  *            .detail-grid (label/value grid inside an expanded row)
  * Status     .st + .ok .warn .crit .off .info (dot + word) · .st.sm (12px)
  *            .pill + .ok .warn .crit .off .info · .tag (mono tag badge)
@@ -45,7 +50,8 @@
  *            .chain · .link · .link .d + .good/.bad/.warn · .link .sub
  *            .countdown + .ok/.warn/.crit/.off · .count-row · .fp-row
  * Filters    .filter (search input with icon; 260px) · .filter.w300
- *            .filter svg
+ *            .filter svg · .filter kbd.key (the "/" hint)
+ *            select.input.w-auto (a chip group with many values)
  * Notices    .notice + .ok/.warn/.crit/.info (+ svg icon slot)
  *            .empty (empty state block) · .healthy (good-news line)
  * Timeline   .timeline · .timeline .ev (time + text) · .timeline .when
@@ -247,6 +253,8 @@ tr.muted a.ink{color:var(--muted)}
 .menu-list a:hover,.menu-list .linkbtn:hover{background:var(--surface-2);text-decoration:none}
 .menu-list .menu-meta{padding:6px 10px 8px;border-bottom:1px solid var(--line-soft);margin-bottom:4px;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
 .menu-list form{margin:0}
+.menu-theme{display:flex;flex-direction:column;gap:6px;padding:8px 10px;margin:4px 0;border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft)}
+.menu-label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
 .linkbtn{background:none;border:0;padding:0;margin:0;font:inherit;color:var(--link);cursor:pointer}
 .linkbtn:hover{text-decoration:underline}
 .linkbtn.danger{color:var(--crit)}
@@ -328,6 +336,11 @@ a.tile:hover{text-decoration:none;border-color:var(--input-line)}
 .tbl th{text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--surface-2);white-space:nowrap}
 .tbl th a{color:inherit}
 .tbl th.sorted,.tbl th.sorted a{color:var(--ink)}
+.tbl th.sortable{padding:0}
+.tbl th.sortable a{display:flex;align-items:center;gap:4px;padding:8px 10px;white-space:nowrap}
+.tbl th.sortable.num a{justify-content:flex-end}
+.tbl th.sortable a:hover{color:var(--ink);text-decoration:none;background:var(--line-soft)}
+.tbl th .arrow{font-size:9px;line-height:1;min-width:9px}
 .tbl td{padding:7px 10px;border-bottom:1px solid var(--line-soft);vertical-align:middle;white-space:nowrap}
 .tbl.vtop td{padding:8px 10px;vertical-align:top}
 .tbl tr:last-child td{border-bottom:0}
@@ -341,7 +354,11 @@ a.tile:hover{text-decoration:none;border-color:var(--input-line)}
 .tbl tr:has(a[data-row-link]),.li:has(a[data-row-link]){cursor:pointer}
 .tbl tbody tr:has(a[data-row-link]:focus-visible) td{background:var(--surface-2)}
 .li:has(a[data-row-link]):hover,.li:has(a[data-row-link]:focus-visible){background:var(--surface-2)}
-.tbl td.expander{width:24px;color:var(--muted)}
+.tbl td.expander{width:32px;color:var(--muted);padding-right:0}
+.tbl td.expander a{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:4px;vertical-align:middle}
+.tbl td.expander a:hover{background:var(--line-soft)}
+.chev{fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;transition:transform .15s}
+.tbl tr[aria-expanded="true"] .chev{transform:rotate(90deg)}
 .tbl tr.detail td,.tbl tr.detail:hover td{background:var(--surface-2);padding:12px 12px 14px 34px;white-space:normal}
 .tbl td form{margin:0;display:inline}
 .tbl.nested{width:auto;min-width:min(640px,100%)}
@@ -437,7 +454,11 @@ a.tag:hover{text-decoration:none;color:var(--ink)}
 .filter{position:relative;width:260px;max-width:100%}
 .filter.w300{width:300px}
 .filter svg{position:absolute;left:10px;top:9px;fill:none;stroke:var(--muted);stroke-width:2.2;stroke-linecap:round;pointer-events:none}
-.filter .input{width:100%;padding-left:30px}
+.filter .input{width:100%;padding-left:30px;padding-right:30px}
+.filter kbd.key{position:absolute;right:8px;top:7px;height:18px;min-width:18px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:4px;background:var(--surface-2);color:var(--muted);font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11px;pointer-events:none}
+.filter:has(.input:focus) kbd.key,.filter:has(.input:not(:placeholder-shown)) kbd.key{display:none}
+@media (hover:none){.filter kbd.key{display:none}.filter .input{padding-right:10px}}
+.row>select.input.w-auto{width:auto;height:28px;padding:0 24px 0 10px;font-size:12px;border-radius:14px}
 
 /* ---------- Notices and empty states ---------- */
 .notice{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-radius:6px;border:1px solid transparent;font-size:13px}
@@ -511,6 +532,18 @@ input[type="file"].input{padding:5px 8px;height:auto}
 .seg label:hover span{background:var(--btn-hover)}
 .seg input:checked+span{background:var(--chip-on-bg);color:var(--chip-on-fg)}
 .seg input:focus-visible+span{outline:2px solid var(--acc);outline-offset:-2px}
+/* Buttons as segments, for a form that submits on click (the theme in the menu). */
+.seg button{display:inline-flex;align-items:center;height:30px;padding:0 12px;border:0;border-right:1px solid var(--input-line);background:var(--btn-bg);font:inherit;font-size:13px;color:var(--ink);cursor:pointer;white-space:nowrap}
+.seg button:last-child{border-right:0}
+.seg button:hover{background:var(--btn-hover)}
+.seg button.on,.seg button.on:hover{background:var(--chip-on-bg);color:var(--chip-on-fg)}
+.seg button:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.seg.sm button{height:26px;padding:0 10px;font-size:12px;flex:1 1 0}
+.seg.sm{display:flex}
+
+/* The bundle field shows only for the "CA bundle" trust mode. */
+.fgrid.trust>.bundle-field{display:none}
+.fgrid.trust:has(input[value="bundle"]:checked)>.bundle-field{display:flex}
 
 /* ---------- Sign in ---------- */
 .login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px 16px;flex-grow:1}
@@ -596,6 +629,20 @@ input[type="file"].input{padding:5px 8px;height:auto}
   .tbl.cards tr.detail{background:var(--surface-2)}
   .tbl.cards tr.detail td{display:block;padding:8px 0;text-align:left}
   .tbl.cards .bar{width:110px}
+  /* Compact cards: the main lists show a few cells per card and no labels.
+     .m-lead cells form the first line (.m-end pushed right), .m-full takes
+     a line of its own, .m-hide stays on wider screens. */
+  .tbl.cards.compact tr{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}
+  .tbl.cards.compact td{display:block;width:auto;padding:0;text-align:left;order:1;overflow-wrap:anywhere;min-width:0}
+  .tbl.cards.compact td::before{content:none}
+  .tbl.cards.compact td.m-lead{order:0}
+  .tbl.cards.compact td.m-full{flex-basis:100%}
+  .tbl.cards.compact td.m-end{margin-left:auto}
+  .tbl.cards.compact td.m-hide{display:none}
+  .tbl.cards.compact td.chk{width:auto;padding:0}
+  .tbl.cards.compact tr.detail td{display:block;width:100%;padding:4px 0 0}
+  .tbl.cards.compact tr.group-head{display:flex}
+  .tbl.cards.compact tr.group-head th{display:block;width:100%;padding:0}
 }
 @media (max-width:420px){
   .tiles{grid-template-columns:minmax(0,1fr)}
@@ -611,4 +658,4 @@ input[type="file"].input{padding:5px 8px;height:auto}
 /* ---------- Grouped targets list ---------- */
 .tbl tr.group-head th{background:var(--bg);text-transform:none;letter-spacing:0;font-size:12px;color:var(--ink);padding:10px 10px 6px}
 .tbl tbody+tbody tr.group-head th{border-top:1px solid var(--line)}
-@media (max-width:760px){.tbl.cards tr.group-head{display:block}.tbl.cards tr.group-head th{display:block}}
+@media (max-width:760px){.tbl.cards tr.group-head{display:block;padding:10px 12px 6px}.tbl.cards tr.group-head th{display:block}}

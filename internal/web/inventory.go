@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"html/template"
 	"net/http"
 	"net/url"
 	"sort"
@@ -32,17 +33,48 @@ type certsData struct {
 	// keeps the other filters.
 	ShowAll bool
 	AllHref string
+	Sort    Sort
 }
+
+// certSortKeys are the sortable columns of the certificates table; "days"
+// is the list's own order (expiry).
+var certSortKeys = []string{"subject", "issuer", "days", "lifetime", "notafter", "key", "targets", "sha", "first"}
 
 type certRow struct {
 	core.InventoryItem
 	Days     int
+	Used     int    // share of the lifetime used, percent
 	Window   string // "30 90" tokens for chip filtering
 	Search   string
 	Open     bool
 	Hidden   bool
 	Status   string // ok, warn, crit
 	KeyClass string
+}
+
+// SortAttrs are the row's data-sort-* attributes.
+func (r certRow) SortAttrs() template.HTMLAttr { return sortAttrs(certSortKeys, r.sortVal) }
+
+func (r certRow) sortVal(key string) sortVal {
+	switch key {
+	case "subject":
+		return txt(r.SubjectCN)
+	case "issuer":
+		return txt(r.IssuerName())
+	case "days", "notafter":
+		return num(float64(r.NotAfter))
+	case "lifetime":
+		return num(float64(r.Used))
+	case "key":
+		return txt(r.KeyDesc())
+	case "targets":
+		return num(float64(r.Targets))
+	case "sha":
+		return txt(r.Fingerprint)
+	case "first":
+		return num(float64(r.FirstSeen))
+	}
+	return sortVal{}
 }
 
 func (s *Server) certificates(w http.ResponseWriter, r *http.Request) {
@@ -54,7 +86,7 @@ func (s *Server) certificates(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	f := certFilterFrom(q)
-	d := certsData{Query: q.Get("q"), ShowAll: f.showAll, AllHref: chipHref(r, "all", "1")}
+	d := certsData{Query: q.Get("q"), ShowAll: f.showAll, AllHref: chipHref(r, "all", "1"), Sort: sortFrom(r, "days", certSortKeys...)}
 	if f.showAll {
 		d.AllHref = chipHref(r, "all", "")
 	}
@@ -93,6 +125,7 @@ func (s *Server) certificates(w http.ResponseWriter, r *http.Request) {
 		d.Items = append(d.Items, row)
 	}
 	d.Total, d.Targets = len(d.Items), len(targets)
+	sortRows(d.Sort, d.Items, certRow.sortVal)
 	d.Windows = []Chip{
 		{Key: "window", Value: "", Label: "All", Count: d.Total, On: f.window == ""},
 		{Key: "window", Value: "30", Label: "≤ 30 days", Count: w30, On: f.window == "30"},
@@ -132,7 +165,7 @@ func (f certFilter) matches(row certRow) bool {
 // newCertRow builds a row: days left, the expiry windows it falls in, its
 // status by the manual thresholds, and the text the filter searches.
 func newCertRow(it core.InventoryItem, th config.Thresholds, now time.Time) certRow {
-	row := certRow{InventoryItem: it, Days: check.DaysLeft(time.Unix(it.NotAfter, 0), now), KeyClass: it.KeyType}
+	row := certRow{InventoryItem: it, Days: check.DaysLeft(time.Unix(it.NotAfter, 0), now), Used: it.LifetimeUsed(now), KeyClass: it.KeyType}
 	var tokens []string
 	for _, w := range []int{30, 90} {
 		if row.Days < w {
@@ -247,7 +280,22 @@ type findingsData struct {
 	// bulk acknowledgement; SelPrefix starts a link that selects a finding.
 	Next      string
 	SelPrefix string
+	Sort      Sort
+	// Group lists the findings per kind; GroupHref toggles it.
+	Group     bool
+	Groups    []findingGroup
+	GroupHref string
 }
+
+// findingGroup is one kind's section of the grouped findings list.
+type findingGroup struct {
+	Kind check.Kind
+	Rows []findingRow
+}
+
+// findingSortKeys are the sortable columns of the findings table; "sev" is
+// the list's own order (severity, then days left; resolved: newest first).
+var findingSortKeys = []string{"sev", "finding", "target", "since", "alert", "ack"}
 
 // findingRow is a row of the findings table.
 type findingRow struct {
@@ -257,6 +305,49 @@ type findingRow struct {
 
 // Search is the text the live filter matches.
 func (f findingRow) Search() string { return findingSearch(f.Finding) }
+
+// SortAttrs are the row's data-sort-* attributes.
+func (f findingRow) SortAttrs() template.HTMLAttr { return sortAttrs(findingSortKeys, f.sortVal) }
+
+func (f findingRow) sortVal(key string) sortVal {
+	switch key {
+	case "sev":
+		return num(float64(-f.Severity.Rank()))
+	case "finding":
+		return txt(f.Kind.Label())
+	case "target":
+		return txt(f.TargetName)
+	case "since":
+		if f.ResolvedAt > 0 {
+			return num(float64(f.ResolvedAt))
+		}
+		return num(float64(f.OpenedAt))
+	case "alert":
+		return numIf(f.LastAlertAt > 0, float64(f.LastAlertAt))
+	case "ack":
+		if f.AckAt == 0 {
+			return sortVal{}
+		}
+		return txt(f.AckBy)
+	}
+	return sortVal{}
+}
+
+// groupFindings splits rows per kind, in the order of check.Kinds, keeping
+// the rows' order within a kind.
+func groupFindings(rows []findingRow) []findingGroup {
+	byKind := map[check.Kind][]findingRow{}
+	for _, row := range rows {
+		byKind[row.Kind] = append(byKind[row.Kind], row)
+	}
+	var out []findingGroup
+	for _, k := range check.Kinds {
+		if len(byKind[k]) > 0 {
+			out = append(out, findingGroup{Kind: k, Rows: byKind[k]})
+		}
+	}
+	return out
+}
 
 func findingSearch(f core.Finding) string {
 	return strings.ToLower(strings.Join([]string{f.Kind.Label(), string(f.Kind), f.Details, f.TargetName, f.HostPort(), f.AckBy}, " "))
@@ -282,7 +373,7 @@ func (s *Server) findings(w http.ResponseWriter, r *http.Request) {
 	st := info(r).settings
 	resolved := q.Get("state") == "resolved"
 	since := s.now().Add(-time.Duration(st.Defaults.RetentionDays) * 24 * time.Hour).Unix()
-	d := findingsData{Resolved: resolved, Retention: st.Defaults.RetentionDays, Query: q.Get("q")}
+	d := findingsData{Resolved: resolved, Retention: st.Defaults.RetentionDays, Query: q.Get("q"), Sort: sortFrom(r, "sev", findingSortKeys...)}
 	var targetID int64
 	if id, err := strconv.ParseInt(q.Get("target"), 10, 64); err == nil && id > 0 {
 		if t, err := s.Core.Target(ctx, id); err == nil {
@@ -320,6 +411,12 @@ func (s *Server) findings(w http.ResponseWriter, r *http.Request) {
 	sev, kind := q.Get("sev"), q.Get("kind")
 	var sevCount, kindCount map[string]int
 	d.Items, d.Shown, sevCount, kindCount = filterFindings(list, sev, kind, strings.ToLower(strings.TrimSpace(d.Query)))
+	sortRows(d.Sort, d.Items, findingRow.sortVal)
+	d.Group = q.Get("group") == "kind"
+	d.GroupHref = findingsHref(r, "group", "kind", d.Group)
+	if d.Group {
+		d.Groups = groupFindings(d.Items)
+	}
 	d.State, d.Sev, d.Kinds = findingChips(len(open), len(done), resolved, sev, kind, sevCount, kindCount)
 	for _, cs := range [][]Chip{d.State, d.Sev, d.Kinds} {
 		for i := range cs {

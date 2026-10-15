@@ -11,8 +11,20 @@
 //     .chip[data-chip-key][data-chip-value] (<a href="?key=value"> for no-JS);
 //     one active (.on) chip per group, value "" means all. A row matches when
 //     its data-<key> attribute (space-separated tokens) contains the value.
+//   select[data-chip-select="#table"][data-chip-key]
+//                                      a chip group as a select (many values);
+//                                      its value filters like an active chip
 //   [data-count-for="#table"]          receives "N of M" (+ data-count-noun)
-//   tr[data-expand]                    toggles the next tr.detail; .expander ▸/▾
+//   table[data-sort-default][data-sort-key][data-sort-dir]
+//                                      sortable: th.sortable a[data-sort="key"]
+//                                      re-orders tbody tr[data-search] (with
+//                                      their tr.detail) by data-sort-<key>,
+//                                      numerically when the th has data-num;
+//                                      the default column ascending is the
+//                                      rendered order. The choice goes in
+//                                      the URL (?sort=key&dir=desc)
+//   tr[data-expand]                    toggles the next tr.detail; the
+//                                      .expander chevron turns with aria-expanded
 //   [data-load-url="/api/v1/..."]      inside a detail row: loads { html } into
 //                                      the element the first time the row opens
 //   form[data-api="/api/v1/..."]       submitted with fetch; JSON reply
@@ -29,6 +41,9 @@
 //   form[data-confirm="question"]      asks before submitting
 //   form[method=post] (not data-api)   submit buttons are disabled while it is
 //                                      sent, so a slow action is not sent twice
+//   input[name=next][data-follow-url]  set to the page's URL as it is now when
+//                                      its form is sent, without "sel" unless
+//                                      the value is "all"
 //   [data-keep-filter="a b"]           links inside carry the page's current
 //                                      query (the live filter text, chips) except
 //                                      the parameters listed, which the link sets
@@ -41,6 +56,7 @@
 
 import { $, $$, api, ApiError, messages, onReady } from "./common.js";
 import { loadInto } from "./load.js";
+import { nextSort, order, setSortParams, type SortState } from "./sort.js";
 
 interface ApiReply {
   html?: string;
@@ -144,6 +160,11 @@ function applyFilter(tableSel: string, updateUrl: boolean): void {
       if (key !== "" && value !== "") active.push([key, value]);
     }
   }
+  const selects = $$<HTMLSelectElement>(`select[data-chip-select="${tableSel}"]`);
+  for (const sel of selects) {
+    const key = sel.dataset["chipKey"] ?? "";
+    if (key !== "" && sel.value !== "") active.push([key, sel.value]);
+  }
 
   const rows = tableRows(table);
   let shown = 0;
@@ -172,6 +193,7 @@ function applyFilter(tableSel: string, updateUrl: boolean): void {
     for (const group of $$(`[data-chip-group="${tableSel}"]`)) {
       for (const chip of $$("[data-chip-key]", group)) url.searchParams.delete(chip.dataset["chipKey"] ?? "");
     }
+    for (const sel of selects) url.searchParams.delete(sel.dataset["chipKey"] ?? "");
     for (const [k, v] of active) url.searchParams.set(k, v);
     if (query !== "") url.searchParams.set("q", query);
     else url.searchParams.delete("q");
@@ -206,18 +228,69 @@ function handleChip(chip: HTMLElement): void {
   applyFilter(tableSel, true);
 }
 
+// ---------- Column sorting ----------
+
+function tableSort(table: HTMLElement): SortState {
+  return { key: table.dataset["sortKey"] ?? table.dataset["sortDefault"] ?? "", desc: table.dataset["sortDir"] === "desc" };
+}
+
+// detailOf is the detail row that belongs to a row and moves with it.
+function detailOf(row: HTMLTableRowElement): HTMLTableRowElement | null {
+  const next = row.nextElementSibling;
+  return next instanceof HTMLTableRowElement && next.classList.contains("detail") ? next : null;
+}
+
+// sortTable re-orders the rows of every tbody (a grouped list has several;
+// the group head stays first) and updates the heads and the URL.
+function sortTable(table: HTMLElement, s: SortState): void {
+  const def = table.dataset["sortDefault"] ?? "";
+  const byDefault = s.key === def && !s.desc;
+  const head = $(`th.sortable a[data-sort="${CSS.escape(s.key)}"]`, table)?.closest<HTMLElement>("th") ?? null;
+  const num = byDefault || head?.dataset["num"] !== undefined;
+  for (const body of $$("tbody", table)) {
+    const rows = $$<HTMLTableRowElement>(":scope > tr[data-search]", body);
+    const values = rows.map((row) => (byDefault ? (row.dataset["sortIndex"] ?? null) : row.getAttribute(`data-sort-${s.key}`)));
+    for (const i of order(values, num, s.desc)) {
+      const row = rows[i];
+      if (row === undefined) continue;
+      const detail = detailOf(row);
+      body.append(row);
+      if (detail !== null) body.append(detail);
+    }
+  }
+  table.dataset["sortKey"] = s.key;
+  table.dataset["sortDir"] = s.desc ? "desc" : "asc";
+  const url = new URL(window.location.href);
+  setSortParams(url.searchParams, s, def);
+  window.history.replaceState(null, "", url.toString());
+  for (const th of $$<HTMLElement>("th.sortable", table)) {
+    const link = $<HTMLAnchorElement>("a[data-sort]", th);
+    const arrow = $(".arrow", th);
+    const key = link?.dataset["sort"] ?? "";
+    const on = key === s.key;
+    th.classList.toggle("sorted", on);
+    if (on) th.setAttribute("aria-sort", s.desc ? "descending" : "ascending");
+    else th.removeAttribute("aria-sort");
+    if (arrow !== null) arrow.textContent = on ? (s.desc ? "▼" : "▲") : "";
+    // The head's link stays right for a middle click or a reload without scripts.
+    if (link !== null) {
+      const next = new URL(url.toString());
+      setSortParams(next.searchParams, nextSort(s, key), def);
+      link.href = next.search !== "" ? next.search : next.pathname;
+    }
+  }
+}
+
 // ---------- Row expand ----------
 
 function toggleRow(row: HTMLTableRowElement): void {
-  const detail = row.nextElementSibling;
-  if (!(detail instanceof HTMLTableRowElement) || !detail.classList.contains("detail")) return;
+  const detail = detailOf(row);
+  if (detail === null) return;
   const open = row.getAttribute("aria-expanded") !== "true";
   row.setAttribute("aria-expanded", open ? "true" : "false");
   detail.hidden = !open;
   const cell = $(".expander", row);
   const link = cell !== null ? $<HTMLAnchorElement>("a", cell) : null;
-  const glyph = link ?? cell;
-  if (glyph !== null) glyph.textContent = open ? "▾" : "▸";
   // The open row is part of the URL, so a reload or live refresh keeps it.
   const key = link !== null ? new URL(link.href).searchParams.get("open") : null;
   if (key !== null) {
@@ -242,7 +315,12 @@ function applyReply(reply: ApiReply | null, origin: HTMLElement, replace: string
   if (reply.html !== undefined && replace !== undefined && replace !== "") {
     const target = replace === "row" ? origin.closest("tr") : $(replace);
     if (target !== null) {
+      // A replaced row keeps its place in the list's default order.
+      const index = target instanceof HTMLElement ? target.dataset["sortIndex"] : undefined;
+      const id = target.id;
       target.outerHTML = reply.html;
+      const fresh = id !== "" ? document.getElementById(id) : null;
+      if (fresh !== null && index !== undefined) fresh.dataset["sortIndex"] = index;
       // A replaced table body may need its filters re-applied.
       for (const input of $$<HTMLInputElement>("input[data-filter]")) applyFilter(input.dataset["filter"] ?? "", false);
     }
@@ -581,6 +659,14 @@ onReady(() => {
       return;
     }
 
+    const sortLink = target.closest<HTMLAnchorElement>("th.sortable a[data-sort]");
+    const sortTable_ = sortLink?.closest<HTMLElement>("table[data-sort-default]");
+    if (sortLink !== null && sortTable_ !== null && sortTable_ !== undefined && !ev.metaKey && !ev.ctrlKey && !ev.shiftKey) {
+      ev.preventDefault();
+      sortTable(sortTable_, nextSort(tableSort(sortTable_), sortLink.dataset["sort"] ?? ""));
+      return;
+    }
+
     const panelLink = target.closest<HTMLAnchorElement>("a[data-panel]");
     if (panelLink !== null && !ev.metaKey && !ev.ctrlKey && !ev.shiftKey) {
       ev.preventDefault();
@@ -686,11 +772,12 @@ onReady(() => {
       return;
     }
     const submitter = ev.submitter instanceof HTMLElement ? ev.submitter : null;
-    // Return to the list as it is filtered now, without a selected row.
+    // Return to the page as it is now (filter, sort), without a selected
+    // row unless the form asks to keep everything.
     const next = $<HTMLInputElement>('input[name="next"][data-follow-url]', form);
     if (next !== null) {
       const here = new URL(window.location.href);
-      here.searchParams.delete("sel");
+      if (next.dataset["followUrl"] !== "all") here.searchParams.delete("sel");
       next.value = here.pathname + here.search;
     }
     if (form.dataset["api"] === undefined) {
@@ -726,6 +813,11 @@ onReady(() => {
     if (port.value.trim() === "" || port.value.trim() === prev) port.value = next;
     port.placeholder = next;
     sel.dataset["prevPort"] = next;
+  });
+
+  document.addEventListener("change", (ev) => {
+    const sel = ev.target;
+    if (sel instanceof HTMLSelectElement && sel.dataset["chipSelect"] !== undefined) applyFilter(sel.dataset["chipSelect"], true);
   });
 
   document.addEventListener("change", (ev) => {
@@ -766,10 +858,21 @@ function initPage(): void {
     }
   }
 
+  // The rendered order of a sortable list is its default order; remember
+  // each row's place so a sort can return to it.
+  for (const table of $$("table[data-sort-default]")) {
+    for (const body of $$("tbody", table)) {
+      $$<HTMLTableRowElement>(":scope > tr[data-search]", body).forEach((row, i) => {
+        row.dataset["sortIndex"] = String(i);
+      });
+    }
+  }
+
   // Apply the server-rendered chip selection and filter text.
   const tables = new Set<string>();
   for (const el of $$("input[data-filter]")) tables.add(el.dataset["filter"] ?? "");
   for (const el of $$("[data-chip-group]")) tables.add(el.dataset["chipGroup"] ?? "");
+  for (const el of $$("select[data-chip-select]")) tables.add(el.dataset["chipSelect"] ?? "");
   for (const el of $$("[data-select-all]")) tables.add(el.dataset["selectAll"] ?? "");
   for (const sel of tables) if (sel !== "") applyFilter(sel, false);
 }

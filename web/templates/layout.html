@@ -56,6 +56,16 @@
     <div class="menu-list">
       <div class="menu-meta">{{.User.Email}}</div>
       <a href="/account">Account</a>
+      <form method="post" action="/account/theme" class="menu-theme" aria-label="Theme">
+        <input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="next" value="{{.Path}}" data-follow-url="all">
+        <span class="menu-label">Theme</span>
+        {{- $theme := or .User.Theme "system"}}
+        <span class="seg sm">
+          <button type="submit" name="theme" value="system"{{if eq $theme "system"}} class="on" aria-current="true"{{end}}>System</button>
+          <button type="submit" name="theme" value="light"{{if eq $theme "light"}} class="on" aria-current="true"{{end}}>Light</button>
+          <button type="submit" name="theme" value="dark"{{if eq $theme "dark"}} class="on" aria-current="true"{{end}}>Dark</button>
+        </span>
+      </form>
       <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button type="submit" class="linkbtn">Sign out</button></form>
     </div>
   </details>

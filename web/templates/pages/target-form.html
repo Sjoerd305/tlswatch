@@ -27,9 +27,9 @@
           <label><input type="radio" name="trust_mode" value="bundle"{{if eq (print $t.Trust) "bundle"}} checked{{end}}><span>CA bundle</span></label>
           <label><input type="radio" name="trust_mode" value="self-signed"{{if eq (print $t.Trust) "self-signed"}} checked{{end}}><span>Self-signed, pin</span></label>
         </div>{{template "err" $e.trust_mode}}</div>
-      <div class="field"><label class="label" for="bundle">Bundle</label>
+      <div class="field bundle-field"><label class="label" for="bundle">Bundle</label>
         <select id="bundle" name="bundle_id" class="input{{if $e.bundle_id}} invalid{{end}}">
-          <option value="0">{{if $f.Bundles}}— only for CA bundle —{{else}}no bundles; add one under Settings{{end}}</option>
+          <option value="0">{{if $f.Bundles}}— choose a bundle —{{else}}no bundles; add one under Settings › CA bundles{{end}}</option>
           {{- range $f.Bundles}}<option value="{{.ID}}"{{if eq .ID $t.BundleID}} selected{{end}}>{{.Name}} ({{len .Certs}})</option>{{end}}
         </select>{{template "err" $e.bundle_id}}</div>
     </div>
@@ -45,8 +45,8 @@
 
     <p class="form-sec">Thresholds and schedule</p>
     <div class="fgrid c4">
-      <div class="field"><label class="label" for="warn">Warning, days</label><input id="warn" name="warn_days" class="input mono{{if $e.warn_days}} invalid{{end}}" value="{{$f.Warn}}" inputmode="numeric" placeholder="{{$d.Manual.WarnDays}} / {{$d.Managed.WarnDays}}">{{template "err" $e.warn_days}}</div>
-      <div class="field"><label class="label" for="crit">Critical, days</label><input id="crit" name="crit_days" class="input mono{{if $e.crit_days}} invalid{{end}}" value="{{$f.Crit}}" inputmode="numeric" placeholder="{{$d.Manual.CritDays}} / {{$d.Managed.CritDays}}">{{template "err" $e.crit_days}}</div>
+      <div class="field"><label class="label" for="warn">Warning, days</label><input id="warn" name="warn_days" class="input mono{{if $e.warn_days}} invalid{{end}}" value="{{$f.Warn}}" inputmode="numeric" placeholder="{{$d.Manual.WarnDays}} manual · {{$d.Managed.WarnDays}} managed">{{template "err" $e.warn_days}}</div>
+      <div class="field"><label class="label" for="crit">Critical, days</label><input id="crit" name="crit_days" class="input mono{{if $e.crit_days}} invalid{{end}}" value="{{$f.Crit}}" inputmode="numeric" placeholder="{{$d.Manual.CritDays}} manual · {{$d.Managed.CritDays}} managed">{{template "err" $e.crit_days}}</div>
       <div class="field"><label class="label" for="interval">Interval</label>
         <select id="interval" name="interval_s" class="input">
           <option value="">Default ({{duration $d.IntervalS}})</option>
@@ -55,7 +55,7 @@
       <div class="field"><label class="label" for="addr">Addresses</label>
         <select id="addr" name="addresses" class="input"><option value="all"{{if $t.AllAddresses}} selected{{end}}>All, max 8</option><option value="first"{{if not $t.AllAddresses}} selected{{end}}>First only</option></select></div>
     </div>
-    <span class="help lift">Empty fields follow Settings › Defaults: {{$d.Manual.WarnDays}}/{{$d.Manual.CritDays}} days for manual renewal, {{$d.Managed.WarnDays}}/{{$d.Managed.CritDays}} for renewal managed.</span>
+    <span class="help lift">Empty fields follow Settings › Defaults: warning {{$d.Manual.WarnDays}} and critical {{$d.Manual.CritDays}} days for manual renewal, {{$d.Managed.WarnDays}} and {{$d.Managed.CritDays}} for renewal managed.</span>
     <details{{if or $f.Timeout $f.Retries $f.Debounce $f.RemindW $f.RemindC $t.SkipLegacy $e.timeout_s $e.retries $e.debounce $e.remind_warn_s $e.remind_crit_s}} open{{end}}>
       <summary class="label">Probe and reminder settings</summary>
       <div class="fgrid c4">

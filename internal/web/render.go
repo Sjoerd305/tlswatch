@@ -41,6 +41,8 @@ type Page struct {
 	Version  string
 	Assets   string // versioned URL prefix of the static files
 	Data     any
+	// Path is the request's path and query, for forms that return to it.
+	Path string
 	// SettingsNav is the active settings sub-page.
 	SettingsNav string
 	// Live pages refresh themselves when Stamp changes on the server.
@@ -86,6 +88,7 @@ func (s *Server) fill(w http.ResponseWriter, r *http.Request, p *Page) {
 	p.Loc = ri.settings.Location()
 	p.Version = s.Version
 	p.Assets = "/static/" + assetVersion(s.Version)
+	p.Path = r.URL.RequestURI()
 	p.Theme = "system"
 	if c, err := r.Cookie(themeCookie); err == nil {
 		switch c.Value {
@@ -104,7 +107,8 @@ func (s *Server) fill(w http.ResponseWriter, r *http.Request, p *Page) {
 		if p.Live {
 			p.Stamp, _, _ = s.Core.Stamp(r.Context())
 		}
-		if u.Role == authz.Admin && ri.settings.General.BaseURL == "" {
+		// The reminder is for the home screen only, not every page.
+		if p.Nav == "overview" && u.Role == authz.Admin && ri.settings.General.BaseURL == "" {
 			p.Notices = append(p.Notices, Notice{Kind: "info", Text: "Set the public URL under Settings › General so alerts link back to tlswatch."})
 		}
 	} else {

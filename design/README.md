@@ -65,17 +65,17 @@ Rules for the build:
 
 - **Top bar** (48 px, `chrome`): shield mark + "tlswatch", navigation Overview · Targets · Certificates · Findings · Settings with live counts (a red count on Findings when something is critical), last/next run in mono on the right, user with a small role tag.
 - **Page head**: title 20 px with a one-line summary in `muted` under it, primary action on the right.
-- **Filter row**: a filter field, then chips with counts (status, tags, issuer, expiry window); the active chip is inverted. No dropdowns for things with fewer than eight values.
+- **Filter row**: a filter field (with a `/` key hint), then chips with counts (status, tags, issuer, expiry window); the active chip is inverted. No dropdowns for things with fewer than eight values; above that (issuers on a large fleet) a select with the same counts.
 - **Status**: a dot plus a word (`Healthy`, `Warning`, `Critical`, `Changed`, `Disabled`) in lists; uppercase pills (`crit`, `warn`, `ack`, `new`, `fixed`) in compact lists and timelines.
 - **Lifetime bar**: 6 px track, fill = share of validity used, colour by status; 110–140 px wide in tables, full width on the detail page with issued and expiry dates under it.
-- **Tables**: in a card, `surface-2` head row, 7–8 px cell padding, `line-soft` separators, hover highlights the row, selected row in `info-bg`. Expanded rows use `surface-2` and may contain a nested table.
+- **Tables**: in a card, `surface-2` head row, 7–8 px cell padding, `line-soft` separators, hover highlights the row, selected row in `info-bg`. Column heads sort on click; the active column is in `ink` with a small arrow, the others stay `muted`. Expanded rows use `surface-2` and may contain a nested table; the expand control is a chevron that turns when the row is open. Grouped lists (targets by tag, findings by kind) put a head row with the group name and count above each section.
 - **Stat tiles**: status word above a 28 px number, one line of context under it; four across on the overview.
 - **Cards and sections**: 6 px radius, 1 px `line` border, a section head row with an uppercase 12 px title and a right-aligned link or meta value.
 - **Forms**: 32 px inputs, 12 px uppercase labels in `muted`, 12 px help text, segmented control for a three-way choice (trust mode), section rules between groups, footer with the primary button first and Cancel pushed right.
 - **Buttons**: primary `acc`, secondary `surface` with `input-line` border, danger = secondary with `crit` text; `xs` (24–26 px) inside table rows.
 - **Side panel**: a card in the right column for the acknowledge form, test result or configuration; never a modal.
 - **Notice bar**: coloured background and text in the status pair, icon left, at the top of the content.
-- **Mobile**: below 1100 px the navigation gets its own row; below 760 px tables fall back to cards with the column label above the value, and side panels stack under the main column.
+- **Mobile**: below 1100 px the navigation gets its own row; below 760 px tables fall back to cards and side panels stack under the main column. The main lists become compact cards: status, name and days left on the first line, `host:port` on the second, tags and the action on the third; the lifetime bar, issuer, TLS version and timestamps are left to the detail page. The settings tables keep one labelled line per column.
 
 ## Screens
 

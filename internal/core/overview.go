@@ -113,11 +113,13 @@ func (s *Service) Overview(ctx context.Context) (Overview, error) {
 		return o, err
 	}
 	// Fewer than 30 whole days left (check.DaysLeft) is less than 30 days.
+	// Only healthy targets count: the line is under the Healthy tile, and a
+	// target past its warning threshold is already in another tile.
 	err = s.DB.R.QueryRowContext(ctx, `SELECT
-		COALESCE(SUM(enabled = 1 AND not_after > 0 AND not_after < ?), 0),
+		COALESCE(SUM(enabled = 1 AND status = ? AND not_after > 0 AND not_after < ?), 0),
 		COALESCE(MAX(last_check), 0),
 		COALESCE(MIN(CASE WHEN enabled = 1 AND next_check > 0 THEN next_check END), 0)
-		FROM targets`, now.Add(30*24*time.Hour).Unix()).Scan(&o.DueWithin30, &o.LastCheck, &o.NextCheck)
+		FROM targets`, StatusHealthy, now.Add(30*24*time.Hour).Unix()).Scan(&o.DueWithin30, &o.LastCheck, &o.NextCheck)
 	if err != nil {
 		return o, err
 	}

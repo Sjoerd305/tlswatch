@@ -777,7 +777,7 @@ func TestFindingsFilters(t *testing.T) {
 		t.Fatal("no target chip")
 	}
 	page = hs.do(authz.Viewer, "GET", "/findings?q=nothing-matches", nil, false).Body.String()
-	if !regexp.MustCompile(`data-search="[^"]*" hidden`).MatchString(page) || !strings.Contains(page, "No findings match the filter.") {
+	if !regexp.MustCompile(`data-search="[^"]*"( data-sort-[a-z]+="[^"]*")* hidden`).MatchString(page) || !strings.Contains(page, "No findings match the filter.") {
 		t.Fatal("text filter does not hide the row")
 	}
 	target := hs.do(authz.Viewer, "GET", "/targets/1", nil, false).Body.String()

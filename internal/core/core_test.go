@@ -893,6 +893,8 @@ func TestMetrics(t *testing.T) {
 
 // The overview counts with aggregate queries and lists the eight enabled
 // targets expiring first.
+func intp(n int) *int { return &n }
+
 func TestOverview(t *testing.T) {
 	e := newEnv(t)
 	ca := newCA(t, "Sectigo")
@@ -906,15 +908,20 @@ func TestOverview(t *testing.T) {
 	if err := e.svc.SetEnabled(e.ctx, disabled.ID, false); err != nil {
 		t.Fatal(err)
 	}
+	// A target with its own low thresholds is healthy at 20 days left and
+	// the only one "due within 30 days" under the Healthy tile.
+	soon := e.target(func(t *Target) { t.Port = 3000; t.WarnDays, t.CritDays = intp(3), intp(1) })
+	e.apply(soon.ID, result(served("192.0.2.1", ca.leaf(t, now.Add(-days(300)), now.Add(days(20)), "portal.example.nl"), ca.cert)))
 	o, err := e.svc.Overview(e.ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Days left 5, 25, 45 … : 5 critical, 25 warning, the rest healthy.
-	if o.Total != 11 || o.Critical != 1 || o.Warning != 1 || o.Healthy != 8 || o.Disabled != 1 || o.DueWithin30 != 2 {
+	// Days left 5, 25, 45 … : 5 critical, 25 warning, the rest healthy. The
+	// critical and warning ones are not "due" under the Healthy tile.
+	if o.Total != 12 || o.Critical != 1 || o.Warning != 1 || o.Healthy != 9 || o.Disabled != 1 || o.DueWithin30 != 1 {
 		t.Fatalf("counts: total %d crit %d warn %d healthy %d disabled %d due %d", o.Total, o.Critical, o.Warning, o.Healthy, o.Disabled, o.DueWithin30)
 	}
-	if len(o.Targets) != 8 || o.Targets[0].Port != 1000 || o.Targets[7].Port != 1007 || o.Targets[0].Cert == nil {
+	if len(o.Targets) != 8 || o.Targets[0].Port != 1000 || o.Targets[1].Port != 3000 || o.Targets[7].Port != 1006 || o.Targets[0].Cert == nil {
 		t.Fatalf("listed: %d, first %d", len(o.Targets), o.Targets[0].Port)
 	}
 	if o.LastCheck == 0 || o.NextCheck == 0 {
