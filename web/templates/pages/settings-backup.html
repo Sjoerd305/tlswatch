@@ -1,0 +1,32 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}
+<div class="page-head"><div><h1>Settings</h1></div></div>
+<div class="grid-settings">
+  {{template "settings-nav" $p}}
+  <div class="stack">
+    <div><h2 class="h2">Backup</h2><span class="summary">Download everything in tlswatch as one encrypted file, or restore such a file.</span></div>
+    <form class="card form" method="post" action="/settings/backup">
+      {{template "csrf" $p.CSRF}}
+      <h3 class="h3">Download a backup</h3>
+      {{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
+      <p class="help">Targets, history, findings, channels with their credentials, CA bundles, users, settings and the audit log. The file is encrypted with the passphrase; without it the backup cannot be restored, so keep it somewhere safe.</p>
+      <div class="field"><label class="label" for="bp1">Passphrase</label><input id="bp1" name="passphrase" type="password" class="input" autocomplete="new-password" minlength="{{$d.MinLength}}" required><span class="help">At least {{$d.MinLength}} characters.</span></div>
+      <div class="field"><label class="label" for="bp2">Repeat passphrase</label><input id="bp2" name="passphrase2" type="password" class="input" autocomplete="new-password" minlength="{{$d.MinLength}}" required></div>
+      <div class="form-foot"><button type="submit" class="btn btn-primary">Download backup</button></div>
+    </form>
+    <form class="card form" method="post" action="/settings/backup/restore" enctype="multipart/form-data" data-confirm="Replace everything in tlswatch with the backup? Everyone is signed out.">
+      {{template "csrf" $p.CSRF}}
+      <h3 class="h3">Restore a backup</h3>
+      {{- if $d.RestoreError}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.RestoreError}}</div></div>{{end}}
+      <div class="notice warn">{{template "notice-icon" "warn"}}<div>A restore replaces all data in tlswatch, including the users, and signs everyone out. Sign in again with an account from the backup.</div></div>
+      <div class="field"><label class="label" for="rp">Passphrase</label><input id="rp" name="passphrase" type="password" class="input" autocomplete="off"><span class="help">The passphrase the backup was downloaded with. A database copy made with <span class="mono">tlswatch backup</span> needs none; its stored credentials are readable only with this instance's secret key.</span></div>
+      <label class="check"><input type="checkbox" name="confirm" value="1" required> Replace everything in tlswatch with the backup</label>
+      <div class="field"><label class="label" for="rf">Backup file</label><input id="rf" name="file" type="file" class="input" required></div>
+      <div class="form-foot"><button type="submit" class="btn btn-danger">Restore</button></div>
+    </form>
+    <section class="card pad">
+      <h3 class="h3">From the command line</h3>
+      <p class="help"><span class="mono">tlswatch backup PATH</span> writes an unencrypted copy of <span class="mono">{{$d.DBPath}}</span> while tlswatch runs, for a daily cron job. Keep the secret key file with those copies.</p>
+    </section>
+  </div>
+</div>
+{{end}}

@@ -112,6 +112,13 @@ type batchKey struct {
 	delivered string
 }
 
+// Hold waits for a running flush and keeps the next one from starting until
+// release is called, while a restore replaces the database.
+func (d *Dispatcher) Hold() (release func()) {
+	d.mu.Lock()
+	return d.mu.Unlock
+}
+
 // Flush sends every due alert, collapsed per channel; channels are served
 // in parallel so one that is down does not hold up another.
 func (d *Dispatcher) Flush(ctx context.Context) error {

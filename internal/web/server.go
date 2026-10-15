@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sjoerd305/tlswatch/internal/auth"
@@ -26,6 +27,7 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/core"
 	"github.com/sjoerd305/tlswatch/internal/notify"
 	"github.com/sjoerd305/tlswatch/internal/sched"
+	"github.com/sjoerd305/tlswatch/internal/secret"
 	"github.com/sjoerd305/tlswatch/internal/usererr"
 	assets "github.com/sjoerd305/tlswatch/web"
 )
@@ -37,6 +39,7 @@ type Server struct {
 	Auth     *auth.Service
 	Settings *config.Store
 	Dispatch *notify.Dispatcher
+	Key      *secret.Key // seals the stored credentials; a restore re-seals under it
 	Log      *slog.Logger
 	Version  string
 	// DevAssets serves the static files uncached: a development build can
@@ -45,8 +48,9 @@ type Server struct {
 	Listen    string
 	Now       func() time.Time
 
-	pages  map[string]*template.Template
-	static http.Handler
+	pages     map[string]*template.Template
+	static    http.Handler
+	restoring sync.Mutex // one restore at a time
 }
 
 const (
@@ -202,6 +206,10 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			// Cap the body before anything reads it, signed in or not.
 			limit := bodyLimit(r.URL.Path)
 			r.Body = http.MaxBytesReader(w, r.Body, limit)
+			if streamedUpload(r.URL.Path) {
+				next.ServeHTTP(w, r)
+				return
+			}
 			if r.Header.Get("X-CSRF-Token") == "" {
 				if err := parseForm(r, limit); err != nil {
 					if mbe := (*http.MaxBytesError)(nil); errors.As(err, &mbe) {
@@ -242,9 +250,20 @@ func (s *Server) logRequest(r *http.Request, ri *reqInfo, status int, d time.Dur
 		"ms", d.Milliseconds(), "ip", ri.ip, "user", user)
 }
 
-// bodyLimit is the largest request body accepted on path: CA bundles are
-// uploaded as files, everything else is a small form or JSON call.
+// streamedUpload reports a path whose handler reads the multipart body
+// itself, as a stream, and checks its CSRF token: backups are too large to
+// buffer, and the container has no /tmp to spill them to.
+func streamedUpload(path string) bool {
+	return path == "/settings/backup/restore" || path == "/setup/restore"
+}
+
+// bodyLimit is the largest request body accepted on path: CA bundles and
+// backups are uploaded as files, everything else is a small form or JSON
+// call.
 func bodyLimit(path string) int64 {
+	if streamedUpload(path) {
+		return maxBackup
+	}
 	if strings.HasPrefix(path, "/settings/bundles") {
 		return 3 << 20 // a 2 MB file plus the form around it
 	}
@@ -308,6 +327,11 @@ func (s *Server) csrfOK(r *http.Request, ri *reqInfo) bool {
 	if got == "" {
 		got = r.PostFormValue("csrf")
 	}
+	return csrfMatch(r, ri, got)
+}
+
+// csrfMatch checks a CSRF token taken from the request.
+func csrfMatch(r *http.Request, ri *reqInfo, got string) bool {
 	if got == "" {
 		return false
 	}

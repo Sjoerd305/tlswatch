@@ -60,6 +60,8 @@ type Scheduler struct {
 	wake     chan struct{}
 	reload   chan struct{}
 	once     sync.Once
+	paused   bool       // a restore runs: start no checks
+	hk       sync.Mutex // held by each housekeeping run, and by a pause
 
 	statMu    sync.Mutex
 	lastLoop  time.Time
@@ -208,13 +210,69 @@ func (s *Scheduler) workers(ctx context.Context) int {
 	return n
 }
 
+// ErrPaused is returned by CheckNow while a restore runs.
+var ErrPaused = errors.New("checks are paused while a backup is restored")
+
+// Pause stops starting checks and housekeeping, and waits until the running
+// ones have finished, so the database can be replaced under them. After a
+// nil return, Resume ends it.
+func (s *Scheduler) Pause(ctx context.Context) error {
+	s.init()
+	s.mu.Lock()
+	s.paused = true
+	s.mu.Unlock()
+	for {
+		s.mu.Lock()
+		var wait chan struct{}
+		for _, done := range s.inflight {
+			wait = done
+			break
+		}
+		s.mu.Unlock()
+		if wait == nil {
+			break
+		}
+		select {
+		case <-wait:
+		case <-ctx.Done():
+			s.mu.Lock()
+			s.paused = false
+			s.mu.Unlock()
+			return ctx.Err()
+		}
+	}
+	s.hk.Lock()
+	return nil
+}
+
+// Resume starts checks again after a successful Pause. With reset, the
+// database was replaced: the schedule and retry state are rebuilt from it
+// as at startup.
+func (s *Scheduler) Resume(ctx context.Context, reset bool) {
+	s.mu.Lock()
+	if reset {
+		s.q, s.byID, s.fails = nil, map[int64]*item{}, map[int64]int{}
+	}
+	s.mu.Unlock()
+	if reset {
+		if err := s.load(ctx, true); err != nil {
+			s.Log.Error("load schedule", "err", err)
+		}
+	}
+	s.mu.Lock()
+	s.paused = false
+	s.mu.Unlock()
+	s.hk.Unlock()
+	signal(s.wake)
+}
+
 // dispatch starts due checks while workers are free.
 func (s *Scheduler) dispatch(ctx context.Context) {
 	limit := s.workers(ctx)
 	now := s.now().Unix()
 	for {
 		s.mu.Lock()
-		if s.running >= limit || len(s.q) == 0 || s.q[0].next > now {
+		if s.paused || s.running >= limit || len(s.q) == 0 || s.q[0].next > now {
 			s.mu.Unlock()
 			return
 		}
@@ -356,6 +414,10 @@ func (s *Scheduler) check(ctx context.Context, id int64) (core.Target, error) {
 func (s *Scheduler) CheckNow(ctx context.Context, id int64) (core.Target, error) {
 	s.init()
 	s.mu.Lock()
+	if s.paused {
+		s.mu.Unlock()
+		return core.Target{}, ErrPaused
+	}
 	if done, busy := s.inflight[id]; busy {
 		s.mu.Unlock()
 		select {
@@ -420,23 +482,32 @@ func (s *Scheduler) housekeeping(ctx context.Context) {
 	defer remind.Stop()
 	defer prune.Stop()
 	defer minute.Stop()
-	s.prune(ctx)
+	s.housework(func() { s.prune(ctx) })
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-remind.C:
-			if n, err := s.Core.Remind(ctx); err != nil {
-				s.Log.Error("reminders", "err", err)
-			} else if n > 0 {
-				s.Log.Info("reminders queued", "alerts", n)
-			}
+			s.housework(func() {
+				if n, err := s.Core.Remind(ctx); err != nil {
+					s.Log.Error("reminders", "err", err)
+				} else if n > 0 {
+					s.Log.Info("reminders queued", "alerts", n)
+				}
+			})
 		case <-prune.C:
-			s.prune(ctx)
+			s.housework(func() { s.prune(ctx) })
 		case <-minute.C:
-			s.digest(ctx)
+			s.housework(func() { s.digest(ctx) })
 		}
 	}
+}
+
+// housework runs one housekeeping task, waiting while a restore runs.
+func (s *Scheduler) housework(f func()) {
+	s.hk.Lock()
+	defer s.hk.Unlock()
+	f()
 }
 
 func (s *Scheduler) prune(ctx context.Context) {

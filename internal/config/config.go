@@ -301,6 +301,9 @@ func (s *Store) save(ctx context.Context, key string, v any) error {
 	return err
 }
 
+// Invalidate drops the cached settings, after the database was replaced.
+func (s *Store) Invalidate() { s.invalidate() }
+
 func (s *Store) invalidate() {
 	s.mu.Lock()
 	s.cached = nil

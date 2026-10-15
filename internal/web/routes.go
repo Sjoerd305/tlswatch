@@ -27,6 +27,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /auth/google/callback", s.googleCallback)
 	mux.HandleFunc("GET /setup", s.setupPage)
 	mux.HandleFunc("POST /setup", s.setup)
+	mux.HandleFunc("POST /setup/restore", s.setupRestore)
 	mux.HandleFunc("GET /invite", s.invitePage)
 	mux.HandleFunc("POST /invite", s.invite)
 
@@ -79,6 +80,9 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /settings/users/{id}/delete", users(s.userDelete))
 	mux.HandleFunc("GET /settings/audit", audit(s.settingsAudit))
 	mux.HandleFunc("GET /settings/audit.csv", audit(s.auditCSV))
+	mux.HandleFunc("GET /settings/backup", admin(s.settingsBackup))
+	mux.HandleFunc("POST /settings/backup", admin(s.backupDownload))
+	mux.HandleFunc("POST /settings/backup/restore", admin(s.backupRestore))
 	mux.HandleFunc("GET /settings/about", admin(s.settingsAbout))
 	mux.HandleFunc("GET /account", own(s.account))
 	mux.HandleFunc("POST /account", own(s.accountSave))

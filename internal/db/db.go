@@ -18,7 +18,7 @@ import (
 	"strconv"
 	"strings"
 
-	_ "modernc.org/sqlite" // registers the "sqlite" driver
+	"modernc.org/sqlite" // also registers the "sqlite" driver
 )
 
 //go:embed migrations/*.sql
@@ -183,4 +183,50 @@ func (d *DB) Backup(ctx context.Context, path string) error {
 	}
 	_, err := d.W.ExecContext(ctx, "VACUUM INTO ?", path)
 	return err
+}
+
+// TempDir creates a private temporary directory next to the database, on
+// the same volume (the container image has no /tmp). The caller removes it.
+func (d *DB) TempDir() (string, error) {
+	dir := filepath.Dir(d.Path)
+	if d.Path == ":memory:" {
+		dir = os.TempDir()
+	}
+	return os.MkdirTemp(dir, ".tlswatch-tmp-")
+}
+
+// Restore replaces the whole database with the one at path, in place and
+// while the server runs: SQLite's backup API copies it page by page over the
+// writer connection in one step, so readers see either the old database or
+// the new one. The caller checks and migrates the file first. A non-nil
+// guard runs first on the writer connection, which no other write can use
+// until the restore ends; an error from it cancels the restore.
+func (d *DB) Restore(ctx context.Context, path string, guard func(context.Context, *sql.Conn) error) error {
+	c, err := d.W.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	if guard != nil {
+		if err := guard(ctx, c); err != nil {
+			return err
+		}
+	}
+	return c.Raw(func(dc any) error {
+		r, ok := dc.(interface {
+			NewRestore(string) (*sqlite.Backup, error)
+		})
+		if !ok {
+			return errors.New("the SQLite driver cannot restore")
+		}
+		b, err := r.NewRestore("file:" + url.PathEscape(path) + "?mode=ro")
+		if err != nil {
+			return fmt.Errorf("restore: %w", err)
+		}
+		if _, err := b.Step(-1); err != nil {
+			b.Finish()
+			return fmt.Errorf("restore: %w", err)
+		}
+		return b.Finish()
+	})
 }

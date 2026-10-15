@@ -259,3 +259,37 @@ func TestDisabledDuringCheckIsNotRequeued(t *testing.T) {
 		t.Fatal("check of a disabled target stored")
 	}
 }
+
+func TestPauseWaitsAndStopsChecks(t *testing.T) {
+	s, _, calls := setup(t, 5)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go s.Run(ctx)
+	// Pause as checks start: it returns once none run.
+	for atomic.LoadInt64(calls) == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	if err := s.Pause(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if st := s.Status(); st.Running != 0 {
+		t.Fatalf("%d checks still running while paused", st.Running)
+	}
+	before := atomic.LoadInt64(calls)
+	if _, err := s.CheckNow(ctx, 1); !errors.Is(err, ErrPaused) {
+		t.Fatalf("CheckNow while paused: %v", err)
+	}
+	s.CheckSoon(1)
+	time.Sleep(1500 * time.Millisecond)
+	if n := atomic.LoadInt64(calls); n != before {
+		t.Fatalf("%d checks started while paused", n-before)
+	}
+	s.Resume(ctx, true)
+	deadline := time.Now().Add(10 * time.Second)
+	for atomic.LoadInt64(calls) < 5 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if n := atomic.LoadInt64(calls); n < 5 {
+		t.Fatalf("checked %d of 5 targets after resume", n)
+	}
+}

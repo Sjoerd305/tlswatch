@@ -101,6 +101,15 @@ type phantomLock struct {
 	lockedUntil int64
 }
 
+// Forget drops what the service keeps in memory about accounts (the
+// last sign-in addresses, which are by user ID), after the database was
+// replaced. The per-address limits stay.
+func (s *Service) Forget() {
+	s.mu.Lock()
+	s.lastGoodIP, s.phantom = nil, nil
+	s.mu.Unlock()
+}
+
 // New returns a service with defaults.
 func New(d *db.DB, k *secret.Key) *Service {
 	return &Service{DB: d, Key: k, Now: time.Now, IdleTimeout: defaultIdle, MaxAge: defaultMaxAge, Breached: DefaultBreached()}

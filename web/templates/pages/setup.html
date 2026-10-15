@@ -10,4 +10,13 @@
   <div class="field"><label class="label" for="pw2">Repeat password</label><input id="pw2" name="password2" type="password" class="input" autocomplete="new-password" minlength="12" required></div>
   <button type="submit" class="btn btn-primary">Create administrator and sign in</button>
 </form>
+<form class="login-card" method="post" action="/setup/restore" enctype="multipart/form-data">
+  <h2 class="h3">Or restore a backup</h2>
+  <p class="muted">Moving from another installation? Restore its backup from Settings › Backup and sign in with an account from it.</p>
+  {{template "csrf" .CSRF}}
+  {{- if $d.RestoreError}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.RestoreError}}</div></div>{{end}}
+  <div class="field"><label class="label" for="rp">Passphrase</label><input id="rp" name="passphrase" type="password" class="input" autocomplete="off"><span class="help">Not needed for a copy made with <span class="mono">tlswatch backup</span>.</span></div>
+  <div class="field"><label class="label" for="rf">Backup file</label><input id="rf" name="file" type="file" class="input" required></div>
+  <button type="submit" class="btn">Restore backup</button>
+</form>
 {{end}}

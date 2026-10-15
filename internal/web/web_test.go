@@ -64,7 +64,7 @@ func newHarnessUsers(t *testing.T, withUsers bool) *harness {
 		return probe.Result{DNSError: "no such host"}
 	}}
 	a := auth.New(d, key)
-	srv := &Server{Core: c, Sched: sc, Auth: a, Settings: st, Dispatch: disp, Log: log, Version: "test", Listen: "test"}
+	srv := &Server{Core: c, Sched: sc, Auth: a, Settings: st, Dispatch: disp, Key: key, Log: log, Version: "test", Listen: "test"}
 	h, err := srv.Handler()
 	if err != nil {
 		t.Fatal(err)
@@ -161,6 +161,9 @@ var protected = []route{
 	{"POST", "/settings/defaults", authz.ManageSettings},
 	{"POST", "/settings/digest/send", authz.ManageSettings},
 	{"GET", "/settings/about", authz.ManageSettings},
+	{"GET", "/settings/backup", authz.ManageSettings},
+	{"POST", "/settings/backup", authz.ManageSettings},
+	{"POST", "/settings/backup/restore", authz.ManageSettings},
 	{"GET", "/settings/users", authz.ManageUsers},
 	{"POST", "/settings/users", authz.ManageUsers},
 	{"POST", "/settings/users/1", authz.ManageUsers},
@@ -190,7 +193,12 @@ func TestRoleNegativeSuite(t *testing.T) {
 		}
 		// Signed out: redirect to sign in, or 401 for the API.
 		rec := hs.do("", r.method, r.path, nil, false)
-		if r.method == "POST" {
+		if r.method == "POST" && streamedUpload(r.path) {
+			// The handler checks CSRF itself, after the sign-in check.
+			if rec.Code != http.StatusSeeOther {
+				t.Errorf("%s %s signed out: got %d, want redirect", r.method, r.path, rec.Code)
+			}
+		} else if r.method == "POST" {
 			if rec.Code != http.StatusForbidden { // CSRF fails first without a session
 				t.Errorf("%s %s signed out: got %d", r.method, r.path, rec.Code)
 			}

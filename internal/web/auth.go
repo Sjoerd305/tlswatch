@@ -129,9 +129,10 @@ func (s *Server) googleCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 type setupData struct {
-	Email string
-	Name  string
-	Error string
+	Email        string
+	Name         string
+	Error        string
+	RestoreError string
 }
 
 // needsSetup reports whether no account exists yet, so the first-run

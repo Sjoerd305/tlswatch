@@ -155,6 +155,14 @@ func (s *Service) DeleteBundle(ctx context.Context, id int64) error {
 	return nil
 }
 
+// ForgetBundles drops the cached bundle pools, after the database was
+// replaced.
+func (s *Service) ForgetBundles() {
+	s.bundles.mu.Lock()
+	s.bundles.pools = nil
+	s.bundles.mu.Unlock()
+}
+
 // BundlePool returns the certificate pool of a bundle. A missing bundle is
 // an error: an empty pool would report every chain as untrusted.
 func (s *Service) BundlePool(ctx context.Context, id int64) (*x509.CertPool, error) {

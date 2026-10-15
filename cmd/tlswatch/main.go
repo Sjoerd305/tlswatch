@@ -219,7 +219,7 @@ func serve(args []string) error {
 		fmt.Fprintf(os.Stderr, "\n  Set up tlswatch: %s\n\n", link)
 	}
 
-	srv := &web.Server{Core: a.core, Sched: a.sched, Auth: a.auth, Settings: a.settings, Dispatch: a.dispatch,
+	srv := &web.Server{Core: a.core, Sched: a.sched, Auth: a.auth, Settings: a.settings, Dispatch: a.dispatch, Key: a.key,
 		Log: a.log, Version: version, DevAssets: devAssets(), Listen: a.boot.Listen}
 	h, err := srv.Handler()
 	if err != nil {

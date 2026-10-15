@@ -4,6 +4,7 @@ Newest first, one line per change.
 
 ## Unreleased
 
+- Backup and restore in the UI. Settings › Backup downloads the whole instance as one file encrypted with a passphrase, and restores such a file, or a `tlswatch backup` copy, in place while tlswatch runs; checks and alert delivery pause meanwhile and everyone signs in again afterwards. The setup screen of a new installation restores a backup too, without first creating an admin. Stored credentials are re-encrypted for the instance that restores, so a backup moves between hosts without the secret key file.
 - Alert, digest and test mails now carry an HTML part in the style of the UI next to the plain text: status pill, countdown, the fields as a table with mono identifiers, and a button to open tlswatch; dark mode where the mail client supports it. Telegram stays plain text. Alerts queued before the upgrade go out as plain text.
 - Without a release version, `tlswatch version` and the asset URLs use the git revision the binary was built from. Static files are cached for good unless the build is a development one (no version, or a modified working tree).
 - Settings pages show validation messages and log any other error instead of showing its text.
