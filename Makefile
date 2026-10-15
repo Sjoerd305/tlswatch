@@ -1,4 +1,4 @@
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+VERSION ?= $(shell sh scripts/version.sh)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 DEVDATA := ./tmp/dev
 

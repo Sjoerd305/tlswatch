@@ -8,13 +8,19 @@ COPY web ./web
 RUN npx tsc -p tsconfig.json
 
 FROM golang:1.27-alpine AS build
-ARG VERSION=dev
+# The release workflow passes the tag; a local `docker compose up --build`
+# passes nothing and gets the version from the checkout (scripts/version.sh),
+# which is why .git is in the build context.
+ARG VERSION=
+RUN apk add --no-cache git
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
+RUN if [ -n "$VERSION" ]; then echo "$VERSION"; else sh scripts/version.sh; fi > /version \
+ && echo "building tlswatch $(cat /version)"
 COPY --from=frontend /src/web/static/js ./web/static/js
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /tlswatch ./cmd/tlswatch \
+RUN CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=$(cat /version)" -o /tlswatch ./cmd/tlswatch \
  && mkdir -p /data && chown 65532:65532 /data
 
 FROM scratch
