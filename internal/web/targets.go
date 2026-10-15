@@ -15,8 +15,10 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/check"
 	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/core"
+	"github.com/sjoerd305/tlswatch/internal/node"
 	"github.com/sjoerd305/tlswatch/internal/notify"
 	"github.com/sjoerd305/tlswatch/internal/probe"
+	"github.com/sjoerd305/tlswatch/internal/usererr"
 )
 
 func pathID(r *http.Request) (int64, error) {
@@ -51,6 +53,8 @@ type targetsData struct {
 	Shown     int
 	Status    []Chip
 	Tags      []Chip
+	Nodes     []Chip // "Probe from" chips, when there are nodes
+	ShowNode  bool   // the node column
 	Query     string
 	Group     bool
 	Sort      Sort
@@ -58,7 +62,7 @@ type targetsData struct {
 
 // targetSortKeys are the sortable columns of the targets table; "days" is
 // the list's own order (expiry, unknown and disabled last).
-var targetSortKeys = []string{"status", "name", "host", "days", "lifetime", "expires", "issuer", "tls", "tags", "checked"}
+var targetSortKeys = []string{"status", "name", "host", "node", "days", "lifetime", "expires", "issuer", "tls", "tags", "checked"}
 
 func (s *Server) targets(w http.ResponseWriter, r *http.Request) {
 	ts, err := s.Core.Targets(r.Context())
@@ -66,8 +70,14 @@ func (s *Server) targets(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
+	nodes, err := s.Core.Nodes(r.Context())
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
 	q := r.URL.Query()
 	status, tag, text := q.Get("status"), q.Get("tag"), strings.ToLower(strings.TrimSpace(q.Get("q")))
+	nodeF := q.Get("node")
 	d := targetsData{Query: q.Get("q"), Sort: sortFrom(r, "days", targetSortKeys...)}
 	counts := map[string]int{}
 	for _, t := range ts {
@@ -92,11 +102,30 @@ func (s *Server) targets(w http.ResponseWriter, r *http.Request) {
 	for i := range d.Tags {
 		d.Tags[i].Href = chipHref(r, "tag", d.Tags[i].Value)
 	}
+	d.ShowNode = len(nodes) > 0
+	if d.ShowNode {
+		perNode := map[string]int{}
+		for _, t := range ts {
+			perNode[nodeToken(t)]++
+		}
+		d.Nodes = append(d.Nodes, Chip{Key: "node", Value: "", Label: "Anywhere", Count: len(ts), On: nodeF == ""},
+			Chip{Key: "node", Value: "server", Label: "This server", Count: perNode["server"], On: nodeF == "server"})
+		for _, n := range nodes {
+			if n.State != core.NodeConfirmed {
+				continue
+			}
+			v := strconv.FormatInt(n.ID, 10)
+			d.Nodes = append(d.Nodes, Chip{Key: "node", Value: v, Label: n.Label(), Count: perNode[v], On: nodeF == v})
+		}
+		for i := range d.Nodes {
+			d.Nodes[i].Href = chipHref(r, "node", d.Nodes[i].Value)
+		}
+	}
 	// Server-side filtering mirrors the TypeScript filter, so the page
 	// works without JavaScript; rows are rendered hidden, not dropped.
 	now := s.now()
 	for _, t := range ts {
-		row := targetRow{T: t, Now: now, Hidden: !targetMatches(t, status, tag, text)}
+		row := targetRow{T: t, Now: now, ShowNode: d.ShowNode, Hidden: !targetMatches(t, status, tag, text) || nodeF != "" && nodeToken(t) != nodeF}
 		if !row.Hidden {
 			d.Shown++
 		}
@@ -156,7 +185,7 @@ func targetMatches(t core.Target, status, tag, text string) bool {
 }
 
 func targetSearch(t core.Target) string {
-	parts := []string{t.Name, t.HostPort(), t.ServerName, string(t.Protocol), strings.Join(t.Tags, " ")}
+	parts := []string{t.Name, t.HostPort(), t.ServerName, string(t.Protocol), strings.Join(t.Tags, " "), t.NodeName}
 	if t.Cert != nil {
 		parts = append(parts, t.Cert.IssuerName(), t.Cert.SubjectCN)
 	}
@@ -178,10 +207,23 @@ func chipHref(r *http.Request, key, value string) string {
 
 // targetRow is a row in the targets table, also rendered alone by the API.
 type targetRow struct {
-	T      core.Target
-	Now    time.Time
-	Hidden bool
+	T        core.Target
+	Now      time.Time
+	Hidden   bool
+	ShowNode bool
 }
+
+// nodeToken is the "node" chip value of a target: its node's id, or
+// "server".
+func nodeToken(t core.Target) string {
+	if t.NodeID == 0 {
+		return "server"
+	}
+	return strconv.FormatInt(t.NodeID, 10)
+}
+
+// NodeToken is the row's "node" chip value.
+func (r targetRow) NodeToken() string { return nodeToken(r.T) }
 
 // Search is the text the live filter matches.
 func (r targetRow) Search() string { return targetSearch(r.T) }
@@ -198,6 +240,8 @@ func (r targetRow) sortVal(key string) sortVal {
 		return txt(t.Name)
 	case "host":
 		return txt(t.HostPort())
+	case "node":
+		return txt(t.NodeName)
 	case "days", "expires":
 		return numIf(t.NotAfter > 0, float64(t.NotAfter))
 	case "lifetime":
@@ -374,6 +418,7 @@ type targetForm struct {
 	TagsText  string
 	Result    *testResult
 	Protocols []probe.Protocol
+	Nodes     []core.Node // confirmed nodes, for "Probe from"
 }
 
 func (s *Server) formData(ctx context.Context, f *targetForm) error {
@@ -385,6 +430,15 @@ func (s *Server) formData(ctx context.Context, f *targetForm) error {
 		return err
 	}
 	f.Protocols = probe.Protocols
+	nodes, err := s.Core.Nodes(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range nodes {
+		if n.Assignable() {
+			f.Nodes = append(f.Nodes, n)
+		}
+	}
 	if f.Errors == nil {
 		f.Errors = map[string]string{}
 	}
@@ -466,6 +520,7 @@ func (s *Server) parseTargetForm(r *http.Request, existing *core.Target) targetF
 		f.Errors["port"] = "Port must be a number"
 	}
 	t.Name = v.Get("name")
+	t.NodeID, _ = strconv.ParseInt(v.Get("node_id"), 10, 64)
 	t.ServerName = strings.TrimSpace(v.Get("servername"))
 	// The server name defaults to the host for a DNS name.
 	if t.ServerName == "" && !isIP(t.Host) {
@@ -583,6 +638,11 @@ func (s *Server) targetSave(w http.ResponseWriter, r *http.Request) {
 			s.renderStatus(w, r, http.StatusBadRequest, "target-form", &Page{Title: title, Nav: "targets", Data: f})
 			return
 		}
+		if msg, ok := usererr.Message(err); ok {
+			f.Errors["node_id"] = msg
+			s.renderStatus(w, r, http.StatusBadRequest, "target-form", &Page{Title: title, Nav: "targets", Data: f})
+			return
+		}
 		s.serverError(w, r, err)
 		return
 	}
@@ -599,6 +659,9 @@ func (s *Server) targetSave(w http.ResponseWriter, r *http.Request) {
 
 func targetAuditDetails(t core.Target) string {
 	parts := []string{"name=" + t.Name, "protocol=" + string(t.Protocol), "trust=" + string(t.Trust)}
+	if t.NodeID != 0 {
+		parts = append(parts, fmt.Sprintf("node=%d", t.NodeID))
+	}
 	if t.ServerName != "" {
 		parts = append(parts, "servername="+t.ServerName)
 	}
@@ -629,9 +692,23 @@ func (s *Server) testProbe(ctx context.Context, st config.Settings, t core.Targe
 		return testResult{Err: err.Error(), Status: core.StatusUnreachable}
 	}
 	req.Legacy = !t.SkipLegacy
-	pctx, cancel := context.WithTimeout(ctx, 90*time.Second)
-	defer cancel()
-	r := probe.Probe(pctx, req)
+	var r probe.Result
+	if t.NodeID != 0 {
+		// Through the node, with the timeout of a job plus one poll.
+		pctx, cancel := context.WithTimeout(ctx, node.NewProbeJob(req, s.now()).Timeout()+node.PollCeiling)
+		defer cancel()
+		if r, err = s.Nodes.Probe(pctx, t.NodeID, req); err != nil {
+			msg := "The node did not answer: " + err.Error()
+			if errors.Is(err, core.ErrNodeOffline) {
+				msg = "The node is offline, so nothing was probed. Test again once it polls, or choose This server."
+			}
+			return testResult{Err: msg, Status: core.StatusUnreachable}
+		}
+	} else {
+		pctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+		defer cancel()
+		r = probe.Probe(pctx, req)
+	}
 	// Evaluate as a first observation: no history, debounce of 1.
 	t.ID, t.CurrentFP, t.PinnedFP, t.FailStreak, t.OkStreak, t.DNSFail, t.DNSOk = 0, "", "", 0, 0, 0, 0
 	one := 1
@@ -681,11 +758,16 @@ func (s *Server) targetCheck(w http.ResponseWriter, r *http.Request) {
 	}
 	t, err := s.Sched.CheckNow(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, core.ErrNotFound) {
+		switch {
+		case errors.Is(err, core.ErrNotFound):
 			s.fail(w, r, http.StatusNotFound, "No such target.")
-			return
+		case errors.Is(err, core.ErrNodeOffline):
+			s.fail(w, r, http.StatusConflict, "The node this target is probed from is offline; the check runs as soon as it polls again.")
+		case errors.Is(err, core.ErrNodeNoResult):
+			s.fail(w, r, http.StatusGatewayTimeout, "The node did not return a result in time.")
+		default:
+			s.serverError(w, r, err)
 		}
-		s.serverError(w, r, err)
 		return
 	}
 	s.Core.Audit(r.Context(), user(r).Email, "target.check", fmt.Sprintf("target %d %s", id, t.HostPort()), "")
@@ -796,11 +878,16 @@ func (s *Server) apiTargetCheck(w http.ResponseWriter, r *http.Request) {
 	}
 	t, err := s.Sched.CheckNow(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, core.ErrNotFound) {
+		switch {
+		case errors.Is(err, core.ErrNotFound):
 			s.fail(w, r, http.StatusNotFound, "No such target.")
-			return
+		case errors.Is(err, core.ErrNodeOffline):
+			s.fail(w, r, http.StatusConflict, "The node this target is probed from is offline; the check runs as soon as it polls again.")
+		case errors.Is(err, core.ErrNodeNoResult):
+			s.fail(w, r, http.StatusGatewayTimeout, "The node did not return a result in time.")
+		default:
+			s.serverError(w, r, err)
 		}
-		s.serverError(w, r, err)
 		return
 	}
 	s.Core.Audit(r.Context(), user(r).Email, "target.check", fmt.Sprintf("target %d %s", id, t.HostPort()), "")
@@ -808,7 +895,12 @@ func (s *Server) apiTargetCheck(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"redirect": fmt.Sprintf("/targets/%d", id)})
 		return
 	}
-	html, err := s.fragment(r, "target-row", frag{P: s.fragPage(r), Item: targetRow{T: t, Now: s.now()}})
+	nodes, err := s.Core.Nodes(r.Context())
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	html, err := s.fragment(r, "target-row", frag{P: s.fragPage(r), Item: targetRow{T: t, Now: s.now(), ShowNode: len(nodes) > 0}})
 	if err != nil {
 		s.serverError(w, r, err)
 		return
@@ -829,13 +921,20 @@ func (s *Server) apiCheckAll(w http.ResponseWriter, r *http.Request) {
 // apiStamp lets live pages poll for changes. Busy asks for a quicker poll
 // while checks are queued, running or a target was never checked.
 func (s *Server) apiStamp(w http.ResponseWriter, r *http.Request) {
-	stamp, pending, err := s.Core.Stamp(r.Context())
+	_, pending, err := s.Core.Stamp(r.Context())
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
 	st := s.Sched.Status()
-	writeJSON(w, http.StatusOK, map[string]any{"stamp": stamp, "busy": pending > 0 || st.Backlog > 0 || st.Running > 0})
+	writeJSON(w, http.StatusOK, map[string]any{"stamp": s.stamp(r.Context()), "busy": pending > 0 || st.Backlog > 0 || st.Running > 0 || st.OnNodes > 0})
+}
+
+// stamp is the change stamp of the live pages: the database's change
+// counter and the nodes' online epoch.
+func (s *Server) stamp(ctx context.Context) string {
+	st, _, _ := s.Core.Stamp(ctx)
+	return fmt.Sprintf("%s.%d", st, s.Nodes.Epoch())
 }
 
 func (s *Server) apiTargetTest(w http.ResponseWriter, r *http.Request) {

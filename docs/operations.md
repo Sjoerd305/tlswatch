@@ -53,4 +53,29 @@ Every check logs one `checked` line with the target, its `check_id` (also stored
 
 ## Networks
 
-tlswatch probes from where it runs. Internal addresses must be reachable from that host; for an isolated network, run a second instance inside it. Hosts without an IPv6 route skip AAAA records (noted on the target, not reported as unreachable).
+tlswatch probes from where it runs. Internal addresses must be reachable from that host, through a route or from a node (below). Hosts without an IPv6 route skip AAAA records (noted on the target, not reported as unreachable).
+
+## Nodes
+
+A node is `tlswatch node` on a host inside a network the server cannot reach. It connects out to the server and is never connected to; the schedule, results, findings and alerts stay on the server. Where the network allows a route in (a WireGuard or Tailscale subnet router, an SSH tunnel), that needs no node at all and is the first thing to try.
+
+**The one firewall rule.** The node needs outbound HTTPS to the server's public URL (Settings › General), nothing else. It honours `HTTPS_PROXY` and `NO_PROXY`. The server must answer on that URL over HTTPS with a certificate the node's host trusts; for a server on a private CA, add that CA to the host's trust store. The reverse proxy in front of the server needs no WebSocket or upgrade settings: a node's poll is an ordinary request held for up to 30 seconds, under every common idle timeout.
+
+**Installing.** Settings › Nodes › Add node shows one command to run as root on a host with systemd; it installs `/var/lib/tlswatch-node/bin/tlswatch` (linked from `/usr/local/bin/tlswatch`), `/etc/tlswatch-node.env`, the unit `tlswatch-node.service` and the system user `tlswatch-node`. The same screen has a Docker command and a manual one for hosts without systemd or root. The command holds a one-time token valid for an hour. Once the machine enrolled, the screen shows what it reported (hostname, system, addresses); confirm it and name it, and it can take targets ("Probe from" on the target form).
+
+**Settings on the node** are flags or environment variables, read from `/etc/tlswatch-node.env` by the unit:
+
+| Variable | Flag | Default | Purpose |
+| --- | --- | --- | --- |
+| `TLSWATCH_NODE_SERVER` | `-server` | | The server's public URL; `https://` unless `-insecure` |
+| `TLSWATCH_NODE_DATA` | `-data` | `/var/lib/tlswatch-node` (`/data` in the image) | Directory of the credential file |
+| `TLSWATCH_NODE_WORKERS` | `-workers` | `4` | Probes at once |
+| `TLSWATCH_NODE_ALLOW` | `-allow` | empty: any | CIDRs the node may probe; whatever the server asks, others are refused |
+| `TLSWATCH_NODE_ALLOW_LOCAL` | `-allow-local` | `false` | Allow loopback and link-local addresses (Settings › General must allow them too) |
+| `TLSWATCH_NODE_TOKEN` | `-token` | | Install token: without a credential, enrol with it first (Docker) |
+
+**When a node shows offline.** On the node: `systemctl status tlswatch-node` and `journalctl -u tlswatch-node` (one line per job, and why a poll failed). Typical causes: the service is stopped, the host cannot reach the server or does not trust its certificate, a proxy is needed, or the credential was revoked ("credential not accepted": rotate it on the node page and run the new command). The node's targets keep their last state and show "Waiting for node"; nothing alerts per target. After 10 minutes one `node_offline` finding opens, critical once a target is overdue by more than its interval, and it resolves with a recovery notice when the node polls again.
+
+**Updates.** Nodes update themselves to the server's version, one at a time, and roll back when the new version does not reach the server within five minutes; this is automatic for release builds and can be switched off under Settings › Nodes. A node in a container is updated by pulling the image tag of the server's version.
+
+**Removing.** `sudo tlswatch node uninstall` on the machine, or, when the binary is gone, `curl -fsSL https://<server>/agent/v1/uninstall | sudo sh`. Delete the node under Settings › Nodes too; a node with targets offers to move them to the server.

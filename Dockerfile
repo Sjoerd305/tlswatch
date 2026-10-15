@@ -28,7 +28,8 @@ COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build /tlswatch /tlswatch
 COPY --from=build --chown=65532:65532 /data /data
 USER 65532:65532
-ENV TLSWATCH_LISTEN=0.0.0.0:8080 TLSWATCH_DB=/data/tlswatch.db
+# TLSWATCH_CONTAINER tells "tlswatch node" it is updated by pulling the image.
+ENV TLSWATCH_LISTEN=0.0.0.0:8080 TLSWATCH_DB=/data/tlswatch.db TLSWATCH_CONTAINER=1
 EXPOSE 8080
 VOLUME ["/data"]
 HEALTHCHECK --interval=1m --timeout=10s --start-period=30s CMD ["/tlswatch", "healthcheck"]

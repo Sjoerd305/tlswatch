@@ -25,6 +25,7 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/core"
 	"github.com/sjoerd305/tlswatch/internal/db"
+	"github.com/sjoerd305/tlswatch/internal/node"
 	"github.com/sjoerd305/tlswatch/internal/notify"
 	"github.com/sjoerd305/tlswatch/internal/probe"
 	"github.com/sjoerd305/tlswatch/internal/sched"
@@ -77,6 +78,8 @@ Usage:
   tlswatch rotate-key                  re-encrypt stored credentials under a new secret key
                                        (stop the server first)
   tlswatch check HOST[:PORT] [flags]   probe one endpoint, print JSON, exit 0/1/2 by severity
+  tlswatch node [flags]                run as a probe node inside another network
+                                       (tlswatch node -h for enrol, uninstall and flags)
   tlswatch seed                        add a few public demo targets
   tlswatch version                     print the version
 
@@ -109,6 +112,8 @@ func main() {
 		err = rotateKey()
 	case "check":
 		os.Exit(checkCmd(args, os.Stdout, os.Stderr))
+	case "node":
+		err = nodeCmd(args)
 	case "seed":
 		err = seed()
 	case "version", "-version", "--version":
@@ -148,6 +153,7 @@ type app struct {
 	dispatch *notify.Dispatcher
 	core     *core.Service
 	sched    *sched.Scheduler
+	nodes    *node.Dispatcher
 }
 
 func open() (*app, error) {
@@ -173,7 +179,7 @@ func open() (*app, error) {
 	a.auth = auth.New(d, key)
 	a.channels = &notify.Channels{DB: d, Key: key}
 	a.dispatch = &notify.Dispatcher{DB: d, Channels: a.channels, Log: a.log}
-	a.core = &core.Service{DB: d, Settings: a.settings, Channels: a.channels, Dispatcher: a.dispatch, Log: a.log}
+	a.core = &core.Service{DB: d, Settings: a.settings, Channels: a.channels, Dispatcher: a.dispatch, Key: key, Log: a.log}
 	a.dispatch.Link = func(ctx context.Context) string {
 		st, _ := a.settings.Get(ctx)
 		if st.General.BaseURL == "" {
@@ -182,6 +188,8 @@ func open() (*app, error) {
 		return st.General.BaseURL + "/findings"
 	}
 	a.sched = &sched.Scheduler{Core: a.core, Log: a.log, PruneSessions: a.auth.PruneSessions}
+	a.nodes = &node.Dispatcher{Core: a.core, Version: version, Log: a.log, OnOnline: a.sched.NodeOnline}
+	a.sched.Nodes = a.nodes
 	return a, nil
 }
 
@@ -219,7 +227,7 @@ func serve(args []string) error {
 		fmt.Fprintf(os.Stderr, "\n  Set up tlswatch: %s\n\n", link)
 	}
 
-	srv := &web.Server{Core: a.core, Sched: a.sched, Auth: a.auth, Settings: a.settings, Dispatch: a.dispatch, Key: a.key,
+	srv := &web.Server{Core: a.core, Sched: a.sched, Nodes: a.nodes, Auth: a.auth, Settings: a.settings, Dispatch: a.dispatch, Key: a.key,
 		Log: a.log, Version: version, DevAssets: devAssets(), Listen: a.boot.Listen}
 	h, err := srv.Handler()
 	if err != nil {
@@ -232,9 +240,10 @@ func serve(args []string) error {
 		return err
 	}
 	var bg sync.WaitGroup
-	bg.Add(2)
+	bg.Add(3)
 	go func() { defer bg.Done(); a.sched.Run(ctx) }()
 	go func() { defer bg.Done(); a.dispatch.Run(ctx) }()
+	go func() { defer bg.Done(); a.nodes.Run(ctx) }()
 	a.log.Info("tlswatch listening", "addr", ln.Addr().String(), "version", version, "db", a.boot.DBPath)
 	errc := make(chan error, 1)
 	go func() { errc <- hs.Serve(ln) }()

@@ -36,6 +36,9 @@ type AlertData struct {
 	Link        string
 	OpenedAt    time.Time
 	Loc         *time.Location
+	// Node marks a finding on a node: TargetName is the node's name and
+	// HostPort reads "node <name>".
+	Node bool
 }
 
 // phrase describes the problem in the subject line.
@@ -71,6 +74,8 @@ func phrase(kind string, days *int) string {
 		return "unreachable"
 	case "dns_failed":
 		return "DNS lookup failed"
+	case "node_offline":
+		return "offline"
 	}
 	return kind
 }
@@ -100,7 +105,11 @@ func Render(a AlertData) Message {
 			rows = append(rows, kv{label, value, mono})
 		}
 	}
-	add("Target", fmt.Sprintf("%s (%s)", a.TargetName, a.HostPort), false)
+	if a.Node {
+		add("Node", a.TargetName, false)
+	} else {
+		add("Target", fmt.Sprintf("%s (%s)", a.TargetName, a.HostPort), false)
+	}
 	if a.Event == EventRecover {
 		add("Resolved", a.KindLabel, false)
 	} else {

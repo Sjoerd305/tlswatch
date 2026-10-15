@@ -173,7 +173,7 @@ func (s *Service) Apply(ctx context.Context, t Target, r probe.Result) (CheckSum
 	if err := unchangedTx(ctx, tx, t); err != nil {
 		return sum, err
 	}
-	if err := storeObservationsTx(ctx, tx, t.ID, sum.CheckID, r, out, checkedAt.Unix(), now.Unix()); err != nil {
+	if err := storeObservationsTx(ctx, tx, t.ID, t.NodeID, sum.CheckID, r, out, checkedAt.Unix(), now.Unix()); err != nil {
 		return sum, err
 	}
 	al := s.outcomeAlerter(tx, st, t, chans, out, now)
@@ -197,8 +197,10 @@ func (s *Service) Apply(ctx context.Context, t Target, r probe.Result) (CheckSum
 }
 
 // storeObservationsTx stores the certificates seen and one observation per
-// address (and per skipped IPv6 address, or one for a DNS failure).
-func storeObservationsTx(ctx context.Context, tx *sql.Tx, targetID int64, checkID string, r probe.Result, out check.Outcome, checkedAt, now int64) error {
+// address (and per skipped IPv6 address, or one for a DNS failure), with the
+// node the probe ran on (0: this server).
+func storeObservationsTx(ctx context.Context, tx *sql.Tx, targetID, nodeID int64, checkID string, r probe.Result, out check.Outcome, checkedAt, now int64) error {
+	node := nullID(nodeID)
 	for _, a := range r.Addresses {
 		var chain []string
 		leafFP := ""
@@ -232,21 +234,21 @@ func storeObservationsTx(ctx context.Context, tx *sql.Tx, targetID int64, checkI
 			errText = "address not allowed"
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO observations(target_id, check_id, address, checked_at, status, tls_version, cipher,
-			leaf_fp, chain, verified, verify_error, error, duration_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			leaf_fp, chain, verified, verify_error, error, duration_ms, node_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			targetID, checkID, a.IP, checkedAt, status, a.TLSVersion, a.Cipher, leafFP, string(cj), a.Verified, a.VerifyError,
-			errText, a.Duration.Milliseconds()); err != nil {
+			errText, a.Duration.Milliseconds(), node); err != nil {
 			return err
 		}
 	}
 	for _, ip := range r.SkippedIPv6 {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO observations(target_id, check_id, address, checked_at, status, error)
-			VALUES(?,?,?,?,'skipped','no IPv6 route from this host')`, targetID, checkID, ip, checkedAt); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO observations(target_id, check_id, address, checked_at, status, error, node_id)
+			VALUES(?,?,?,?,'skipped',?,?)`, targetID, checkID, ip, checkedAt, noIPv6Route(nodeID), node); err != nil {
 			return err
 		}
 	}
 	if r.DNSError != "" && len(r.Addresses) == 0 {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO observations(target_id, check_id, address, checked_at, status, error)
-			VALUES(?,?,'',?,'error',?)`, targetID, checkID, checkedAt, "DNS: "+r.DNSError); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO observations(target_id, check_id, address, checked_at, status, error, node_id)
+			VALUES(?,?,'',?,'error',?,?)`, targetID, checkID, checkedAt, "DNS: "+r.DNSError, node); err != nil {
 			return err
 		}
 	}
@@ -371,14 +373,15 @@ func updateTargetTx(ctx context.Context, tx *sql.Tx, t Target, r probe.Result, o
 // unchangedTx returns ErrStale when the target was disabled or edited since
 // t was read, so a probe that ran meanwhile cannot reopen the findings that
 // disabling resolved, or store the old endpoint's certificate as current.
+// A target moved to another node is a new vantage point and stale too.
 func unchangedTx(ctx context.Context, tx *sql.Tx, t Target) error {
 	var enabled bool
 	var host, protocol, sni, trust string
 	var port int
-	var bundle sql.NullInt64
+	var bundle, node sql.NullInt64
 	var updated int64
-	err := tx.QueryRowContext(ctx, "SELECT enabled, host, port, protocol, servername, trust_mode, bundle_id, updated_at FROM targets WHERE id = ?", t.ID).
-		Scan(&enabled, &host, &port, &protocol, &sni, &trust, &bundle, &updated)
+	err := tx.QueryRowContext(ctx, "SELECT enabled, host, port, protocol, servername, trust_mode, bundle_id, node_id, updated_at FROM targets WHERE id = ?", t.ID).
+		Scan(&enabled, &host, &port, &protocol, &sni, &trust, &bundle, &node, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -386,10 +389,26 @@ func unchangedTx(ctx context.Context, tx *sql.Tx, t Target) error {
 		return err
 	}
 	if !enabled || updated != t.UpdatedAt || host != t.Host || port != t.Port || protocol != string(t.Protocol) ||
-		sni != t.ServerName || trust != string(t.Trust) || bundle.Int64 != t.BundleID {
+		sni != t.ServerName || trust != string(t.Trust) || bundle.Int64 != t.BundleID || node.Int64 != t.NodeID {
 		return ErrStale
 	}
 	return nil
+}
+
+// nullID stores an optional reference: 0 is NULL.
+func nullID(id int64) any {
+	if id == 0 {
+		return nil
+	}
+	return id
+}
+
+// noIPv6Route is the note on an AAAA record skipped for want of a route.
+func noIPv6Route(nodeID int64) string {
+	if nodeID != 0 {
+		return "no IPv6 route from the node"
+	}
+	return "no IPv6 route from this host"
 }
 
 func openFindingsTx(ctx context.Context, tx *sql.Tx, targetID int64) (map[check.Kind]Finding, error) {

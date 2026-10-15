@@ -1,0 +1,132 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}{{$r := $d.Row}}{{$n := $r.N}}
+<div class="crumbs"><a href="/settings/nodes">Nodes</a><span>/</span><span>{{if and (eq $n.State "enrolling") (not $n.ConfirmedAt)}}Add node{{else}}{{$n.Label}}{{end}}</span></div>
+<div class="page-head top-align">
+  <div>
+    <div class="title-row"><h1>{{if and (eq $n.State "enrolling") (not $n.ConfirmedAt)}}Add node{{else}}{{$n.Label}}{{end}}</h1>{{template "node-status" $r}}</div>
+    {{- if $n.Facts.Hostname}}<div class="sub-row"><span class="mono">{{$n.Facts.Hostname}}</span>{{if $n.Version}}<span class="tag">{{$n.Version}}</span>{{end}}{{if $r.Note}}<span class="st sm {{$r.NoteClass}}">{{$r.Note}}</span>{{end}}</div>{{end}}
+  </div>
+  {{- if eq $n.State "confirmed"}}
+  <div class="actions row">
+    {{- if and $r.Note (not $n.Facts.Container) (not $n.UpdateStarted)}}
+    <form method="post" action="/settings/nodes/{{$n.ID}}/update">{{template "csrf" $p.CSRF}}<input type="hidden" name="next" value="/settings/nodes/{{$n.ID}}"><button type="submit" class="btn">Update to {{$d.Version}}</button></form>
+    {{- end}}
+    {{- if $n.Enabled}}
+    <form method="post" action="/settings/nodes/{{$n.ID}}/disable">{{template "csrf" $p.CSRF}}<button type="submit" class="btn">Disable</button></form>
+    {{- else}}
+    <form method="post" action="/settings/nodes/{{$n.ID}}/enable">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-primary">Enable</button></form>
+    {{- end}}
+    <a href="/settings/nodes/{{$n.ID}}/delete" class="btn btn-danger">Delete</a>
+  </div>
+  {{- end}}
+</div>
+{{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
+
+{{- if eq $n.State "pending"}}
+<div class="notice warn" role="status">{{template "notice-icon" "warn"}}<div>A machine enrolled with the install command. Check that this is the machine you ran it on before you confirm it; until then it takes no targets. Reject a machine you do not recognise: its credential is revoked at once.</div></div>
+<section class="card clip">
+  <div class="sec"><h2>Reported by the machine</h2><span class="meta">enrolled {{since $p.Now $n.EnrolledAt}}</span></div>
+  <div class="li">{{template "node-facts" (frag $p $n)}}</div>
+</section>
+<form class="card form" method="post" action="/settings/nodes/{{$n.ID}}/confirm">
+  {{template "csrf" $p.CSRF}}
+  <div class="field"><label class="label" for="nname">Name</label><input id="nname" name="name" class="input" value="{{$d.Name}}" maxlength="80" required><span class="help">Shown under "Probe from" on targets, for example the customer or site.</span></div>
+  <div class="form-foot"><button type="submit" class="btn btn-primary">Confirm node</button><button type="submit" form="reject" class="btn btn-danger">Reject</button></div>
+</form>
+<form id="reject" method="post" action="/settings/nodes/{{$n.ID}}/reject" data-confirm="Reject this machine and revoke its credential?">{{template "csrf" $p.CSRF}}</form>
+
+{{- else if and (eq $n.State "enrolling") (not $n.ConfirmedAt)}}
+{{- if $d.Cmd}}
+<section class="card form">
+  <h3 class="h3">Run this as root on the machine inside the network</h3>
+  {{template "cmd" $d.Cmd.Script}}
+  <span class="help">It downloads tlswatch from this server, verifies its checksum, installs it as the service tlswatch-node under its own system user and enrols it. The command holds a one-time token, valid until {{datetime $p.Loc $n.TokenExpires}}. To read the script first, open the URL without <span class="mono">| sh</span>. The machine needs to reach this server over HTTPS, nothing else; an <span class="mono">HTTPS_PROXY</span> is honoured.</span>
+  <details>
+    <summary class="label">Docker</summary>
+    {{template "cmd" $d.Cmd.Docker}}
+    <span class="help">The credential is kept in the volume. A node in a container is updated by pulling the image; the tag matches this server's version.</span>
+  </details>
+  <details>
+    <summary class="label">Without systemd or without root</summary>
+    {{template "cmd" $d.Cmd.Manual}}
+    <span class="help">Replace linux/amd64 with the machine's platform. Keep the last command running with your own service manager.</span>
+  </details>
+  <span class="help">This server hands out the binary for {{join $d.Platforms ", "}}{{if $d.Release}}; {{$d.Own}} comes from this server itself and the others from GitHub, which the machine must then reach{{end}}.</span>
+</section>
+<section class="card"><div class="empty"><span class="h3">Waiting for the node to connect…</span><span>This page changes as soon as the machine enrols, and shows what it reports about itself for you to confirm.</span></div></section>
+{{- else}}
+<div class="notice warn" role="status">{{template "notice-icon" "warn"}}<div>The install command cannot be shown again{{if not $p.Settings.General.BaseURL}}: set the public URL under Settings › General{{end}}. <a href="/settings/nodes">Back to the nodes</a> and add a node anew.</div></div>
+{{- end}}
+
+{{- else}}
+{{- if not $n.HasCredential}}
+<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>The credential is revoked; the node cannot reach this server and its targets wait. {{if $d.Cmd}}Run the command below on the node to enrol it again.{{else}}Rotate the credential for a new install command.{{end}}</div></div>
+{{- else if and $n.Enabled (not $r.S.Online)}}
+<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>Offline: {{if $r.S.LastSeen.IsZero}}not seen since this server started{{else}}last seen {{since $p.Now $r.S.LastSeen.Unix}}{{end}}. Its targets keep their last state and wait; they are checked as soon as it polls again. Check that the service runs on the machine (<span class="mono">systemctl status tlswatch-node</span>, <span class="mono">journalctl -u tlswatch-node</span>) and that it can reach this server.</div></div>
+{{- else if not $n.Enabled}}
+<div class="notice info" role="status">{{template "notice-icon" "info"}}<div>Disabled: the node receives no jobs and its targets wait, without an alert.</div></div>
+{{- end}}
+{{- if and $n.UpdateFailed (ne $n.Version $d.Version)}}
+<div class="notice warn" role="status">{{template "notice-icon" "warn"}}<div>The update from {{$n.UpdateFrom}} to {{$n.UpdateTo}} failed: {{$n.UpdateFailed}}. The node is not updated again until you press Update.</div></div>
+{{- else if and $n.Facts.Container (ne $n.Version $d.Version)}}
+<div class="notice info" role="status">{{template "notice-icon" "info"}}<div>This node runs in a container on {{$n.Version}}. Update it by pulling <span class="mono">{{if $d.Release}}ghcr.io/sjoerd305/tlswatch:{{$d.Version}}{{else}}the image of this server's version{{end}}</span>.</div></div>
+{{- end}}
+<div class="grid-main-side w360">
+  <div class="stack">
+    {{- if $d.Cmd}}
+    <section class="card form">
+      <h3 class="h3">Run this as root on the node to enrol it again</h3>
+      {{template "cmd" $d.Cmd.Script}}
+      <span class="help">Valid until {{datetime $p.Loc $n.TokenExpires}}. You confirm the machine again once it enrolled. In a container, recreate it with <span class="mono">-token</span> from: </span>
+      {{template "cmd" $d.Cmd.Docker}}
+    </section>
+    {{- end}}
+    <section class="card clip">
+      <div class="sec"><h2>Machine</h2><span class="meta">reported {{since $p.Now $n.FactsAt}}</span></div>
+      <div class="li">{{template "node-facts" (frag $p $n)}}</div>
+    </section>
+    <section class="card clip">
+      <div class="sec"><h2>Targets probed from this node · {{len $d.Targets}}</h2>{{if $p.Can "targets.edit"}}<a href="/targets/new">Add target</a>{{end}}</div>
+      {{- if $d.Targets}}
+      <table class="tbl cards">
+        <thead><tr><th>Status</th><th>Name</th><th>Host</th><th>Last check</th></tr></thead>
+        <tbody>
+        {{- range $d.Targets}}
+          <tr{{if not .Enabled}} class="muted"{{end}}><td data-label="Status" class="m-lead">{{if waiting .}}<span class="st off">waiting for node</span>{{else}}{{template "status" .Status}}{{end}}</td><td data-label="Name" class="m-lead"><a href="/targets/{{.ID}}" class="ink strong" data-row-link>{{.Name}}</a></td><td data-label="Host" class="mono">{{.HostPort}}</td><td data-label="Last check" class="mono muted">{{when $p.Loc $p.Now .LastCheck}}</td></tr>
+        {{- end}}
+        </tbody>
+      </table>
+      {{- else}}
+      <div class="empty"><span>No targets yet. Choose this node under "Probe from" on a target.</span></div>
+      {{- end}}
+    </section>
+  </div>
+  <div class="stack">
+    <form class="card form" method="post" action="/settings/nodes/{{$n.ID}}">
+      {{template "csrf" $p.CSRF}}
+      <div class="field"><label class="label" for="nname">Name</label><input id="nname" name="name" class="input" value="{{$d.Name}}" maxlength="80" required></div>
+      <div class="field"><label class="label" for="nnotes">Notes</label><textarea id="nnotes" name="notes" class="input" rows="3" maxlength="4000" placeholder="Where it runs, who to call">{{$d.Notes}}</textarea></div>
+      <div class="form-foot"><button type="submit" class="btn btn-primary">Save</button></div>
+    </form>
+    <section class="card clip">
+      <div class="sec"><h2>Node</h2></div>
+      <div class="li">
+        <dl class="kv narrow">
+          <dt>Confirmed</dt><dd>{{date $p.Loc $n.ConfirmedAt}}{{if $n.ConfirmedBy}} by {{$n.ConfirmedBy}}{{end}}</dd>
+          <dt>Last seen</dt><dd class="mono">{{if $r.S.LastSeen.IsZero}}never{{else}}{{since $p.Now $r.S.LastSeen.Unix}}{{end}}</dd>
+          <dt>Probes</dt><dd>{{$n.PoolSize}} at once{{if or $r.S.Running $r.S.Queued}} · {{$r.S.Running}} running, {{$r.S.Queued}} queued{{end}}</dd>
+          <dt>Since start</dt><dd>{{$r.S.Completed}} done{{if $r.S.Failed}}, <span class="warn-t">{{$r.S.Failed}} failed</span>{{end}}</dd>
+        </dl>
+      </div>
+      <div class="li"><form method="post" action="/settings/nodes/{{$n.ID}}/rotate" data-confirm="Revoke the current credential now and make a new install command? The node stops until the command runs on it.">{{template "csrf" $p.CSRF}}<button type="submit" class="btn-link">Rotate credential</button></form></div>
+    </section>
+    <section class="card form">
+      <h3 class="h3">Remove from the machine</h3>
+      {{template "cmd" $d.Uninstall}}
+      <span class="help">Or, when the binary is gone or broken:</span>
+      {{template "cmd" $d.UninstallScript}}
+      <span class="help">Stops the service and removes the files, the credential and the system user. Delete the node here as well.</span>
+    </section>
+  </div>
+</div>
+{{- end}}
+{{end}}

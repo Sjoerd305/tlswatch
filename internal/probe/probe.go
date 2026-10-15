@@ -1,6 +1,6 @@
 // Package probe connects to TLS endpoints, captures the presented chain and
-// verifies it. It has no database access so that a remote probe agent can
-// reuse it later.
+// verifies it. It has no database access, so a node (internal/node) runs it
+// unchanged inside another network.
 package probe
 
 import (
@@ -86,6 +86,9 @@ type Request struct {
 	Timeout    time.Duration // per attempt, connect plus handshake; default 10 s
 	Retries    int           // extra attempts per address after a connect or handshake error
 	AllowLocal bool          // allow loopback, link-local and unspecified addresses
+	// Allow, when set, refuses an address it returns an error for; a node
+	// uses it for its own allowlist.
+	Allow func(net.IP) error
 	// Legacy also tests every answering address for TLS 1.0 and 1.1, one
 	// handshake per version pinned to it.
 	Legacy   bool
@@ -248,6 +251,11 @@ func probeAddress(ctx context.Context, req Request, ip net.IP) (Address, bool) {
 	if !req.AllowLocal && IsLocalIP(ip) {
 		return Address{IP: ip.String(), ErrorKind: ErrRefused, Error: "loopback and link-local addresses are not allowed as targets"}, false
 	}
+	if req.Allow != nil {
+		if err := req.Allow(ip); err != nil {
+			return Address{IP: ip.String(), ErrorKind: ErrRefused, Error: err.Error()}, false
+		}
+	}
 	var a Address
 	for attempt := 0; attempt <= max(req.Retries, 0); attempt++ {
 		if attempt > 0 {
@@ -262,7 +270,7 @@ func probeAddress(ctx context.Context, req Request, ip net.IP) (Address, bool) {
 		if a.OK || (a.ErrorKind != ErrConnect && a.ErrorKind != ErrHandshake) {
 			break
 		}
-		if attempt == 0 && a.ErrorKind == ErrConnect && ip.To4() == nil && isUnreachable(err) && !hasIPv6Route() {
+		if attempt == 0 && a.ErrorKind == ErrConnect && ip.To4() == nil && isUnreachable(err) && !HasIPv6Route() {
 			return a, true
 		}
 	}
@@ -405,12 +413,34 @@ func clientConfig(serverName string) *tls.Config {
 	}
 }
 
+// Verify recomputes the hostname check and the chain verification of an
+// address that answered, from its chain and the request. The server runs it
+// on a chain a node captured, so bundle trust and the hostname are judged
+// in one place.
+func Verify(a *Address, req Request) {
+	if !a.OK || len(a.Chain) == 0 {
+		return
+	}
+	if req.Now == nil {
+		req.Now = time.Now
+	}
+	a.HostnameChecked, a.HostnameOK = false, false
+	a.Verified, a.VerifyError, a.VerifiedChain = false, "", nil
+	verify(a, req)
+}
+
+// CheckHostname reports whether the hostname is checked (a server name is
+// set) and whether the leaf covers it.
+func CheckHostname(leaf *x509.Certificate, serverName string) (checked, ok bool) {
+	if serverName == "" {
+		return false, false
+	}
+	return true, leaf.VerifyHostname(strings.TrimSuffix(serverName, ".")) == nil
+}
+
 func verify(a *Address, req Request) {
 	leaf := a.Chain[0]
-	if req.ServerName != "" {
-		a.HostnameChecked = true
-		a.HostnameOK = leaf.VerifyHostname(strings.TrimSuffix(req.ServerName, ".")) == nil
-	}
+	a.HostnameChecked, a.HostnameOK = CheckHostname(leaf, req.ServerName)
 	if req.Trust == TrustSelfSigned {
 		return
 	}
@@ -505,9 +535,10 @@ var v6route struct {
 	ok      bool
 }
 
-// hasIPv6Route reports whether this host has a global IPv6 route, cached for
-// a minute. A UDP "dial" sends nothing; it only asks the kernel for a route.
-func hasIPv6Route() bool {
+// HasIPv6Route reports whether this host has a global IPv6 route, cached
+// for a minute. A UDP "dial" sends nothing; it only asks the kernel for a
+// route.
+func HasIPv6Route() bool {
 	v6route.Lock()
 	defer v6route.Unlock()
 	if time.Since(v6route.checked) < time.Minute {

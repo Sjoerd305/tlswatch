@@ -32,10 +32,13 @@ const (
 	TLSUnavailable     Kind = "tls_unavailable"
 	Unreachable        Kind = "unreachable"
 	DNSFailed          Kind = "dns_failed"
+	// NodeOffline is opened on a node, not on a target, by the node
+	// dispatcher; Evaluate never returns it.
+	NodeOffline Kind = "node_offline"
 )
 
 // Kinds lists every kind, for filters.
-var Kinds = []Kind{Expiring, Expired, ChainUntrusted, SelfSigned, HostnameMismatch, WeakSignature, LegacyProtocol, CertificateChanged, IssuerChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed}
+var Kinds = []Kind{Expiring, Expired, ChainUntrusted, SelfSigned, HostnameMismatch, WeakSignature, LegacyProtocol, CertificateChanged, IssuerChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed, NodeOffline}
 
 // Label is the human name of a kind.
 func (k Kind) Label() string {
@@ -58,6 +61,8 @@ func (k Kind) Label() string {
 		return "STARTTLS unavailable"
 	case DNSFailed:
 		return "DNS failed"
+	case NodeOffline:
+		return "Node offline"
 	}
 	s := string(k)
 	return strings.ToUpper(s[:1]) + s[1:]
@@ -84,6 +89,8 @@ func (k Kind) Short() string {
 		return "dns"
 	case SelfSigned:
 		return "self-signed"
+	case NodeOffline:
+		return "node"
 	}
 	return string(k)
 }

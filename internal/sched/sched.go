@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
+	"math"
 	"math/rand/v2"
 	"strconv"
 	"sync"
@@ -20,9 +21,23 @@ import (
 
 type item struct {
 	id     int64
-	next   int64 // when to run
+	next   int64 // when to run; held while its node is offline
 	stored int64 // next_check in the database when next was set; -1: unknown
+	node   int64 // the node the target is probed from, 0 for this server
 	idx    int
+}
+
+// held is the run time of a target whose node is offline: it stays in the
+// queue, behind everything else, until the node polls again.
+const held = math.MaxInt64
+
+// NodeProber runs probes on nodes (node.Dispatcher).
+type NodeProber interface {
+	// Online reports whether jobs can go to the node now.
+	Online(id int64) bool
+	// Probe runs a probe on the node and waits for its result; it fails
+	// with core.ErrNodeOffline when the node is offline.
+	Probe(ctx context.Context, nodeID int64, req probe.Request) (probe.Result, error)
 }
 
 type queue []*item
@@ -49,13 +64,20 @@ type Scheduler struct {
 	// PruneSessions removes expired sessions and tokens; run hourly with
 	// the retention.
 	PruneSessions func(ctx context.Context) error
+	// Nodes probes the targets assigned to a node. Their checks run
+	// outside the worker pool, which stays free for local probes; the
+	// node's own pool size bounds them.
+	Nodes NodeProber
 
 	mu       sync.Mutex
 	q        queue
 	byID     map[int64]*item
 	inflight map[int64]chan struct{}
-	fails    map[int64]int // consecutive checks that could not be stored
+	fails    map[int64]int            // consecutive checks that could not be stored
+	held     map[int64]map[int64]bool // node → targets held while it is offline
 	running  int
+	nodeRun  int            // checks running on nodes, outside the pool
+	onNodes  int            // queued targets that are probed from a node
 	wg       sync.WaitGroup // checks and housekeeping started by Run
 	wake     chan struct{}
 	reload   chan struct{}
@@ -74,6 +96,7 @@ func (s *Scheduler) init() {
 		s.byID = map[int64]*item{}
 		s.inflight = map[int64]chan struct{}{}
 		s.fails = map[int64]int{}
+		s.held = map[int64]map[int64]bool{}
 		s.wake = make(chan struct{}, 1)
 		s.reload = make(chan struct{}, 1)
 	})
@@ -103,6 +126,8 @@ type Status struct {
 	Backlog   int           // targets due and not yet started
 	Overdue   time.Duration // how long the oldest of them has waited
 	Running   int
+	OnNodes   int // checks running on nodes
+	Held      int // targets held while their node is offline
 	Checks    int64
 }
 
@@ -111,9 +136,12 @@ func (s *Scheduler) Status() Status {
 	s.init()
 	now := s.now().Unix()
 	s.mu.Lock()
-	backlog := 0
+	backlog, heldN := 0, 0
 	for _, it := range s.q {
-		if it.next <= now {
+		switch {
+		case it.next == held:
+			heldN++
+		case it.next <= now:
 			backlog++
 		}
 	}
@@ -121,11 +149,12 @@ func (s *Scheduler) Status() Status {
 	if len(s.q) > 0 && s.q[0].next > 0 && s.q[0].next < now {
 		overdue = time.Duration(now-s.q[0].next) * time.Second
 	}
-	running := s.running
+	running, onNodes := s.running, s.nodeRun
 	s.mu.Unlock()
 	s.statMu.Lock()
 	defer s.statMu.Unlock()
-	return Status{LastLoop: s.lastLoop, LastCheck: s.lastCheck, Backlog: backlog, Overdue: overdue, Running: running, Checks: s.checks}
+	return Status{LastLoop: s.lastLoop, LastCheck: s.lastCheck, Backlog: backlog, Overdue: overdue, Running: running, OnNodes: onNodes,
+		Held: heldN, Checks: s.checks}
 }
 
 // load merges the database schedule into the queue. A queued target keeps
@@ -146,19 +175,20 @@ func (s *Scheduler) load(ctx context.Context, startup bool) error {
 	spread := max(int64(300), int64(len(sched))) // at least one second per target
 	for id, it := range s.byID {
 		if _, ok := sched[id]; !ok {
-			heap.Remove(&s.q, it.idx)
-			delete(s.byID, id)
+			s.removeLocked(it)
 		}
 	}
-	for id, stored := range sched {
-		if it, ok := s.byID[id]; ok && it.stored == stored {
+	for id, sl := range sched {
+		if it, ok := s.byID[id]; ok && it.stored == sl.Next {
+			s.nodeLocked(it, sl.Node)
 			continue
 		}
-		next := stored
+		next := sl.Next
 		if startup && next != 0 && next < now {
 			next = now + rand.Int64N(spread) // #nosec G404 -- schedule jitter, not a secret
 		}
-		s.setLocked(id, next, stored)
+		s.setLocked(id, next, sl.Next)
+		s.nodeLocked(s.byID[id], sl.Node)
 	}
 	return nil
 }
@@ -251,7 +281,7 @@ func (s *Scheduler) Pause(ctx context.Context) error {
 func (s *Scheduler) Resume(ctx context.Context, reset bool) {
 	s.mu.Lock()
 	if reset {
-		s.q, s.byID, s.fails = nil, map[int64]*item{}, map[int64]int{}
+		s.q, s.byID, s.fails, s.held, s.onNodes = nil, map[int64]*item{}, map[int64]int{}, map[int64]map[int64]bool{}, 0
 	}
 	s.mu.Unlock()
 	if reset {
@@ -266,37 +296,156 @@ func (s *Scheduler) Resume(ctx context.Context, reset bool) {
 	signal(s.wake)
 }
 
-// dispatch starts due checks while workers are free.
+// dispatch starts due checks: local ones while workers are free, node ones
+// whenever their node is online (the node's pool bounds them). A due
+// target whose node is offline is held until the node polls again.
 func (s *Scheduler) dispatch(ctx context.Context) {
 	limit := s.workers(ctx)
 	now := s.now().Unix()
+	var waiting []*item // local checks due while the pool is full
+	defer func() {
+		s.mu.Lock()
+		for _, it := range waiting {
+			if _, dup := s.byID[it.id]; !dup {
+				s.pushLocked(it)
+			}
+		}
+		s.mu.Unlock()
+	}()
 	for {
 		s.mu.Lock()
-		if s.paused || s.running >= limit || len(s.q) == 0 || s.q[0].next > now {
+		full := s.running >= limit
+		if s.paused || len(s.q) == 0 || s.q[0].next > now || full && s.onNodes == 0 {
 			s.mu.Unlock()
 			return
 		}
-		it := heap.Pop(&s.q).(*item)
-		delete(s.byID, it.id)
+		it := s.popLocked()
 		if _, busy := s.inflight[it.id]; busy {
 			s.mu.Unlock()
 			continue
 		}
+		if it.node == 0 && full {
+			waiting = append(waiting, it)
+			s.mu.Unlock()
+			continue
+		}
+		if it.node != 0 {
+			s.mu.Unlock()
+			online := s.Nodes != nil && s.Nodes.Online(it.node)
+			s.mu.Lock()
+			_, dup := s.byID[it.id]
+			_, busy := s.inflight[it.id]
+			switch {
+			case dup || busy:
+				s.mu.Unlock()
+				continue
+			case !online:
+				s.holdLocked(it, it.stored)
+				s.mu.Unlock()
+				continue
+			}
+			s.nodeRun++
+		} else {
+			s.running++
+		}
 		done := make(chan struct{})
 		s.inflight[it.id] = done
-		s.running++
 		s.mu.Unlock()
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
-			s.run(ctx, it.id, done)
+			s.run(ctx, it.id, it.node, done)
 		}()
 	}
 }
 
-func (s *Scheduler) run(ctx context.Context, id int64, done chan struct{}) {
-	t, err := s.check(ctx, id, false)
+// pushLocked puts an item into the queue.
+func (s *Scheduler) pushLocked(it *item) {
+	s.byID[it.id] = it
+	heap.Push(&s.q, it)
+	if it.node != 0 {
+		s.onNodes++
+	}
+}
+
+// popLocked takes the first item off the queue.
+func (s *Scheduler) popLocked() *item {
+	it := heap.Pop(&s.q).(*item)
+	delete(s.byID, it.id)
+	if it.node != 0 {
+		s.onNodes--
+	}
+	return it
+}
+
+// removeLocked drops a queued item.
+func (s *Scheduler) removeLocked(it *item) {
+	heap.Remove(&s.q, it.idx)
+	delete(s.byID, it.id)
+	if it.node != 0 {
+		s.onNodes--
+	}
+}
+
+// nodeLocked records the node a queued target is probed from.
+func (s *Scheduler) nodeLocked(it *item, node int64) {
+	if it == nil || it.node == node {
+		return
+	}
 	switch {
+	case it.node == 0:
+		s.onNodes++
+	case node == 0:
+		s.onNodes--
+	}
+	it.node = node
+}
+
+// holdLocked keeps a target queued, behind everything else, until its node
+// polls again.
+func (s *Scheduler) holdLocked(it *item, stored int64) {
+	if _, ok := s.byID[it.id]; !ok {
+		it.next, it.stored = held, stored
+		s.pushLocked(it)
+	} else {
+		s.setLocked(it.id, held, stored)
+	}
+	if s.held[it.node] == nil {
+		s.held[it.node] = map[int64]bool{}
+	}
+	s.held[it.node][it.id] = true
+}
+
+// NodeOnline releases the targets held for a node that polls again: the
+// overdue ones are checked right away, spread over a few minutes.
+func (s *Scheduler) NodeOnline(node int64) {
+	s.init()
+	now := s.now().Unix()
+	s.mu.Lock()
+	ids := s.held[node]
+	delete(s.held, node)
+	spread := min(int64(300), max(int64(30), 3*int64(len(ids))))
+	n := 0
+	for id := range ids {
+		if it, ok := s.byID[id]; ok && it.next == held {
+			s.setLocked(id, now+rand.Int64N(spread), it.stored) // #nosec G404 -- schedule jitter, not a secret
+			n++
+		}
+	}
+	s.mu.Unlock()
+	if n > 0 {
+		s.Log.Info("node back: checking its held targets", "node_id", node, "targets", n, "spread_s", spread)
+		signal(s.wake)
+	}
+}
+
+func (s *Scheduler) run(ctx context.Context, id, node int64, done chan struct{}) {
+	t, err := s.check(ctx, id, false)
+	offline := errors.Is(err, core.ErrNodeOffline)
+	switch {
+	case offline:
+		s.Log.Info("check held: the node is offline", "target_id", id, "target", t.Name, "node_id", t.NodeID)
+	case errors.Is(err, core.ErrNodesPaused):
 	case errors.Is(err, core.ErrStale):
 		// Edited or disabled meanwhile; the reload picks up the new slot.
 		s.Log.Info("check discarded: target changed during the check", "target_id", id, "target", t.Name)
@@ -305,11 +454,18 @@ func (s *Scheduler) run(ctx context.Context, id int64, done chan struct{}) {
 		s.Log.Error("check failed", "target_id", id, "target", t.Name, "err", err)
 	}
 	s.mu.Lock()
-	s.running--
+	if node != 0 {
+		s.nodeRun--
+	} else {
+		s.running--
+	}
 	delete(s.inflight, id)
+	if offline && ctx.Err() == nil && t.Enabled {
+		s.holdLocked(&item{id: id, node: t.NodeID}, t.NextCheck)
+	}
 	s.mu.Unlock()
 	close(done)
-	if ctx.Err() != nil {
+	if ctx.Err() != nil || offline {
 		return
 	}
 	s.requeue(ctx, id, t, err)
@@ -348,10 +504,11 @@ func (s *Scheduler) requeue(ctx context.Context, id int64, t core.Target, checkE
 	if checkErr == nil {
 		delete(s.fails, id)
 		s.setLocked(id, t.NextCheck, t.NextCheck)
-		return
+	} else {
+		s.fails[id]++
+		s.setLocked(id, s.now().Add(retryDelay(s.fails[id])).Unix(), t.NextCheck)
 	}
-	s.fails[id]++
-	s.setLocked(id, s.now().Add(retryDelay(s.fails[id])).Unix(), t.NextCheck)
+	s.nodeLocked(s.byID[id], t.NodeID)
 }
 
 // runAt queues a target to run at next, keeping what is known of its
@@ -372,9 +529,7 @@ func (s *Scheduler) setLocked(id, next, stored int64) {
 		heap.Fix(&s.q, it.idx)
 		return
 	}
-	it := &item{id: id, next: next, stored: stored}
-	s.byID[id] = it
-	heap.Push(&s.q, it)
+	s.pushLocked(&item{id: id, next: next, stored: stored})
 }
 
 // check probes and stores one target; legacy tests TLS 1.0 and 1.1 even
@@ -390,11 +545,21 @@ func (s *Scheduler) check(ctx context.Context, id int64, legacy bool) (core.Targ
 		return t, err
 	}
 	req.Legacy = req.Legacy || legacy && !t.SkipLegacy
-	pf := probe.Probe
-	if s.Probe != nil {
-		pf = s.Probe
+	var r probe.Result
+	if t.NodeID != 0 {
+		if s.Nodes == nil {
+			return t, core.ErrNodeOffline
+		}
+		if r, err = s.Nodes.Probe(ctx, t.NodeID, req); err != nil {
+			return t, err
+		}
+	} else {
+		pf := probe.Probe
+		if s.Probe != nil {
+			pf = s.Probe
+		}
+		r = pf(ctx, req)
 	}
-	r := pf(ctx, req)
 	if ctx.Err() != nil {
 		return t, ctx.Err()
 	}
@@ -406,7 +571,7 @@ func (s *Scheduler) check(ctx context.Context, id int64, legacy bool) (core.Targ
 	s.lastCheck = s.now()
 	s.checks++
 	s.statMu.Unlock()
-	attrs := append([]any{"target_id", t.ID, "target", t.Name, "endpoint", t.HostPort(), "addresses", len(r.Addresses),
+	attrs := append([]any{"target_id", t.ID, "target", t.Name, "endpoint", t.HostPort(), "node_id", t.NodeID, "addresses", len(r.Addresses),
 		"dns_error", r.DNSError, "ms", r.Duration.Milliseconds()}, sum.LogAttrs()...)
 	s.Log.Info("checked", attrs...)
 	return s.Core.Target(ctx, id)
@@ -449,6 +614,7 @@ func (s *Scheduler) CheckNow(ctx context.Context, id int64) (core.Target, error)
 		s.mu.Lock()
 		delete(s.fails, id)
 		s.setLocked(id, t.NextCheck, t.NextCheck)
+		s.nodeLocked(s.byID[id], t.NodeID)
 		s.mu.Unlock()
 	}
 	return t, err
@@ -473,6 +639,11 @@ func (s *Scheduler) CheckAll(ctx context.Context) (int, error) {
 	for id := range sched {
 		s.runAt(id, now)
 	}
+	s.mu.Lock()
+	for id, sl := range sched {
+		s.nodeLocked(s.byID[id], sl.Node)
+	}
+	s.mu.Unlock()
 	signal(s.wake)
 	return len(sched), nil
 }

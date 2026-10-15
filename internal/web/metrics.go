@@ -52,6 +52,35 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	p.sample("tlswatch_scheduler_overdue_seconds", nil, st.Overdue.Seconds())
 	p.metric("tlswatch_scheduler_running", "gauge", "Checks running now.")
 	p.sample("tlswatch_scheduler_running", nil, float64(st.Running))
+	p.metric("tlswatch_scheduler_node_checks", "gauge", "Checks running on nodes now.")
+	p.sample("tlswatch_scheduler_node_checks", nil, float64(st.OnNodes))
+	p.metric("tlswatch_scheduler_held", "gauge", "Targets held while their node is offline.")
+	p.sample("tlswatch_scheduler_held", nil, float64(st.Held))
+	stats := s.Nodes.Stats()
+	sort.Slice(stats, func(i, j int) bool { return stats[i].Node.Label() < stats[j].Node.Label() })
+	online := 0
+	for _, n := range stats {
+		if n.Online {
+			online++
+		}
+	}
+	p.metric("tlswatch_nodes", "gauge", "Confirmed nodes by state.")
+	p.sample("tlswatch_nodes", map[string]string{"state": "online"}, float64(online))
+	p.sample("tlswatch_nodes", map[string]string{"state": "offline"}, float64(len(stats)-online))
+	if len(stats) > 0 {
+		now := s.now()
+		p.metric("tlswatch_node_last_seen_seconds", "gauge", "Seconds since each node's last request.")
+		for _, n := range stats {
+			if !n.LastSeen.IsZero() {
+				p.sample("tlswatch_node_last_seen_seconds", map[string]string{"node": n.Node.Label()}, now.Sub(n.LastSeen).Seconds())
+			}
+		}
+		p.metric("tlswatch_node_jobs_total", "counter", "Probe jobs per node since the process started, by result.")
+		for _, n := range stats {
+			p.sample("tlswatch_node_jobs_total", map[string]string{"node": n.Node.Label(), "result": "completed"}, float64(n.Completed))
+			p.sample("tlswatch_node_jobs_total", map[string]string{"node": n.Node.Label(), "result": "failed"}, float64(n.Failed))
+		}
+	}
 	if !st.LastCheck.IsZero() {
 		p.metric("tlswatch_last_check_seconds", "gauge", "When the last check was stored, as a Unix time.")
 		p.sample("tlswatch_last_check_seconds", nil, float64(st.LastCheck.Unix()))

@@ -109,11 +109,19 @@ type Defaults struct {
 	DigestChannels []int64    `json:"digest_channels"` // empty = every SMTP channel
 }
 
+// Nodes holds the settings of Settings › Nodes.
+type Nodes struct {
+	// AutoUpdate keeps every node on the server's version: one at a time,
+	// a node on another version is sent an update.
+	AutoUpdate bool `json:"auto_update"`
+}
+
 // Settings is the full runtime configuration.
 type Settings struct {
 	General  General
 	SignIn   SignIn
 	Defaults Defaults
+	Nodes    Nodes
 	// Env lists the setting names that the environment overrides, keyed by
 	// form field name (for example "base_url").
 	Env map[string]string
@@ -146,6 +154,7 @@ func (s Settings) GoogleEnabled() bool {
 func DefaultSettings() Settings {
 	return Settings{
 		General: General{},
+		Nodes:   Nodes{AutoUpdate: true},
 		Defaults: Defaults{
 			Manual:        Thresholds{WarnDays: 30, CritDays: 7},
 			Managed:       Thresholds{WarnDays: 10, CritDays: 3},
@@ -244,6 +253,7 @@ const (
 	keySignIn   = "signin"
 	keySecret   = "signin.google_client_secret"
 	keyDefaults = "defaults"
+	keyNodes    = "nodes"
 )
 
 // Get returns the current settings, environment overrides applied.
@@ -261,6 +271,9 @@ func (s *Store) Get(ctx context.Context) (Settings, error) {
 		return st, err
 	}
 	if err := s.load(ctx, keyDefaults, &st.Defaults); err != nil {
+		return st, err
+	}
+	if err := s.load(ctx, keyNodes, &st.Nodes); err != nil {
 		return st, err
 	}
 	var sealed string
@@ -378,6 +391,9 @@ func (s *Store) SaveDefaults(ctx context.Context, d Defaults) error {
 	}
 	return s.save(ctx, keyDefaults, d)
 }
+
+// SaveNodes stores the node settings.
+func (s *Store) SaveNodes(ctx context.Context, n Nodes) error { return s.save(ctx, keyNodes, n) }
 
 // HasGoogleSecret reports whether a client secret is stored or set by env.
 func (s Settings) HasGoogleSecret() bool { return s.SignIn.GoogleClientSecret != "" }

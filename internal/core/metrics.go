@@ -24,8 +24,8 @@ func (s *Service) Metrics(ctx context.Context) (Metrics, error) {
 		into map[string]int
 	}{
 		{"SELECT status, COUNT(*) FROM targets GROUP BY status", m.TargetsByStatus},
-		{`SELECT f.severity, COUNT(*) FROM findings f JOIN targets t ON t.id = f.target_id
-			WHERE f.resolved_at = 0 AND t.enabled = 1 GROUP BY f.severity`, m.OpenBySeverity},
+		{`SELECT f.severity, COUNT(*) FROM findings f LEFT JOIN targets t ON t.id = f.target_id
+			WHERE f.resolved_at = 0 AND (t.enabled = 1 OR f.node_id IS NOT NULL) GROUP BY f.severity`, m.OpenBySeverity},
 		{"SELECT state, COUNT(*) FROM alerts WHERE state IN ('pending', 'failed') GROUP BY state", m.AlertsByState},
 	}
 	for _, c := range counts {

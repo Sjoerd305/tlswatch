@@ -105,11 +105,14 @@ func (s *Server) fill(w http.ResponseWriter, r *http.Request, p *Page) {
 		}
 		p.Counts = s.Core.Nav(r.Context())
 		if p.Live {
-			p.Stamp, _, _ = s.Core.Stamp(r.Context())
+			p.Stamp = s.stamp(r.Context())
 		}
 		// The reminder is for the home screen only, not every page.
 		if p.Nav == "overview" && u.Role == authz.Admin && ri.settings.General.BaseURL == "" {
 			p.Notices = append(p.Notices, Notice{Kind: "info", Text: "Set the public URL under Settings › General so alerts link back to tlswatch."})
+		}
+		if p.Nav == "overview" {
+			p.Notices = append(p.Notices, s.offlineNotices(r.Context(), p.Loc, p.Now)...)
 		}
 	} else {
 		p.CSRF = s.preCSRF(w, r)
@@ -258,7 +261,11 @@ func (s *Server) funcs() template.FuncMap {
 			return many
 		},
 		"defaultPort": func(p probe.Protocol) int { return probe.DefaultPort(p) },
-		"hostport":    func(host string, port int) string { return core.Target{Host: host, Port: port}.HostPort() },
+		// waiting: the target's node is offline, so it shows "Waiting for node".
+		"waiting":  s.waiting,
+		"since":    func(now time.Time, unix int64) string { return sinceLabel(now, unix) },
+		"offset":   offsetLabel,
+		"hostport": func(host string, port int) string { return core.Target{Host: host, Port: port}.HostPort() },
 	}
 }
 
@@ -320,4 +327,30 @@ func durationLabel(secs int) string {
 		return fmt.Sprintf("%d h", secs/3600)
 	}
 	return fmt.Sprintf("%d min", secs/60)
+}
+
+// sinceLabel is how long ago a moment was: "just now", "12 min ago",
+// "3 h ago", "4 d ago".
+func sinceLabel(now time.Time, unix int64) string {
+	if unix == 0 {
+		return "never"
+	}
+	d := now.Sub(time.Unix(unix, 0))
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%d min ago", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%d h ago", int(d.Hours()))
+	}
+	return fmt.Sprintf("%d d ago", int(d.Hours()/24))
+}
+
+// offsetLabel renders a clock offset in milliseconds: "+0.3 s".
+func offsetLabel(ms int64) string {
+	if ms > -500 && ms < 500 {
+		return "in sync"
+	}
+	return fmt.Sprintf("%+.1f s", float64(ms)/1000)
 }

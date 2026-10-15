@@ -2,7 +2,7 @@
 <div class="crumbs"><a href="/targets">Targets</a><span>/</span><span>{{$t.Name}}</span></div>
 <div class="page-head top-align">
   <div>
-    <div class="title-row"><h1>{{$t.Name}}</h1>{{template "status" $t.Status}}</div>
+    <div class="title-row"><h1>{{$t.Name}}</h1>{{if waiting $t}}<span class="st off">Waiting for node</span>{{else}}{{template "status" $t.Status}}{{end}}</div>
     <div class="sub-row"><span class="mono">{{$t.HostPort}}</span><span class="tag">{{$t.Protocol}}</span>{{range $t.Tags}}<a class="tag" href="/targets?tag={{.}}">{{.}}</a>{{end}}</div>
   </div>
   {{- if $p.Can "targets.edit"}}
@@ -22,6 +22,8 @@
 </div>
 {{- if not $t.Enabled}}
 <div class="notice info" role="status">{{template "notice-icon" "info"}}<div>This target is disabled and not checked. History is kept.</div></div>
+{{- else if waiting $t}}
+<div class="notice warn" role="status">{{template "notice-icon" "warn"}}<div>Waiting for node {{$t.NodeName}}: it is offline{{if $t.LastCheck}}, so this page shows the check of {{whenTime $p.Loc $p.Now $t.LastCheck}}{{end}}. The next check runs as soon as the node polls again; nothing opens or alerts here meanwhile.</div></div>
 {{- else if not $t.LastCheck}}
 <div class="notice info" role="status">{{template "notice-icon" "info"}}<div>Not checked yet. The first check runs shortly{{if $p.Can "targets.edit"}}, or use Check now{{end}}.</div></div>
 {{- else if and $t.LastError (not $c)}}
@@ -122,6 +124,7 @@
       <h2 class="h-sec">Configuration</h2>
       <dl class="kv w110">
         <dt>Protocol</dt><dd>{{if eq (print $t.Protocol) "tls"}}tls, implicit{{else}}{{$t.Protocol}}, STARTTLS{{end}}</dd>
+        <dt>Probe from</dt><dd>{{if $t.NodeID}}node {{if $p.Can "settings.manage"}}<a href="/settings/nodes/{{$t.NodeID}}">{{$t.NodeName}}</a>{{else}}{{$t.NodeName}}{{end}}{{else}}this server{{end}}</dd>
         <dt>Server name</dt><dd class="mono">{{if $t.ServerName}}{{$t.ServerName}}{{else}}<span class="muted">none</span>{{end}}</dd>
         <dt>Trust</dt><dd>{{if eq (print $t.Trust) "bundle"}}CA bundle "{{$t.BundleName}}"{{else if eq (print $t.Trust) "self-signed"}}self-signed, pinned{{if $t.PinnedFP}} <span class="mono small">{{short $t.PinnedFP}}</span>{{end}}{{else}}system store{{end}}</dd>
         <dt>Renewal</dt><dd>{{if $t.RenewalManaged}}managed (ACME){{else}}manual{{end}}{{if not $t.RenewalSet}} <span class="muted">· from issuer</span>{{end}}</dd>

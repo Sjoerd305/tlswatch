@@ -22,6 +22,7 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/core"
 	"github.com/sjoerd305/tlswatch/internal/db"
+	"github.com/sjoerd305/tlswatch/internal/node"
 	"github.com/sjoerd305/tlswatch/internal/notify"
 	"github.com/sjoerd305/tlswatch/internal/probe"
 	"github.com/sjoerd305/tlswatch/internal/sched"
@@ -65,7 +66,10 @@ func newHarnessUsers(t *testing.T, withUsers bool) *harness {
 		return probe.Result{DNSError: "no such host"}
 	}}
 	a := auth.New(d, key)
-	srv := &Server{Core: c, Sched: sc, Auth: a, Settings: st, Dispatch: disp, Key: key, Log: log, Version: "test", Listen: "test"}
+	c.Key = key
+	nd := &node.Dispatcher{Core: c, Version: "test", Log: log, OnOnline: sc.NodeOnline}
+	sc.Nodes = nd
+	srv := &Server{Core: c, Sched: sc, Nodes: nd, Auth: a, Settings: st, Dispatch: disp, Key: key, Log: log, Version: "test", Listen: "test"}
 	h, err := srv.Handler()
 	if err != nil {
 		t.Fatal(err)
@@ -155,6 +159,15 @@ var protected = []route{
 	{"POST", "/settings/channels", authz.ManageSettings},
 	{"POST", "/settings/channels/1/test", authz.ManageSettings},
 	{"POST", "/settings/channels/1/delete", authz.ManageSettings},
+	{"GET", "/settings/nodes", authz.ManageSettings},
+	{"POST", "/settings/nodes", authz.ManageSettings},
+	{"POST", "/settings/nodes/auto", authz.ManageSettings},
+	{"POST", "/settings/nodes/update-all", authz.ManageSettings},
+	{"GET", "/settings/nodes/1", authz.ManageSettings},
+	{"POST", "/settings/nodes/1/confirm", authz.ManageSettings},
+	{"POST", "/settings/nodes/1/rotate", authz.ManageSettings},
+	{"GET", "/settings/nodes/1/delete", authz.ManageSettings},
+	{"POST", "/settings/nodes/1/delete", authz.ManageSettings},
 	{"GET", "/settings/bundles", authz.ManageSettings},
 	{"POST", "/settings/bundles", authz.ManageSettings},
 	{"POST", "/settings/bundles/1/delete", authz.ManageSettings},

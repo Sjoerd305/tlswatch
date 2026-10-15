@@ -251,7 +251,7 @@ func TestDisabledDuringCheckIsNotRequeued(t *testing.T) {
 	s.running++
 	done := s.inflight[1]
 	s.mu.Unlock()
-	s.run(ctx, 1, done)
+	s.run(ctx, 1, 0, done)
 	if n := s.nextOf(1); n != -1 {
 		t.Fatalf("disabled target queued at %d", n)
 	}
@@ -291,5 +291,81 @@ func TestPauseWaitsAndStopsChecks(t *testing.T) {
 	}
 	if n := atomic.LoadInt64(calls); n < 5 {
 		t.Fatalf("checked %d of 5 targets after resume", n)
+	}
+}
+
+// fakeNodes is a node dispatcher whose node 1 can be switched on and off.
+type fakeNodes struct {
+	online atomic.Bool
+	calls  atomic.Int64
+}
+
+func (f *fakeNodes) Online(int64) bool { return f.online.Load() }
+
+func (f *fakeNodes) Probe(_ context.Context, _ int64, req probe.Request) (probe.Result, error) {
+	if !f.online.Load() {
+		return probe.Result{}, core.ErrNodeOffline
+	}
+	f.calls.Add(1)
+	return probe.Result{Host: req.Host, Port: req.Port, StartedAt: time.Now(),
+		Addresses: []probe.Address{{IP: "10.0.0.1", ErrorKind: probe.ErrConnect, Error: "refused"}}}, nil
+}
+
+func TestNodeTargetsHeldWhileOffline(t *testing.T) {
+	s, c, local := setup(t, 1)
+	ctx := context.Background()
+	id, tok, err := c.CreateNode(ctx, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, _, err := c.EnrolNode(ctx, tok, core.Enrolment{Facts: core.NodeFacts{Hostname: "probe1"}})
+	if err != nil || n.ID != id {
+		t.Fatal(err)
+	}
+	if err := c.ConfirmNode(ctx, id, "dc1", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	tid, err := c.SaveTarget(ctx, core.Target{Name: "inside", Host: "intranet.example", Port: 443, Protocol: probe.TLS,
+		Trust: probe.TrustSystem, AllAddresses: true, AllChannels: true, Enabled: true, NodeID: id}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes := &fakeNodes{}
+	s.Nodes = nodes
+	s.init()
+	if err := s.load(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	// The local pool is full: the node target still runs, outside it.
+	s.mu.Lock()
+	s.running = 1000
+	s.mu.Unlock()
+	s.dispatch(ctx)
+	s.wg.Wait()
+	if n := s.nextOf(tid); n != held {
+		t.Fatalf("node target not held while the node is offline: next %d", n)
+	}
+	if st := s.Status(); st.Held != 1 || st.Backlog != 1 {
+		t.Fatalf("status: %+v", st)
+	}
+	nodes.online.Store(true)
+	s.NodeOnline(id)
+	if n := s.nextOf(tid); n == held || n > time.Now().Unix()+300 {
+		t.Fatalf("held target not released: next %d", n)
+	}
+	s.runAt(tid, time.Now().Unix())
+	s.dispatch(ctx)
+	s.wg.Wait()
+	if nodes.calls.Load() != 1 || *local != 0 {
+		t.Fatalf("node probes %d, local probes %d", nodes.calls.Load(), *local)
+	}
+	tg, _ := c.Target(ctx, tid)
+	if tg.LastCheck == 0 {
+		t.Fatal("the node's result was not stored")
+	}
+	var nodeOf int64
+	_ = c.DB.R.QueryRow("SELECT COALESCE(node_id, 0) FROM observations WHERE target_id = ?", tid).Scan(&nodeOf)
+	if nodeOf != id {
+		t.Fatalf("observation node %d, want %d", nodeOf, id)
 	}
 }

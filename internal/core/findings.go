@@ -14,15 +14,21 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/usererr"
 )
 
-const findingCols = `f.id, f.target_id, f.kind, f.severity, f.opened_at, f.resolved_at, f.details, f.fingerprint, f.days_left,
-	f.ack_by, f.ack_at, f.ack_until, f.ack_comment, f.last_alert_at`
+const findingCols = `f.id, COALESCE(f.target_id, 0), f.kind, f.severity, f.opened_at, f.resolved_at, f.details, f.fingerprint, f.days_left,
+	f.ack_by, f.ack_at, f.ack_until, f.ack_comment, f.last_alert_at, COALESCE(f.node_id, 0)`
+
+// findingSubject joins a finding's target, or its node, and selects the
+// name, host, port and protocol shown with it.
+const findingSubject = `COALESCE(t.name, n.name, ''), COALESCE(t.host, json_extract(n.facts, '$.hostname'), ''), COALESCE(t.port, 0), COALESCE(t.protocol, '')`
+
+const findingJoins = ` LEFT JOIN targets t ON t.id = f.target_id LEFT JOIN nodes n ON n.id = f.node_id `
 
 func scanFinding(r interface{ Scan(...any) error }, extra ...any) (Finding, error) {
 	var f Finding
 	var kind, sev string
 	var days sql.NullInt64
 	dest := append([]any{&f.ID, &f.TargetID, &kind, &sev, &f.OpenedAt, &f.ResolvedAt, &f.Details, &f.Fingerprint, &days,
-		&f.AckBy, &f.AckAt, &f.AckUntil, &f.AckComment, &f.LastAlertAt}, extra...)
+		&f.AckBy, &f.AckAt, &f.AckUntil, &f.AckComment, &f.LastAlertAt, &f.NodeID}, extra...)
 	if err := r.Scan(dest...); err != nil {
 		return f, err
 	}
@@ -41,10 +47,10 @@ type FindingFilter struct {
 // Findings lists findings with their target. Open findings are sorted by
 // severity, then days left; resolved ones newest first.
 func (s *Service) Findings(ctx context.Context, ff FindingFilter) ([]Finding, error) {
-	q := "SELECT " + findingCols + `, t.name, t.host, t.port, t.protocol,
+	q := "SELECT " + findingCols + ", " + findingSubject + `,
 		COALESCE((SELECT GROUP_CONCAT(name, ', ') FROM (SELECT DISTINCT c.name FROM alerts a JOIN channels c ON c.id = a.channel_id
 			WHERE a.finding_id = f.id AND a.created_at = f.last_alert_at)), '')
-		FROM findings f JOIN targets t ON t.id = f.target_id WHERE `
+		FROM findings f` + findingJoins + `WHERE `
 	var args []any
 	if ff.Resolved {
 		q += "f.resolved_at > 0 AND f.severity != 'info'"
@@ -106,7 +112,7 @@ func (s *Service) Findings(ctx context.Context, ff FindingFilter) ([]Finding, er
 func (s *Service) Finding(ctx context.Context, id int64) (Finding, error) {
 	var name, host, proto string
 	var port int
-	f, err := scanFinding(s.DB.R.QueryRowContext(ctx, "SELECT "+findingCols+", t.name, t.host, t.port, t.protocol FROM findings f JOIN targets t ON t.id = f.target_id WHERE f.id = ?", id),
+	f, err := scanFinding(s.DB.R.QueryRowContext(ctx, "SELECT "+findingCols+", "+findingSubject+" FROM findings f"+findingJoins+"WHERE f.id = ?", id),
 		&name, &host, &port, &proto)
 	if errors.Is(err, sql.ErrNoRows) {
 		return f, ErrNotFound
@@ -197,8 +203,10 @@ func (s *Service) Acknowledge(ctx context.Context, id int64, user string, until 
 		user, now, untilU, strings.TrimSpace(comment), resolved, id); err != nil {
 		return f, err
 	}
-	if _, err := s.refreshStatusTx(ctx, tx, f.TargetID); err != nil {
-		return f, err
+	if f.TargetID != 0 {
+		if _, err := s.refreshStatusTx(ctx, tx, f.TargetID); err != nil {
+			return f, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return f, err
@@ -232,6 +240,14 @@ func (s *Service) Remind(ctx context.Context) (int, error) {
 	queued := 0
 	for _, f := range findings {
 		if f.Severity == check.Info || f.Acked(now) {
+			continue
+		}
+		if f.NodeID != 0 {
+			n, err := s.remindNode(ctx, st, f, now)
+			if err != nil {
+				return queued, err
+			}
+			queued += n
 			continue
 		}
 		t, ok := targets[f.TargetID]

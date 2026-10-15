@@ -14,6 +14,15 @@
           {{- range $f.Protocols}}<option value="{{.}}" data-port="{{defaultPort .}}"{{if eq . $t.Protocol}} selected{{end}}>{{template "proto-label" .}}</option>{{end}}
         </select>{{template "err" $e.protocol}}</div>
     </div>
+    {{- if or $f.Nodes $t.NodeID}}
+    <div class="field"><label class="label" for="node">Probe from</label>
+      <select id="node" name="node_id" class="input{{if $e.node_id}} invalid{{end}}">
+        <option value="0">This server</option>
+        {{- $found := false}}
+        {{- range $f.Nodes}}<option value="{{.ID}}"{{if eq .ID $t.NodeID}} selected{{$found = true}}{{end}}>Node {{.Label}}{{if .Facts.Hostname}} ({{.Facts.Hostname}}){{end}}</option>{{end}}
+        {{- if and $t.NodeID (not $found)}}<option value="{{$t.NodeID}}" selected>Node {{or $t.NodeName "not confirmed"}}</option>{{end}}
+      </select><span class="help">A node probes from inside its network: the host is resolved and reached from there. Changing it starts the target's view anew.</span>{{template "err" $e.node_id}}</div>
+    {{- end}}
     <div class="fgrid c2">
       <div class="field"><label class="label" for="name">Name</label><input id="name" name="name" class="input{{if $e.name}} invalid{{end}}" value="{{$t.Name}}" placeholder="defaults to the host" maxlength="120">{{template "err" $e.name}}</div>
       <div class="field"><label class="label" for="servername">Server name, SNI</label><input id="servername" name="servername" class="input mono{{if $e.servername}} invalid{{end}}" value="{{$t.ServerName}}" spellcheck="false" placeholder="defaults to a DNS host"><span class="help">Sent in the handshake, checked against the certificate. Empty for a plain IP target.</span>{{template "err" $e.servername}}</div>

@@ -18,6 +18,7 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/db"
 	"github.com/sjoerd305/tlswatch/internal/notify"
 	"github.com/sjoerd305/tlswatch/internal/probe"
+	"github.com/sjoerd305/tlswatch/internal/secret"
 	"github.com/sjoerd305/tlswatch/internal/usererr"
 )
 
@@ -111,6 +112,10 @@ type Target struct {
 	CreatedAt    int64
 	CreatedBy    string
 	UpdatedAt    int64
+
+	// NodeID is the node the target is probed from, 0 for this server.
+	NodeID   int64
+	NodeName string
 
 	// Current state.
 	Status       string
@@ -280,8 +285,11 @@ type Finding struct {
 	AckUntil    int64
 	AckComment  string
 	LastAlertAt int64
+	// NodeID is set, and TargetID 0, for a finding on a node (node_offline).
+	NodeID int64
 
-	// Joined for display.
+	// Joined for display. For a node finding TargetName is the node's
+	// name and TargetHost its hostname.
 	TargetName     string
 	TargetHost     string
 	TargetPort     int
@@ -297,8 +305,13 @@ func (f Finding) Acked(now time.Time) bool {
 	return f.AckAt > 0 && (f.AckUntil == 0 || f.AckUntil > now.Unix())
 }
 
-// HostPort of the finding's target.
-func (f Finding) HostPort() string { return net.JoinHostPort(f.TargetHost, strconv.Itoa(f.TargetPort)) }
+// HostPort of the finding's target, or the hostname of its node.
+func (f Finding) HostPort() string {
+	if f.NodeID != 0 {
+		return f.TargetHost
+	}
+	return net.JoinHostPort(f.TargetHost, strconv.Itoa(f.TargetPort))
+}
 
 // Service is the domain service.
 type Service struct {
@@ -306,8 +319,11 @@ type Service struct {
 	Settings   *config.Store
 	Channels   *notify.Channels
 	Dispatcher *notify.Dispatcher
-	Now        func() time.Time
-	Log        *slog.Logger
+	// Key seals a node's install token while it is unspent, so the Add
+	// node screen can show its command again; nil keeps no copy.
+	Key *secret.Key
+	Now func() time.Time
+	Log *slog.Logger
 
 	bundles bundleCache
 }

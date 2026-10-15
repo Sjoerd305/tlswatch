@@ -173,7 +173,11 @@ func (s *Server) restore(r *http.Request, file io.Reader, pass string, setup boo
 	// Once the upload is in, finish even if the browser goes away.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Minute)
 	defer cancel()
+	// The node dispatcher first: dropping its jobs ends the node checks
+	// the scheduler waits for.
+	s.Nodes.Pause()
 	if err := s.Sched.Pause(ctx); err != nil {
+		s.Nodes.Resume()
 		return err
 	}
 	release := s.Dispatch.Hold()
@@ -196,6 +200,7 @@ func (s *Server) restore(r *http.Request, file io.Reader, pass string, setup boo
 	s.Auth.Forget()
 	release()
 	s.Sched.Resume(ctx, err == nil)
+	s.Nodes.Resume()
 	if err != nil {
 		return err
 	}

@@ -1,0 +1,23 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}{{$n := $d.N}}
+<div class="crumbs"><a href="/settings/nodes">Nodes</a><span>/</span><a href="/settings/nodes/{{$n.ID}}">{{$n.Label}}</a><span>/</span><span>Delete</span></div>
+<div class="page-head"><div><h1>Delete {{$n.Label}}?</h1>{{if $n.Facts.Hostname}}<span class="summary mono">{{$n.Facts.Hostname}}</span>{{end}}</div></div>
+<section class="card pad">
+  {{- if $d.Targets}}
+  <p>{{len $d.Targets}} {{plural (len $d.Targets) "target is" "targets are"}} probed from this node. A node with targets is not deleted on its own; move them to this server with it, or give them another node first.</p>
+  <table class="tbl cards">
+    <thead><tr><th>Name</th><th>Host</th></tr></thead>
+    <tbody>
+    {{- range $d.Targets}}<tr><td data-label="Name"><a href="/targets/{{.ID}}">{{.Name}}</a></td><td data-label="Host" class="mono">{{.HostPort}}</td></tr>{{end}}
+    </tbody>
+  </table>
+  <p class="muted">Moved targets are checked from this server soon, as a new view of the service: the debounce starts over and TLS 1.0 and 1.1 are tested again. A host this server cannot reach then shows as unreachable.</p>
+  {{- else}}
+  <p>The node and its credential are removed; its findings go with it. It cannot be undone. To keep it for later, disable it instead.</p>
+  {{- end}}
+  <div class="form-foot">
+    <form method="post" action="/settings/nodes/{{$n.ID}}/delete">{{template "csrf" $p.CSRF}}<input type="hidden" name="confirm" value="yes">{{if $d.Targets}}<input type="hidden" name="move" value="yes">{{end}}<button type="submit" class="btn btn-danger">{{if $d.Targets}}Move {{len $d.Targets}} to this server and delete{{else}}Delete permanently{{end}}</button></form>
+    {{- if and $n.Enabled (eq $n.State "confirmed")}}<form method="post" action="/settings/nodes/{{$n.ID}}/disable">{{template "csrf" $p.CSRF}}<button type="submit" class="btn">Disable instead</button></form>{{end}}
+    <a href="/settings/nodes/{{$n.ID}}" class="cancel">Cancel</a>
+  </div>
+</section>
+{{end}}

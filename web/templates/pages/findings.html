@@ -73,7 +73,7 @@
           {{- if $d.Bulk}}<td class="chk m-lead" data-label=""><label class="rowcheck"><input type="checkbox" name="id" value="{{$f.ID}}" form="bulk-ack" aria-label="Select {{lower $f.Kind.Label}} on {{$f.TargetName}}"></label></td>{{end}}
           <td data-label="Severity" class="m-lead"><span class="pill {{$f.Severity.Class}}">{{$f.Severity.Short}}</span></td>
           <td data-label="Finding" class="wrap m-full"><div class="strong">{{$f.Kind.Label}}</div><div class="muted wrap-any">{{$f.Details}}</div></td>
-          <td data-label="Target" class="wrap m-lead"><a href="/targets/{{$f.TargetID}}" class="ink strong">{{$f.TargetName}}</a><div class="mono small muted">{{$f.HostPort}}</div></td>
+          <td data-label="Target" class="wrap m-lead">{{template "finding-subject" (frag $p $f)}}<div class="mono small muted">{{$f.HostPort}}</div></td>
           <td data-label="{{if $d.Resolved}}Resolved{{else}}Since{{end}}" class="mono nowrap m-lead m-end">{{if $d.Resolved}}{{when $p.Loc $p.Now $f.ResolvedAt}}{{else}}{{when $p.Loc $p.Now $f.OpenedAt}}{{end}}</td>
           <td data-label="Last alert" class="muted nowrap m-hide">{{if $f.LastAlertVia}}{{whenTime $p.Loc $p.Now $f.LastAlertAt}}<br>{{$f.LastAlertVia}}{{else}}—{{end}}</td>
           <td data-label="Ack" class="nowrap{{if not $f.AckAt}} m-hide{{end}}">{{if $f.AckAt}}<span class="pill off">{{$f.AckBy}}</span>{{if $f.AckUntil}}<div class="small">until {{when $p.Loc $p.Now $f.AckUntil}}</div>{{end}}{{else}}—{{end}}</td>

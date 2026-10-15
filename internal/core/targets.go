@@ -19,9 +19,10 @@ const targetCols = `t.id, t.name, t.host, t.port, t.protocol, t.servername, t.tr
 	t.renewal_managed, t.renewal_set, t.expected_issuer, t.warn_days, t.crit_days, t.interval_s, t.timeout_s, t.retries, t.debounce,
 	t.remind_warn_s, t.remind_crit_s, t.all_addresses, t.all_channels, t.tags, t.notes, t.enabled, t.created_at, t.created_by, t.updated_at,
 	t.status, t.pinned_fp, t.current_fp, t.not_after, t.tls_version, t.address_count, t.last_check, t.last_error,
-	t.fail_streak, t.ok_streak, t.dns_fail_streak, t.dns_ok_streak, t.next_check, t.legacy_check, t.legacy_checked, t.legacy_accepted`
+	t.fail_streak, t.ok_streak, t.dns_fail_streak, t.dns_ok_streak, t.next_check, t.legacy_check, t.legacy_checked, t.legacy_accepted,
+	COALESCE(t.node_id, 0), COALESCE(n.name, '')`
 
-const targetFrom = ` FROM targets t LEFT JOIN ca_bundles b ON b.id = t.bundle_id `
+const targetFrom = ` FROM targets t LEFT JOIN ca_bundles b ON b.id = t.bundle_id LEFT JOIN nodes n ON n.id = t.node_id `
 
 func scanTarget(r interface{ Scan(...any) error }) (Target, error) {
 	var t Target
@@ -32,7 +33,8 @@ func scanTarget(r interface{ Scan(...any) error }) (Target, error) {
 		&t.RenewalManaged, &t.RenewalSet, &t.ExpectedIssuer, &warn, &crit, &interval, &timeout, &retries, &debounce,
 		&rw, &rc, &t.AllAddresses, &t.AllChannels, &tags, &t.Notes, &t.Enabled, &t.CreatedAt, &t.CreatedBy, &t.UpdatedAt,
 		&t.Status, &t.PinnedFP, &t.CurrentFP, &t.NotAfter, &t.TLSVersion, &t.AddressCount, &t.LastCheck, &t.LastError,
-		&t.FailStreak, &t.OkStreak, &t.DNSFail, &t.DNSOk, &t.NextCheck, &legacyCheck, &t.LegacyChecked, &legacy)
+		&t.FailStreak, &t.OkStreak, &t.DNSFail, &t.DNSOk, &t.NextCheck, &legacyCheck, &t.LegacyChecked, &legacy,
+		&t.NodeID, &t.NodeName)
 	if err != nil {
 		return t, err
 	}
@@ -230,19 +232,20 @@ func (s *Service) SaveTarget(ctx context.Context, t Target, user string) (int64,
 		return 0, err
 	}
 	defer tx.Rollback()
-	var bundle any
-	if t.BundleID != 0 {
-		bundle = t.BundleID
+	if t.NodeID != 0 {
+		if err := assignableNodeTx(ctx, tx, t.NodeID); err != nil {
+			return 0, err
+		}
 	}
-	args := []any{t.Name, t.Host, t.Port, string(t.Protocol), t.ServerName, string(t.Trust), bundle,
+	args := []any{t.Name, t.Host, t.Port, string(t.Protocol), t.ServerName, string(t.Trust), nullID(t.BundleID),
 		t.RenewalManaged, t.RenewalSet, t.ExpectedIssuer, nullInt(t.WarnDays), nullInt(t.CritDays), nullInt(t.IntervalS),
 		nullInt(t.TimeoutS), nullInt(t.Retries), nullInt(t.Debounce), nullInt(t.RemindWarnS), nullInt(t.RemindCritS),
-		t.AllAddresses, !t.SkipLegacy, t.AllChannels, strings.Join(t.Tags, ","), t.Notes, t.Enabled, now}
+		t.AllAddresses, !t.SkipLegacy, t.AllChannels, strings.Join(t.Tags, ","), t.Notes, nullID(t.NodeID), t.Enabled, now}
 	if t.ID == 0 {
 		res, err := tx.ExecContext(ctx, `INSERT INTO targets(name, host, port, protocol, servername, trust_mode, bundle_id,
 			renewal_managed, renewal_set, expected_issuer, warn_days, crit_days, interval_s, timeout_s, retries, debounce,
-			remind_warn_s, remind_crit_s, all_addresses, legacy_check, all_channels, tags, notes, enabled, updated_at, created_at, created_by, status, next_check)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`, append(args, now, user, StatusPending)...)
+			remind_warn_s, remind_crit_s, all_addresses, legacy_check, all_channels, tags, notes, node_id, enabled, updated_at, created_at, created_by, status, next_check)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`, append(args, now, user, StatusPending)...)
 		if err != nil {
 			return 0, uniqueTarget(err)
 		}
@@ -251,8 +254,9 @@ func (s *Service) SaveTarget(ctx context.Context, t Target, user string) (int64,
 		var oldTrust, oldHost, oldSNI, oldProto string
 		var oldPort int
 		var oldLegacy bool
-		err := tx.QueryRowContext(ctx, "SELECT trust_mode, host, servername, port, protocol, legacy_check FROM targets WHERE id = ?", t.ID).
-			Scan(&oldTrust, &oldHost, &oldSNI, &oldPort, &oldProto, &oldLegacy)
+		var oldNode sql.NullInt64
+		err := tx.QueryRowContext(ctx, "SELECT trust_mode, host, servername, port, protocol, legacy_check, node_id FROM targets WHERE id = ?", t.ID).
+			Scan(&oldTrust, &oldHost, &oldSNI, &oldPort, &oldProto, &oldLegacy, &oldNode)
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
 		}
@@ -261,7 +265,7 @@ func (s *Service) SaveTarget(ctx context.Context, t Target, user string) (int64,
 		}
 		_, err = tx.ExecContext(ctx, `UPDATE targets SET name=?, host=?, port=?, protocol=?, servername=?, trust_mode=?, bundle_id=?,
 			renewal_managed=?, renewal_set=?, expected_issuer=?, warn_days=?, crit_days=?, interval_s=?, timeout_s=?, retries=?, debounce=?,
-			remind_warn_s=?, remind_crit_s=?, all_addresses=?, legacy_check=?, all_channels=?, tags=?, notes=?, enabled=?, updated_at=? WHERE id = ?`,
+			remind_warn_s=?, remind_crit_s=?, all_addresses=?, legacy_check=?, all_channels=?, tags=?, notes=?, node_id=?, enabled=?, updated_at=? WHERE id = ?`,
 			append(args, t.ID)...)
 		if err != nil {
 			return 0, uniqueTarget(err)
@@ -276,6 +280,12 @@ func (s *Service) SaveTarget(ctx context.Context, t Target, user string) (int64,
 		// test of the old versions, so the next check runs it.
 		if oldHost != t.Host || oldSNI != t.ServerName || oldPort != t.Port || oldProto != string(t.Protocol) || oldLegacy == t.SkipLegacy {
 			if _, err := tx.ExecContext(ctx, "UPDATE targets SET legacy_checked = 0, legacy_accepted = '' WHERE id = ?", t.ID); err != nil {
+				return 0, err
+			}
+		}
+		// Another node is a new view of the service, as a new host is.
+		if oldNode.Int64 != t.NodeID {
+			if err := newVantageTx(ctx, tx, "id = ?", t.ID); err != nil {
 				return 0, err
 			}
 		}
@@ -364,22 +374,38 @@ func (s *Service) DeleteTarget(ctx context.Context, id int64) error {
 	return nil
 }
 
-// Schedule returns the next check time of every enabled target.
-func (s *Service) Schedule(ctx context.Context) (map[int64]int64, error) {
-	rows, err := s.DB.R.QueryContext(ctx, "SELECT id, next_check FROM targets WHERE enabled = 1")
+// Slotted is a target's place in the schedule.
+type Slotted struct {
+	Next int64 // next check, Unix seconds; 0: as soon as possible
+	Node int64 // the node it is probed from, 0 for this server
+}
+
+// Schedule returns the next check time and node of every enabled target.
+func (s *Service) Schedule(ctx context.Context) (map[int64]Slotted, error) {
+	rows, err := s.DB.R.QueryContext(ctx, "SELECT id, next_check, COALESCE(node_id, 0) FROM targets WHERE enabled = 1")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	m := map[int64]int64{}
+	m := map[int64]Slotted{}
 	for rows.Next() {
-		var id, next int64
-		if err := rows.Scan(&id, &next); err != nil {
+		var id int64
+		var sl Slotted
+		if err := rows.Scan(&id, &sl.Next, &sl.Node); err != nil {
 			return nil, err
 		}
-		m[id] = next
+		m[id] = sl
 	}
 	return m, rows.Err()
+}
+
+// newVantageTx resets the targets matching where for a new vantage point:
+// the legacy test is forgotten, the debounce streaks start over and the
+// next check is due now.
+func newVantageTx(ctx context.Context, tx *sql.Tx, where string, args ...any) error {
+	_, err := tx.ExecContext(ctx, `UPDATE targets SET legacy_checked = 0, legacy_accepted = '', fail_streak = 0, ok_streak = 0,
+		dns_fail_streak = 0, dns_ok_streak = 0, next_check = 0 WHERE `+where, args...)
+	return err
 }
 
 // Slot is the target's fixed offset within its interval, so checks are

@@ -30,10 +30,11 @@
 
 {{/* target-row: one row of the targets table. frag{P, Item: targetRow} */}}
 {{define "target-row"}}{{$p := .P}}{{$r := .Item}}{{$t := $r.T}}
-<tr id="target-{{$t.ID}}" data-search="{{$r.Search}}" data-status="{{$r.StatusToken}}" data-tag="{{join $t.Tags " "}}"{{$r.SortAttrs}}{{if not $t.Enabled}} class="muted"{{end}}{{if $r.Hidden}} hidden{{end}}>
-  <td data-label="Status" class="m-lead">{{template "status" $t.Status}}</td>
+<tr id="target-{{$t.ID}}" data-search="{{$r.Search}}" data-status="{{$r.StatusToken}}" data-tag="{{join $t.Tags " "}}" data-node="{{$r.NodeToken}}"{{$r.SortAttrs}}{{if not $t.Enabled}} class="muted"{{end}}{{if $r.Hidden}} hidden{{end}}>
+  <td data-label="Status" class="m-lead">{{if waiting $t}}<span class="st off" title="The node is offline; last checked {{when $p.Loc $p.Now $t.LastCheck}}">Waiting for node</span>{{else}}{{template "status" $t.Status}}{{end}}</td>
   <td data-label="Name" class="m-lead"><a href="/targets/{{$t.ID}}" class="ink strong" data-row-link>{{$t.Name}}</a></td>
   <td data-label="Host" class="mono m-full">{{$t.HostPort}}{{if ne (print $t.Protocol) "tls"}} <span class="tag">{{$t.Protocol}}</span>{{end}}{{if gt $t.AddressCount 1}} <span class="tag">{{$t.AddressCount}} addr</span>{{end}}</td>
+  {{- if $r.ShowNode}}<td data-label="Node" class="m-hide">{{if $t.NodeID}}<a class="tag" href="/targets?node={{$t.NodeID}}" data-chip-for="#targets" data-chip-key="node" data-chip-value="{{$t.NodeID}}" title="Show only targets probed from {{$t.NodeName}}">{{$t.NodeName}}</a>{{else}}<span class="muted">server</span>{{end}}</td>{{end}}
   {{- if $t.NotAfter}}{{$c := $t.ExpiryClass $p.Settings.Defaults $p.Now}}
   <td data-label="Days" class="num mono days m-lead m-end{{if $c}} {{$c}}-t{{end}}">{{template "days-left" (days $p.Now $t.NotAfter)}}</td>
   <td data-label="Lifetime" class="m-hide">{{if $t.Cert}}{{template "bar" (dict "Used" (used $p.Now $t.Cert.NotBefore $t.Cert.NotAfter) "Class" ($t.BarClass $p.Settings.Defaults $p.Now))}}{{end}}</td>
@@ -123,7 +124,7 @@
     <div class="ev"><span class="when">{{whenTime $p.Loc $p.Now $f.OpenedAt}}</span><span>opened as {{$f.Severity}}</span></div>
   </div>
 </div>
-<a href="/targets/{{$f.TargetID}}">Open target {{$f.TargetName}}</a>
+{{if $f.NodeID}}{{if $p.Can "settings.manage"}}<a href="/settings/nodes/{{$f.NodeID}}">Open node {{$f.TargetName}}</a>{{end}}{{else}}<a href="/targets/{{$f.TargetID}}">Open target {{$f.TargetName}}</a>{{end}}
 {{end}}
 
 {{define "event-label"}}{{if eq . "open"}}opened{{else if eq . "escalate"}}escalated{{else if eq . "remind"}}reminder{{else if eq . "recover"}}recovery{{else}}{{.}}{{end}}{{end}}
@@ -134,6 +135,7 @@
   <a href="/settings/general"{{if eq .SettingsNav "general"}} class="on" aria-current="page"{{end}}>General</a>
   <a href="/settings/channels"{{if eq .SettingsNav "channels"}} class="on" aria-current="page"{{end}}>Channels</a>
   <a href="/settings/signin"{{if eq .SettingsNav "signin"}} class="on" aria-current="page"{{end}}>Sign-in</a>
+  <a href="/settings/nodes"{{if eq .SettingsNav "nodes"}} class="on" aria-current="page"{{end}}>Nodes</a>
   <a href="/settings/bundles"{{if eq .SettingsNav "bundles"}} class="on" aria-current="page"{{end}}>CA bundles</a>
   <a href="/settings/defaults"{{if eq .SettingsNav "defaults"}} class="on" aria-current="page"{{end}}>Defaults</a>
   {{- end}}
@@ -142,6 +144,30 @@
   {{- if .Can "settings.manage"}}<a href="/settings/backup"{{if eq .SettingsNav "backup"}} class="on" aria-current="page"{{end}}>Backup</a>{{end}}
   {{- if .Can "settings.manage"}}<a href="/settings/about"{{if eq .SettingsNav "about"}} class="on" aria-current="page"{{end}}>About</a>{{end}}
 </nav>
+{{end}}
+
+{{/* node-status: a node's status dot and word. nodeRow */}}
+{{define "node-status"}}{{if eq .N.State "enrolling"}}<span class="st off">waiting for install</span>{{else if eq .N.State "pending"}}<span class="st warn">confirm</span>{{else if not .N.Enabled}}<span class="st off">disabled</span>{{else if not .N.HasCredential}}<span class="st crit">revoked</span>{{else if .S.Online}}<span class="st ok">online</span>{{else}}<span class="st crit">offline</span>{{end}}{{end}}
+
+{{/* finding-subject: the target a finding is on, or its node. frag{P, Item: core.Finding} */}}
+{{define "finding-subject"}}{{$f := .Item}}{{if $f.NodeID}}{{if .P.Can "settings.manage"}}<a href="/settings/nodes/{{$f.NodeID}}" class="ink strong">node {{$f.TargetName}}</a>{{else}}<span class="strong">node {{$f.TargetName}}</span>{{end}}{{else}}<a href="/targets/{{$f.TargetID}}" class="ink strong">{{$f.TargetName}}</a>{{end}}{{end}}
+
+{{/* cmd: a command with a copy button. */}}
+{{define "cmd"}}<div class="cmd"><pre class="pre">{{.}}</pre><button type="button" class="btn btn-xs" data-copy="{{.}}">copy</button></div>{{end}}
+
+{{/* node-facts: what a node reported about its machine. frag{P, Item: core.Node} */}}
+{{define "node-facts"}}{{$p := .P}}{{$n := .Item}}{{$f := $n.Facts}}
+<dl class="kv cols4">
+  <dt>Hostname</dt><dd class="mono strong">{{or $f.Hostname "—"}}</dd>
+  <dt>Seen from</dt><dd class="mono">{{or $n.Address "—"}}</dd>
+  <dt>System</dt><dd>{{or $f.OS "—"}}{{if $f.Kernel}} <span class="muted">· kernel {{$f.Kernel}}</span>{{end}}</dd>
+  <dt>Platform</dt><dd class="mono">{{or $f.Arch "—"}}{{if $f.Container}} <span class="tag">container</span>{{end}}</dd>
+  <dt>tlswatch</dt><dd class="mono">{{or $f.Version $n.Version "—"}}</dd>
+  <dt>Clock</dt><dd>{{$o := offset $f.ClockOffsetMS}}{{if eq $o "in sync"}}in sync with the server{{else}}<span class="warn-t">{{$o}}</span> from the server; probes use the server's time{{end}}</dd>
+  <dt>IPv6 route</dt><dd>{{if $f.IPv6Route}}yes{{else}}no, AAAA records are skipped{{end}}</dd>
+  <dt>Reported</dt><dd class="muted">{{since $p.Now $n.FactsAt}}</dd>
+  <dt>Interfaces</dt><dd class="mono small">{{range $f.Interfaces}}<div>{{.Name}} · {{join .Addrs ", "}}</div>{{else}}—{{end}}</dd>
+</dl>
 {{end}}
 
 {{define "env-note"}}<span class="readonly-note">set by environment ({{.}})</span>{{end}}

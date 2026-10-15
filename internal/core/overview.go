@@ -27,8 +27,8 @@ func (s *Service) Nav(ctx context.Context) NavCounts {
 			COALESCE((SELECT MIN(next_check) FROM targets WHERE enabled = 1 AND next_check > 0), 0) FROM targets`).Scan(&n.Targets, &n.LastCheck, &n.NextCheck),
 		s.DB.R.QueryRowContext(ctx, `SELECT COUNT(DISTINCT o.leaf_fp) FROM targets t
 			JOIN observations o ON o.check_id = t.last_check_id AND o.target_id = t.id WHERE o.leaf_fp != ''`).Scan(&n.Certificates),
-		s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(severity = 'critical'), 0) FROM findings f JOIN targets t ON t.id = f.target_id
-			WHERE f.resolved_at = 0 AND t.enabled = 1`).Scan(&n.Findings, &crit),
+		s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(severity = 'critical'), 0) FROM findings f LEFT JOIN targets t ON t.id = f.target_id
+			WHERE f.resolved_at = 0 AND (t.enabled = 1 OR f.node_id IS NOT NULL)`).Scan(&n.Findings, &crit),
 	)
 	if err != nil && ctx.Err() == nil && s.Log != nil {
 		s.Log.Warn("navigation counts", "err", err)
@@ -151,7 +151,7 @@ type RunSummary struct {
 // RecentChanges returns certificate changes and resolved findings since a
 // moment, newest first.
 func (s *Service) RecentChanges(ctx context.Context, since int64, limit int) ([]Finding, error) {
-	rows, err := s.DB.R.QueryContext(ctx, "SELECT "+findingCols+`, t.name, t.host, t.port FROM findings f JOIN targets t ON t.id = f.target_id
+	rows, err := s.DB.R.QueryContext(ctx, "SELECT "+findingCols+", "+findingSubject+" FROM findings f"+findingJoins+`
 		WHERE (f.kind = 'certificate_changed' AND f.opened_at >= ?) OR (f.resolved_at >= ? AND f.severity != 'info' AND f.resolved_at > f.opened_at)
 		ORDER BY MAX(f.opened_at, f.resolved_at) DESC LIMIT ?`, since, since, limit)
 	if err != nil {
@@ -160,13 +160,13 @@ func (s *Service) RecentChanges(ctx context.Context, since int64, limit int) ([]
 	defer rows.Close()
 	var out []Finding
 	for rows.Next() {
-		var name, host string
+		var name, host, proto string
 		var port int
-		f, err := scanFinding(rows, &name, &host, &port)
+		f, err := scanFinding(rows, &name, &host, &port, &proto)
 		if err != nil {
 			return nil, err
 		}
-		f.TargetName, f.TargetHost, f.TargetPort = name, host, port
+		f.TargetName, f.TargetHost, f.TargetPort, f.TargetProtocol = name, host, port, proto
 		out = append(out, f)
 	}
 	return out, rows.Err()

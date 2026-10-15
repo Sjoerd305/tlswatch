@@ -25,6 +25,7 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/authz"
 	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/core"
+	"github.com/sjoerd305/tlswatch/internal/node"
 	"github.com/sjoerd305/tlswatch/internal/notify"
 	"github.com/sjoerd305/tlswatch/internal/sched"
 	"github.com/sjoerd305/tlswatch/internal/secret"
@@ -36,6 +37,7 @@ import (
 type Server struct {
 	Core     *core.Service
 	Sched    *sched.Scheduler
+	Nodes    *node.Dispatcher // the nodes' queues and the /agent/v1 protocol
 	Auth     *auth.Service
 	Settings *config.Store
 	Dispatch *notify.Dispatcher
@@ -101,6 +103,7 @@ func (s *Server) Handler() (http.Handler, error) {
 		return nil, err
 	}
 	s.static = staticHandler(http.FileServer(http.FS(static)), assetVersion(s.Version), s.DevAssets)
+	s.Nodes.ClientIP = func(r *http.Request) string { return info(r).ip }
 	mux := http.NewServeMux()
 	s.routes(mux)
 	return s.middleware(mux), nil
@@ -180,6 +183,12 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			s.static.ServeHTTP(w, r)
 			return
 		}
+		// The agent protocol authenticates nodes by their credential,
+		// never a session cookie, so it sits outside sessions and CSRF.
+		if strings.HasPrefix(r.URL.Path, "/agent/") {
+			s.Nodes.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), keyReq, ri)))
+			return
+		}
 
 		if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
 			lookup := s.Auth.Session
@@ -239,7 +248,9 @@ func (s *Server) logRequest(r *http.Request, ri *reqInfo, status int, d time.Dur
 		return
 	}
 	level := slog.LevelDebug
-	if status >= 400 || d >= slowRequest {
+	// A node's poll is held for up to 30 seconds by design; it is not slow.
+	held := strings.HasPrefix(r.URL.Path, "/agent/")
+	if status >= 400 || d >= slowRequest && !held {
 		level = slog.LevelInfo
 	}
 	user := ""

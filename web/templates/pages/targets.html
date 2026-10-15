@@ -15,6 +15,7 @@
   <div class="filter">{{template "search-icon"}}<input class="input" type="search" name="q" value="{{$d.Query}}" placeholder="Filter: name, host, tag, issuer" aria-label="Filter targets" aria-keyshortcuts="/" title="Press / to filter" data-filter="#targets">{{template "key-hint"}}</div>
   <span class="row gap-sm" data-chip-group="#targets">{{template "chips" $d.Status}}</span>
   {{- if $d.Tags}}<span class="divider"></span><span class="row gap-sm" data-chip-group="#targets">{{template "chips" $d.Tags}}</span>{{end}}
+  {{- if $d.Nodes}}<span class="divider"></span><span class="row gap-sm" data-chip-group="#targets">{{template "chips" $d.Nodes}}</span>{{end}}
   <noscript><button type="submit" class="btn btn-xs">Filter</button></noscript>
   <span class="spacer small"><a href="{{$d.GroupHref}}">{{if $d.Group}}ungroup{{else}}group by tag{{end}}</a></span>
 </form>
@@ -24,6 +25,7 @@
       {{- template "th" (dict "S" $s "K" "status" "L" "Status")}}
       {{- template "th" (dict "S" $s "K" "name" "L" "Name")}}
       {{- template "th" (dict "S" $s "K" "host" "L" "Host")}}
+      {{- if $d.ShowNode}}{{template "th" (dict "S" $s "K" "node" "L" "Node")}}{{end}}
       {{- template "th" (dict "S" $s "K" "days" "L" "Days" "C" "num" "N" true)}}
       {{- template "th" (dict "S" $s "K" "lifetime" "L" "Lifetime" "N" true)}}
       {{- template "th" (dict "S" $s "K" "expires" "L" "Expires" "N" true)}}
@@ -36,7 +38,7 @@
     {{- if $d.Group}}
     {{- range $d.Groups}}
     <tbody>
-      <tr class="group-head"><th colspan="11">{{if .Tag}}<span class="tag">{{.Tag}}</span>{{else}}no tag{{end}} <span class="muted">{{len .Rows}}</span></th></tr>
+      <tr class="group-head"><th colspan="{{if $d.ShowNode}}12{{else}}11{{end}}">{{if .Tag}}<span class="tag">{{.Tag}}</span>{{else}}no tag{{end}} <span class="muted">{{len .Rows}}</span></th></tr>
       {{- range .Rows}}{{template "target-row" (frag $p .)}}{{end}}
     </tbody>
     {{- end}}

@@ -1,0 +1,51 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}
+<div class="page-head"><div><h1>Settings</h1></div></div>
+<div class="grid-settings">
+  {{template "settings-nav" $p}}
+  <div class="stack">
+    <div class="row between"><div><h2 class="h2">Nodes</h2><span class="summary">A node probes targets from inside a network this server cannot reach. It connects out to this server over HTTPS and is never connected to; the schedule, the results and the alerts stay here.</span></div>
+      {{- if $d.HasBase}}
+      <form method="post" action="/settings/nodes">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-primary">Add node</button></form>
+      {{- end}}
+    </div>
+    {{- if not $d.HasBase}}
+    <div class="notice info" role="status">{{template "notice-icon" "info"}}<div>Set the public URL under <a href="/settings/general">Settings › General</a> before adding a node: its install command needs the address it reaches this server on.</div></div>
+    {{- end}}
+    {{- if $d.Updating}}
+    <div class="notice info" role="status">{{template "notice-icon" "info"}}<div>Updating {{$d.Updating}} of {{$d.Of}} to {{$d.Version}}: one node at a time, the next once this one is back on the new version.</div></div>
+    {{- end}}
+    {{- if $d.Rows}}
+    <div class="card clip">
+      <table class="tbl cards">
+        <thead><tr><th>Status</th><th>Name</th><th>Hostname</th><th>Last seen</th><th>Version</th><th>Address</th><th>IPv6</th><th class="num">Targets</th></tr></thead>
+        <tbody>
+        {{- range $d.Rows}}{{$n := .N}}
+          <tr{{if not $n.Enabled}} class="muted"{{end}}>
+            <td data-label="Status" class="m-lead">{{template "node-status" .}}</td>
+            <td data-label="Name" class="m-lead"><a href="/settings/nodes/{{$n.ID}}" class="ink strong" data-row-link>{{if eq $n.State "enrolling"}}{{if $n.Name}}{{$n.Name}}{{else}}New node{{end}}{{else}}{{$n.Label}}{{end}}</a></td>
+            <td data-label="Hostname" class="mono">{{or $n.Facts.Hostname "—"}}</td>
+            <td data-label="Last seen" class="mono muted">{{if .S.LastSeen.IsZero}}never{{else}}{{since $p.Now .S.LastSeen.Unix}}{{end}}</td>
+            <td data-label="Version" class="mono">{{or $n.Version "—"}}{{if .Note}} <span class="st sm {{.NoteClass}}">{{.Note}}</span>{{end}}</td>
+            <td data-label="Address" class="mono small">{{or $n.Address "—"}}</td>
+            <td data-label="IPv6">{{if eq $n.State "enrolling"}}—{{else if $n.Facts.IPv6Route}}yes{{else}}no{{end}}</td>
+            <td data-label="Targets" class="num mono">{{$n.Targets}}</td>
+          </tr>
+        {{- end}}
+        </tbody>
+      </table>
+    </div>
+    {{- else}}
+    <section class="card"><div class="empty"><span class="h3">No nodes</span><span>Add a node to probe hosts inside a customer network or an isolated segment. One outbound rule is all it needs there: HTTPS to this server. Where a route into the network is allowed (WireGuard, Tailscale, an SSH tunnel), that needs no node at all.</span></div></section>
+    {{- end}}
+    <form class="card form" method="post" action="/settings/nodes/auto">
+      {{template "csrf" $p.CSRF}}
+      <h3 class="h3">Updates</h3>
+      <label class="check"><input type="checkbox" name="auto_update" value="1"{{if $d.Auto}} checked{{end}}> Keep nodes on the server's version</label>
+      <span class="help lift">Nodes update themselves from this server, one at a time, and roll back when the new version does not reach the server within five minutes. A node in a container is updated by pulling the image instead.{{if not $d.Release}} This server is a development build ({{$d.Version}}), so nodes are updated only with Update.{{end}}</span>
+      <div class="form-foot"><button type="submit" class="btn btn-primary">Save</button>{{if $d.Outdated}}<button type="submit" form="update-all" class="btn">Update all ({{$d.Outdated}})</button>{{end}}</div>
+    </form>
+    {{- if $d.Outdated}}<form id="update-all" method="post" action="/settings/nodes/update-all">{{template "csrf" $p.CSRF}}</form>{{end}}
+    <p class="help">This server hands out the node binary for {{join $d.Platforms ", "}}.{{if not $d.Release}} A node on another platform needs a release build of the server.{{else}} {{$d.Own}} comes from this server itself; the others are fetched from GitHub by the node's host.{{end}}</p>
+  </div>
+</div>
+{{end}}
