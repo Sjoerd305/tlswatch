@@ -919,15 +919,22 @@ func (s *Server) apiCheckAll(w http.ResponseWriter, r *http.Request) {
 }
 
 // apiStamp lets live pages poll for changes. Busy asks for a quicker poll
-// while checks are queued, running or a target was never checked.
+// while checks are queued, running or a target was never checked, and
+// while a node is enrolling.
 func (s *Server) apiStamp(w http.ResponseWriter, r *http.Request) {
 	_, pending, err := s.Core.Stamp(r.Context())
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
+	arriving, err := s.Core.NodesArriving(r.Context())
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
 	st := s.Sched.Status()
-	writeJSON(w, http.StatusOK, map[string]any{"stamp": s.stamp(r.Context()), "busy": pending > 0 || st.Backlog > 0 || st.Running > 0 || st.OnNodes > 0})
+	busy := pending > 0 || st.Backlog > 0 || st.Running > 0 || st.OnNodes > 0 || arriving
+	writeJSON(w, http.StatusOK, map[string]any{"stamp": s.stamp(r.Context()), "busy": busy})
 }
 
 // stamp is the change stamp of the live pages: the database's change

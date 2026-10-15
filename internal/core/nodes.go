@@ -280,6 +280,17 @@ func (s *Service) ValidNodeToken(ctx context.Context, token string) (bool, error
 	return n > 0, err
 }
 
+// NodesArriving reports whether an enrolment is under way: an unspent,
+// unexpired install token, or a machine waiting for confirmation. The live
+// pages poll quickly meanwhile, so the Add node screen shows the machine
+// as it enrols.
+func (s *Service) NodesArriving(ctx context.Context) (bool, error) {
+	var n int
+	err := s.DB.R.QueryRowContext(ctx, "SELECT COUNT(*) FROM nodes WHERE (token_hash != '' AND token_expires > ?) OR state = ?",
+		s.now().Unix(), NodePending).Scan(&n)
+	return n > 0, err
+}
+
 // Enrolment is what a node sends with its install token.
 type Enrolment struct {
 	Facts    NodeFacts

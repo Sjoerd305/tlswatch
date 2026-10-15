@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -124,5 +125,51 @@ func TestWaitingForNode(t *testing.T) {
 	rec := hs.do(authz.Operator, http.MethodPost, fmt.Sprintf("/api/v1/targets/%d/check", tid), nil, true)
 	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "offline") {
 		t.Errorf("check now on an offline node: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// While a node enrols, live pages poll quickly, and its arrival changes
+// the stamp, so the Add node screen swaps in the machine's facts.
+func TestStampFollowsEnrolment(t *testing.T) {
+	hs := newHarness(t)
+	ctx := context.Background()
+	c := hs.srv.Core
+	stamp := func() (string, bool) {
+		var r struct {
+			Stamp string `json:"stamp"`
+			Busy  bool   `json:"busy"`
+		}
+		rec := hs.do(authz.Admin, http.MethodGet, "/api/v1/stamp", nil, false)
+		if err := json.Unmarshal(rec.Body.Bytes(), &r); err != nil {
+			t.Fatal(err)
+		}
+		return r.Stamp, r.Busy
+	}
+	// The harness target counts as never checked, which is busy too.
+	if _, err := c.DB.W.Exec("UPDATE targets SET last_check = 1"); err != nil {
+		t.Fatal(err)
+	}
+	before, busy := stamp()
+	if busy {
+		t.Fatal("busy before any enrolment")
+	}
+	id, tok, _ := c.CreateNode(ctx, "admin")
+	afterCreate, busy := stamp()
+	if !busy {
+		t.Error("not busy while an install token is out")
+	}
+	if _, _, err := c.EnrolNode(ctx, tok, core.Enrolment{Facts: core.NodeFacts{Hostname: "p"}}); err != nil {
+		t.Fatal(err)
+	}
+	afterEnrol, busy := stamp()
+	if afterEnrol == afterCreate || afterCreate == before {
+		t.Errorf("stamp did not change: %s %s %s", before, afterCreate, afterEnrol)
+	}
+	if !busy {
+		t.Error("not busy while a node waits for confirmation")
+	}
+	_ = c.ConfirmNode(ctx, id, "dc1", "admin")
+	if _, busy := stamp(); busy {
+		t.Error("still busy after the node was confirmed")
 	}
 }
