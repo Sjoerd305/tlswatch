@@ -940,3 +940,79 @@ func TestParseTags(t *testing.T) {
 		t.Fatal("long tag accepted")
 	}
 }
+
+// The old TLS versions are tested once a day: the finding stands between
+// tests, a test that finds them refused resolves it, and moving the target
+// or switching the test off forgets the last test.
+func TestLegacyProtocolDaily(t *testing.T) {
+	e := newEnv(t)
+	ca := newCA(t, "Sectigo")
+	now := e.clock.Now()
+	leaf := ca.leaf(t, now, now.Add(days(300)), "portal.example.nl")
+	tested := func(versions ...string) probe.Result {
+		a := served("192.0.2.1", leaf, ca.cert)
+		a.LegacyChecked, a.Legacy = true, versions
+		return result(a)
+	}
+	due := func(tg Target) bool {
+		t.Helper()
+		got, _ := e.svc.Target(e.ctx, tg.ID)
+		req, err := e.svc.ProbeRequest(e.ctx, got, e.svc.CurrentSettings(e.ctx))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return req.Legacy
+	}
+
+	tg := e.target(nil)
+	if !due(tg) {
+		t.Fatal("first check does not test the old versions")
+	}
+	tg = e.apply(tg.ID, tested("TLS 1.0"))
+	if f, ok := e.open(tg.ID)[check.LegacyProtocol]; !ok || f.Severity != check.Warning {
+		t.Fatalf("legacy_protocol not opened: %+v", e.open(tg.ID))
+	}
+	if tg.Status != StatusWarning || tg.LegacyChecked == 0 || strings.Join(tg.LegacyAccepted, ",") != "TLS 1.0" {
+		t.Fatalf("state: status %s checked %d accepted %v", tg.Status, tg.LegacyChecked, tg.LegacyAccepted)
+	}
+
+	e.clock.Add(12 * time.Hour)
+	if due(tg) {
+		t.Fatal("tested again within a day")
+	}
+	tg = e.apply(tg.ID, result(served("192.0.2.1", leaf, ca.cert)))
+	if _, ok := e.open(tg.ID)[check.LegacyProtocol]; !ok {
+		t.Fatal("a check without the test resolved legacy_protocol")
+	}
+
+	e.clock.Add(12 * time.Hour)
+	if !due(tg) {
+		t.Fatal("not tested after a day")
+	}
+	tg = e.apply(tg.ID, tested())
+	if _, ok := e.open(tg.ID)[check.LegacyProtocol]; ok || tg.LegacyAccepted != nil || tg.Status != StatusHealthy {
+		t.Fatalf("refused versions did not resolve: status %s accepted %v", tg.Status, tg.LegacyAccepted)
+	}
+
+	moved := tg
+	moved.Port = 8443
+	if _, err := e.svc.SaveTarget(e.ctx, moved, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if !due(tg) {
+		t.Fatal("a new port does not test again")
+	}
+	tg = e.apply(tg.ID, tested("TLS 1.1"))
+	off, _ := e.svc.Target(e.ctx, tg.ID)
+	off.SkipLegacy = true
+	if _, err := e.svc.SaveTarget(e.ctx, off, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if due(tg) {
+		t.Fatal("tested while switched off")
+	}
+	tg = e.apply(tg.ID, result(served("192.0.2.1", leaf, ca.cert)))
+	if _, ok := e.open(tg.ID)[check.LegacyProtocol]; ok || tg.LegacyChecked != 0 || !tg.SkipLegacy {
+		t.Fatalf("switched off: open %v checked %d", e.open(tg.ID), tg.LegacyChecked)
+	}
+}

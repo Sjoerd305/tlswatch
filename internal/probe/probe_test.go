@@ -542,3 +542,37 @@ func TestReadLineLimits(t *testing.T) {
 		t.Fatalf("endless reply: %v", err)
 	}
 }
+
+func TestLegacyVersions(t *testing.T) {
+	p := newPKI(t)
+	cases := []struct {
+		name     string
+		min, max uint16
+		want     []string
+	}{
+		{"modern server refuses both", tls.VersionTLS12, 0, nil},
+		{"permissive server accepts both", tls.VersionTLS10, 0, []string{"TLS 1.0", "TLS 1.1"}},
+		{"TLS 1.1 only", tls.VersionTLS11, tls.VersionTLS11, []string{"TLS 1.1"}},
+		{"TLS 1.0 only, settled by the negotiated version", tls.VersionTLS10, tls.VersionTLS10, []string{"TLS 1.0"}},
+	}
+	for _, c := range cases {
+		cfg := serverConfig(p.leaf, p.inter)
+		cfg.MinVersion, cfg.MaxVersion = c.min, c.max
+		r := req(serve(t, cfg, nil), TLS)
+		r.Legacy = true
+		a := single(t, Probe(context.Background(), r))
+		if !a.OK || !a.LegacyChecked || strings.Join(a.Legacy, ",") != strings.Join(c.want, ",") {
+			t.Errorf("%s: ok %v checked %v legacy %v, want %v", c.name, a.OK, a.LegacyChecked, a.Legacy, c.want)
+		}
+	}
+}
+
+func TestLegacyNotTestedUnlessAsked(t *testing.T) {
+	p := newPKI(t)
+	cfg := serverConfig(p.leaf, p.inter)
+	cfg.MinVersion = tls.VersionTLS10
+	a := single(t, Probe(context.Background(), req(serve(t, cfg, nil), TLS)))
+	if !a.OK || a.LegacyChecked || a.Legacy != nil {
+		t.Fatalf("legacy tested without Request.Legacy: %+v", a)
+	}
+}

@@ -42,8 +42,11 @@ type checkAddress struct {
 	Cipher     string `json:"cipher,omitempty"`
 	SHA256     string `json:"sha256,omitempty"`
 	Verified   bool   `json:"verified"`
-	Error      string `json:"error,omitempty"`
-	DurationMS int64  `json:"duration_ms"`
+	// Legacy lists the TLS versions under 1.2 the address accepted;
+	// absent when they were not tested or got no verdict.
+	Legacy     *[]string `json:"legacy_accepted,omitempty"`
+	Error      string    `json:"error,omitempty"`
+	DurationMS int64     `json:"duration_ms"`
 }
 
 type checkFinding struct {
@@ -78,7 +81,7 @@ func checkCmd(args []string, stdout, stderr io.Writer) int {
 	now := time.Now()
 	th := check.Thresholds{Warn: run.warn, Crit: run.crit}
 	out := check.Evaluate(check.Target{Trust: run.req.Trust, ServerName: run.req.ServerName, Warn: &run.warn, Crit: &run.crit,
-		Manual: th, Managed: th, RenewalSet: true, Debounce: 1}, check.Previous{Open: map[check.Kind]bool{}}, r, now)
+		Manual: th, Managed: th, RenewalSet: true, Debounce: 1, SkipLegacy: !run.req.Legacy}, check.Previous{Open: map[check.Kind]bool{}}, r, now)
 	res, code := checkReport(run.req, r, out, now)
 	enc := json.NewEncoder(stdout)
 	enc.SetIndent("", "  ")
@@ -99,6 +102,7 @@ func parseCheck(args []string, stderr io.Writer) (checkRun, error) {
 	timeout := fs.Duration("timeout", 10*time.Second, "connect and handshake timeout")
 	first := fs.Bool("first", false, "probe only the first resolved address")
 	allowLocal := fs.Bool("allow-local", true, "allow loopback and link-local addresses")
+	noLegacy := fs.Bool("no-legacy", false, "do not test whether TLS 1.0 and 1.1 are accepted")
 	if err := fs.Parse(reorder(args, map[string]bool{"protocol": true, "servername": true, "ca-file": true, "warn": true, "crit": true, "timeout": true})); err != nil {
 		return checkRun{}, errUsage
 	}
@@ -119,7 +123,7 @@ func parseCheck(args []string, stderr io.Writer) (checkRun, error) {
 		sni = host
 	}
 	req := probe.Request{Host: host, Port: port, Protocol: proto, ServerName: sni, Trust: probe.TrustSystem,
-		Timeout: *timeout, Retries: 1, FirstOnly: *first, AllowLocal: *allowLocal}
+		Timeout: *timeout, Retries: 1, FirstOnly: *first, AllowLocal: *allowLocal, Legacy: !*noLegacy}
 	if *insecure {
 		req.Trust = probe.TrustSelfSigned
 	}
@@ -174,6 +178,10 @@ func checkReport(req probe.Request, r probe.Result, out check.Outcome, now time.
 		ca := checkAddress{Address: a.IP, OK: a.OK, TLSVersion: a.TLSVersion, Cipher: a.Cipher, Verified: a.Verified, Error: a.Error, DurationMS: a.Duration.Milliseconds()}
 		if a.OK {
 			ca.SHA256 = probe.Fingerprint(a.Chain[0])
+		}
+		if a.LegacyChecked || len(a.Legacy) > 0 {
+			l := append([]string{}, a.Legacy...)
+			ca.Legacy = &l
 		}
 		res.Addresses = append(res.Addresses, ca)
 	}

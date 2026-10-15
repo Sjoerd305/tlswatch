@@ -419,6 +419,7 @@ func seed() error {
 		{Name: "Expired", Host: "expired.badssl.com", Tags: []string{"demo", "badssl"}},
 		{Name: "Self-signed", Host: "self-signed.badssl.com", Tags: []string{"demo", "badssl"}},
 		{Name: "Wrong host", Host: "wrong.host.badssl.com", Tags: []string{"demo", "badssl"}},
+		{Name: "TLS 1.0", Host: "tls-v1-0.badssl.com", Port: 1010, Tags: []string{"demo", "badssl"}},
 		{Name: "Untrusted root", Host: "untrusted-root.badssl.com", Tags: []string{"demo", "badssl"}},
 		{Name: "Gmail SMTP", Host: "smtp.gmail.com", Port: 587, Protocol: probe.SMTP, Tags: []string{"demo", "mail"}},
 	}

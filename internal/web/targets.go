@@ -466,6 +466,7 @@ func (s *Server) parseTargetForm(r *http.Request, existing *core.Target) targetF
 	t.RemindWarnS = num("remind_warn_s", f.RemindW, 1)
 	t.RemindCritS = num("remind_crit_s", f.RemindC, 1)
 	t.AllAddresses = v.Get("addresses") != "first"
+	t.SkipLegacy = v.Get("legacy") == "off"
 	f.TagsText = v.Get("tags")
 	tags, err := core.ParseTags(f.TagsText)
 	if err != nil {
@@ -584,6 +585,7 @@ func (s *Server) testProbe(ctx context.Context, st config.Settings, t core.Targe
 	if err != nil {
 		return testResult{Err: err.Error(), Status: core.StatusUnreachable}
 	}
+	req.Legacy = !t.SkipLegacy
 	pctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 	r := probe.Probe(pctx, req)

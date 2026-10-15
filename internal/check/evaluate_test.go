@@ -452,3 +452,59 @@ func TestSelfSignedPin(t *testing.T) {
 		t.Fatalf("pin replaced: %v", kindsOf(o.Open))
 	}
 }
+
+func legacyAddr(ip string, leaf *x509.Certificate, checked bool, versions ...string) probe.Address {
+	a := okAddr(ip, leaf)
+	a.LegacyChecked, a.Legacy = checked, versions
+	return a
+}
+
+func TestLegacyProtocol(t *testing.T) {
+	iss := newIssuer(t, "Test CA", "Test CA R1")
+	leaf := leafCert(t, iss, 60, "a.example")
+	skip := manual
+	skip.SkipLegacy = true
+	cases := []struct {
+		name    string
+		tg      Target
+		prev    Previous
+		addrs   []probe.Address
+		details string // "": no legacy_protocol opened
+		kept    bool
+		checked bool
+	}{
+		{"both accepted", manual, Previous{Open: open()},
+			[]probe.Address{legacyAddr("192.0.2.1", leaf, true, "TLS 1.0", "TLS 1.1")}, "TLS 1.0, TLS 1.1 accepted", false, true},
+		{"one of two addresses", manual, Previous{Open: open()},
+			[]probe.Address{legacyAddr("192.0.2.1", leaf, true, "TLS 1.0"), legacyAddr("192.0.2.2", leaf, true)}, "TLS 1.0 accepted on 192.0.2.1", false, true},
+		{"refused resolves", manual, Previous{Open: open(LegacyProtocol)},
+			[]probe.Address{legacyAddr("192.0.2.1", leaf, true)}, "", false, true},
+		{"not tested this check keeps", manual, Previous{Open: open(LegacyProtocol)},
+			[]probe.Address{okAddr("192.0.2.1", leaf)}, "", true, false},
+		{"no verdict on one address keeps", manual, Previous{Open: open(LegacyProtocol)},
+			[]probe.Address{legacyAddr("192.0.2.1", leaf, true), legacyAddr("192.0.2.2", leaf, false)}, "", true, false},
+		{"switched off resolves", skip, Previous{Open: open(LegacyProtocol)},
+			[]probe.Address{legacyAddr("192.0.2.1", leaf, true, "TLS 1.0")}, "", false, false},
+	}
+	for _, c := range cases {
+		o := Evaluate(c.tg, c.prev, result(c.addrs...), now)
+		f, opened := find(o.Open, LegacyProtocol)
+		switch {
+		case c.details != "" && (!opened || f.Severity != Warning || f.Details != c.details):
+			t.Errorf("%s: %+v (opened %v), want warning %q", c.name, f, opened, c.details)
+		case c.details == "" && opened:
+			t.Errorf("%s: opened %q", c.name, f.Details)
+		case slices.Contains(o.Keep, LegacyProtocol) != c.kept:
+			t.Errorf("%s: kept %v, want %v", c.name, o.Keep, c.kept)
+		case o.LegacyChecked != c.checked:
+			t.Errorf("%s: checked %v, want %v", c.name, o.LegacyChecked, c.checked)
+		}
+	}
+}
+
+func TestLegacyKeptWhenNothingAnswered(t *testing.T) {
+	o := Evaluate(manual, Previous{Open: open(LegacyProtocol)}, result(failAddr("192.0.2.1")), now)
+	if !slices.Contains(o.Keep, LegacyProtocol) {
+		t.Fatalf("legacy_protocol resolved by an unreachable check: keep %v", o.Keep)
+	}
+}

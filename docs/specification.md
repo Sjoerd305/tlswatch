@@ -28,7 +28,7 @@ The certificate is the primary entity; a target is where it is observed. One cer
 
 | Entity | What it is | Key fields |
 | --- | --- | --- |
-| Target | One endpoint to probe: a hostname or IP address, a port and a protocol | name, host, port, protocol, servername (SNI), trust mode, CA bundle, renewal managed (yes/no), expected issuer, thresholds, interval, tags, notes, channels, enabled |
+| Target | One endpoint to probe: a hostname or IP address, a port and a protocol | name, host, port, protocol, servername (SNI), trust mode, CA bundle, renewal managed (yes/no), expected issuer, thresholds, interval, legacy TLS test (on/off), tags, notes, channels, enabled |
 | Observation | The result of one probe of one target at one resolved address | target, address, checked at, status, TLS version, cipher, leaf certificate, chain, error, duration |
 | Certificate | One X.509 certificate, keyed by SHA-256 fingerprint | fingerprint, subject, issuer, serial, not before, not after, SANs, key type and size, signature algorithm, PEM, first seen, last seen |
 | Finding | A problem on a target that is open until it resolves | target, kind, severity, opened at, resolved at, acknowledged by and until, details |
@@ -69,11 +69,11 @@ A STARTTLS server that stops offering STARTTLS is reported (`tls_unavailable`); 
 
 **Scheduling.** Default interval is 24 hours; per target it can be lowered to a minimum of 1 hour. Checks are spread over the day with a per-target jitter so that a restart does not fire every probe at once. Operators can run "Check now" on a target. A worker pool (default 8 concurrent probes) with a 10-second connect timeout and 2 retries keeps a run of 1,000 targets under a few minutes.
 
-**Network reach.** The tool probes from where it runs. Internal addresses must be reachable from that host; for isolated customer networks a second instance is the version-1 answer, remote probe agents a later one. Probes accept TLS 1.0 and up so that old appliances and embedded management interfaces can still be monitored; the negotiated version is recorded and shown.
+**Network reach.** The tool probes from where it runs. Internal addresses must be reachable from that host; for isolated customer networks a second instance is the version-1 answer, remote probe agents a later one. Probes accept TLS 1.0 and up so that old appliances and embedded management interfaces can still be monitored; the negotiated version is recorded and shown. Accepting a version to read the certificate is separate from reporting that the server still offers it: see `legacy_protocol` below.
 
 ## Checks, findings and severity
 
-Every observation runs the full set of checks; each failed check is a finding of one kind with one severity. Three severities: `info` (shown, never alerted by default), `warning`, `critical`.
+Every observation runs the full set of checks (the test for legacy TLS versions once a day, see below); each failed check is a finding of one kind with one severity. Three severities: `info` (shown, never alerted by default), `warning`, `critical`.
 
 | Kind | Opens when | Severity | Notes |
 | --- | --- | --- | --- |
@@ -83,6 +83,7 @@ Every observation runs the full set of checks; each failed check is a finding of
 | `self_signed` | A self-signed leaf on a target whose trust mode is not `self-signed` | critical | The fix is either the server or switching the target to `self-signed` |
 | `hostname_mismatch` | The servername is not covered by the CN/SANs | critical | Skipped when servername is empty (plain IP target) |
 | `weak_signature` | A chain certificate is signed with SHA-1 or MD5, or has an RSA key under 2048 bits | warning | Expiry is still reported |
+| `legacy_protocol` | An address completes a handshake at TLS 1.0 or TLS 1.1 (deprecated by RFC 8996) | warning | Tested daily, not on every check; see legacy TLS versions below. The details name the versions, and the addresses when not all of them accept them |
 | `certificate_changed` | The leaf fingerprint differs from the previous observation | info or warning | See change detection below |
 | `issuer_changed` | The issuer differs from the previous certificate or from the configured expected issuer | warning | A Let's Encrypt name suddenly served by another CA is worth a look |
 | `inconsistent` | Different addresses of one name serve different certificates | warning | One node behind a load balancer not updated |
@@ -98,9 +99,17 @@ Every observation runs the full set of checks; each failed check is a finding of
 
 A `certificate_changed` or `issuer_changed` warning (without an expected issuer) stays open until acknowledged or until an automatic renewal (the `info` case above) confirms the certificate is back on its normal cycle; that renewal resolves it without an acknowledgement. Any other new leaf leaves it open: a new `certificate_changed` warning replaces the old one's details, and an open `issuer_changed` stays as it is, so whoever acknowledges the new certificate still sees that the issuer moved.
 
-Fact findings (`expired`, `chain_untrusted`, `hostname_mismatch`, `weak_signature`, `expiring`) are raised on the first observation that shows them: there is no network noise in a certificate that is read successfully. Only the network-shaped findings are debounced.
+**Legacy TLS versions.** The normal probe offers every version from TLS 1.0 to 1.3, so the server picks its highest and a server on TLS 1.3 says nothing about whether it would still accept TLS 1.0. To find out, each address that answered gets one more handshake per legacy version, TLS 1.0 and TLS 1.1, with the client pinned to exactly that version. The negotiated version settles some without a handshake: a server that negotiated TLS 1.0 accepts it and cannot accept 1.1. A completed handshake means accepted; a refused one (an alert or a closed connection) means refused; a connect failure, a STARTTLS failure or a timeout gives no verdict for that address.
 
-The negotiated TLS version and cipher suite, the key type and size, and the full chain are stored with every observation and shown in the UI, without a finding attached. Grading them is a later feature.
+- The test runs on the first check of a target and then on the first check at least 23 hours after the last test that reached a verdict, so about once a day whatever the interval. Check now and Test without saving always run it. Changing the target's host, port, protocol or server name, or switching the test off and on, forgets the last test so the next check runs it.
+- Between tests `legacy_protocol` keeps its state; a test that finds both versions refused on every answering address resolves it. A test where some address got no verdict and none accepted leaves the finding as it is and is repeated on the next check.
+- TLS 1.2 next to 1.3 is normal and not reported. SSL 3.0 is not tested: Go has no client for it. A server that offers TLS 1.0 only with cipher suites Go does not implement (DHE key exchange, for example) shows as refused.
+- Per target the test can be switched off ("TLS 1.0 and 1.1: Do not test" under Probe and reminder settings), for an appliance where the old version is known and cannot be changed. Switching it off resolves an open `legacy_protocol` at the next check.
+- The target page shows the result below the per-address table of the last check ("TLS 1.0 and 1.1 · refused · tested 3 h ago", or the versions accepted); the configuration column shows whether the test runs.
+
+Fact findings (`expired`, `chain_untrusted`, `hostname_mismatch`, `weak_signature`, `legacy_protocol`, `expiring`) are raised on the first observation that shows them: there is no network noise in a certificate that is read successfully. Only the network-shaped findings are debounced.
+
+The negotiated TLS version and cipher suite, the key type and size, and the full chain are stored with every observation and shown in the UI. Apart from the legacy versions above, no finding is attached to them; grading cipher suites and the rest of the TLS configuration is a later feature.
 
 ## Thresholds and defaults
 
@@ -158,8 +167,8 @@ The UI is an operations console: the home screen answers "what needs attention n
 | Sign in | all | One card: e-mail and password, "Sign in with Google" below. Neutral error messages. |
 | Overview | viewer+ | Four status tiles (critical, warning, healthy, unreachable), "Expiring next" with a lifetime bar per certificate, open findings (each opens its finding), recent changes, and the last run's summary (targets and addresses probed, failures, alerts sent). |
 | Targets | viewer+ | Dense table: status, name, `host:port`, days left, lifetime bar, expiry date, issuer, TLS version, tags, last check. Filter field plus chips for status and tag with counts; a tag in a row filters on that tag; grouping by tag; sorted by expiry by default. Per row: Check, or Enable for a disabled target (operator+). Page-head buttons: Add target (operator+), Check all (operator+). |
-| Target detail | viewer+ | Leads with the certificate: countdown, lifetime bar, subject, issuer, SANs, key, serial, fingerprint with copy/PEM. Then the chain as a vertical stack with the weak link marked, per-address results of the last check, history of certificates seen on the target. Side column: configuration, findings on this target (with a link to all of them on the Findings page), alerts sent. Buttons: Check now, Edit, Disable or Enable, Delete (operator+). Delete goes to a confirmation page that shows what is removed and offers Disable instead. |
-| Target form | operator+ | Fields in order: host, port, protocol, name, servername; trust mode (system / bundle / self-signed) and bundle, renewal managed, expected issuer; thresholds, interval, addresses; tags, channels, notes. The port follows the protocol while it is empty or still the previous protocol's default. "Test without saving" runs a probe and shows the result in a side panel. |
+| Target detail | viewer+ | Leads with the certificate: countdown, lifetime bar, subject, issuer, SANs, key, serial, fingerprint with copy/PEM. Then the chain as a vertical stack with the weak link marked, per-address results of the last check with the result of the TLS 1.0 and 1.1 test below them, history of certificates seen on the target. Side column: configuration, findings on this target (with a link to all of them on the Findings page), alerts sent. Buttons: Check now, Edit, Disable or Enable, Delete (operator+). Delete goes to a confirmation page that shows what is removed and offers Disable instead. |
+| Target form | operator+ | Fields in order: host, port, protocol, name, servername; trust mode (system / bundle / self-signed) and bundle, renewal managed, expected issuer; thresholds, interval, addresses; under "Probe and reminder settings" timeout, retries, debounce, the TLS 1.0 and 1.1 test (test daily / do not test) and reminders; tags, channels, notes. The port follows the protocol while it is empty or still the previous protocol's default. "Test without saving" runs a probe and shows the result in a side panel. |
 | Certificates | viewer+ | The inventory: one row per unique certificate: subject, issuer, days left, lifetime bar, not after, key, number of targets serving it, short fingerprint, first seen. Filter field and chips for expiry window, issuer, key type; a switch to include or hide certificates no longer served. Row expands to full fingerprint, SANs, chain and the targets and addresses where it is served. Export as CSV. |
 | Findings | viewer+ | Open findings first, sorted by severity then days left; each row: severity, kind with detail, target, since, last alert, acknowledgement. The acknowledge form (until-date, comment) and the alert timeline open in a side panel (operator+), closed with × or Escape. Filter field (target, host, finding), a target filter linked from the target page, and chips for open/resolved, severity and kind. Bulk acknowledgement (operator+): a checkbox per open finding and "select all shown"; a bar with one until-date and comment acknowledges the selection. Certificate changes in it are confirmed and resolved, as when acknowledged one by one. |
 | Settings: General | admin | Public base URL, time zone, proxy trust, local targets; values set by environment shown read-only. |
@@ -310,11 +319,11 @@ Settings pages added for this: **General** (base URL, proxy trust, local targets
 
 **Packaging**: `go build` produces one static binary with the frontend embedded via `embed`; releases ship binaries for linux/amd64, linux/arm64 and darwin/arm64, plus a Docker image from `scratch` with CA certificates, published to GitHub Container Registry. The compose file in the repository runs the image with one volume for `data/`; TLS termination is left to the user's proxy.
 
-**Subcommands**: `serve`, `create-admin -email`, `migrate` (also runs at start), `backup <path>` (SQLite `VACUUM INTO`, safe while running, never migrates), `healthcheck` (for the container), `rotate-key` (re-encrypts stored secrets under a new key; server stopped), `check <host[:port]> [-protocol -servername -ca-file -insecure]` for scripts and CI, exit code 0/1/2 by severity.
+**Subcommands**: `serve`, `create-admin -email`, `migrate` (also runs at start), `backup <path>` (SQLite `VACUUM INTO`, safe while running, never migrates), `healthcheck` (for the container), `rotate-key` (re-encrypts stored secrets under a new key; server stopped), `check <host[:port]> [-protocol -servername -ca-file -insecure -no-legacy]` for scripts and CI, exit code 0/1/2 by severity. It tests TLS 1.0 and 1.1 unless `-no-legacy` is given; each address in the JSON lists the old versions it accepted under `legacy_accepted`, absent when untested or without a verdict.
 
 **Operations**: `/healthz` reports database reachability and scheduler progress (last run, backlog, how long the oldest due check has waited); when enabled under Settings › General, `/metrics` serves Prometheus gauges without sign-in (targets by status, open findings by severity, alerts pending and given up, each target's certificate expiry, scheduler backlog and checks); structured logs with request IDs and one line per check; a daily backup is the `backup` subcommand on a cron, and Settings › Backup downloads and restores an encrypted backup of the whole instance. Upgrades are a binary swap; migrations are forward-only and refuse to run a database written by a newer version.
 
-**Development**: `make build`, `make test`, `make frontend`, `make run` with a throw-away database; a seed subcommand that adds a few public targets (expired.badssl.com, self-signed.badssl.com, a Let's Encrypt site) so the UI shows every state immediately.
+**Development**: `make build`, `make test`, `make frontend`, `make run` with a throw-away database; a seed subcommand that adds a few public targets (expired.badssl.com, self-signed.badssl.com, tls-v1-0.badssl.com:1010, a Let's Encrypt site) so the UI shows every state immediately.
 
 ## Security
 
@@ -370,6 +379,7 @@ Where the requirements said "not sure" or "what do you recommend", this document
 
 | Topic | Decision in this document | Why |
 | --- | --- | --- |
+| Legacy TLS versions | Test TLS 1.0 and 1.1 once a day per address with pinned handshakes; `legacy_protocol` warning; per-target switch to turn it off | Compliance baselines (PCI DSS, NCSC, BSI) require them off, and a firmware update or a reset load balancer profile can turn them back on unnoticed; daily is enough for a setting that rarely changes, and the switch keeps unfixable appliances from becoming noise |
 | Multiple A/AAAA records | Probe all addresses, up to 8; `inconsistent` finding when they differ; per-target switch to first-only | The one stale node behind a load balancer is the failure a single probe misses |
 | Grouping | Free-form tags plus a notes field, no fixed hierarchy | Enough at 100 targets; a hierarchy adds screens and migrations |
 | Alert behaviour | Transition alerts, severity-based reminders, recovery notices, acknowledge with snooze, optional weekly digest | Daily checks must not become daily mail |

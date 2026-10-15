@@ -17,13 +17,23 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/probe"
 )
 
-// ProbeRequest builds the probe request for a target.
+// LegacyEvery is how often a target is tested for TLS 1.0 and 1.1. The
+// hour of slack keeps a daily test on a daily slot whose check starts a
+// few seconds early.
+const LegacyEvery = 24 * time.Hour
+
+const legacySlack = time.Hour
+
+// ProbeRequest builds the probe request for a target. The legacy versions
+// are tested when the last test is older than LegacyEvery; the caller sets
+// req.Legacy to test them anyway (Check now, Test without saving).
 func (s *Service) ProbeRequest(ctx context.Context, t Target, st config.Settings) (probe.Request, error) {
 	eff := t.Effective(st.Defaults)
 	req := probe.Request{
 		Host: t.Host, Port: t.Port, Protocol: t.Protocol, ServerName: t.ServerName, Trust: t.Trust,
 		FirstOnly: !t.AllAddresses, Timeout: time.Duration(eff.TimeoutS) * time.Second, Retries: eff.Retries,
 		AllowLocal: st.General.AllowLocal, Now: s.Now,
+		Legacy: !t.SkipLegacy && s.now().Sub(time.Unix(t.LegacyChecked, 0)) >= LegacyEvery-legacySlack,
 	}
 	if t.Trust == probe.TrustBundle {
 		p, err := s.BundlePool(ctx, t.BundleID)
@@ -68,7 +78,7 @@ func (s *Service) Evaluate(ctx context.Context, t Target, r probe.Result, st con
 		Manual:         check.Thresholds{Warn: st.Defaults.Manual.WarnDays, Crit: st.Defaults.Manual.CritDays},
 		Managed:        check.Thresholds{Warn: st.Defaults.Managed.WarnDays, Crit: st.Defaults.Managed.CritDays},
 		RenewalManaged: t.RenewalManaged, RenewalSet: t.RenewalSet, ExpectedIssuer: t.ExpectedIssuer,
-		Debounce: eff.Debounce, PinnedFP: t.PinnedFP,
+		Debounce: eff.Debounce, PinnedFP: t.PinnedFP, SkipLegacy: t.SkipLegacy,
 	}
 	return check.Evaluate(ct, prev, r, s.now()), nil
 }
@@ -344,6 +354,10 @@ func updateTargetTx(ctx context.Context, tx *sql.Tx, t Target, r probe.Result, o
 			set = append(set, "renewal_managed=?")
 			args = append(args, out.RenewalManaged)
 		}
+	}
+	if out.LegacyChecked {
+		set = append(set, "legacy_checked=?", "legacy_accepted=?")
+		args = append(args, checkedAt, strings.Join(out.Legacy, ","))
 	}
 	if out.PinFP != "" {
 		set = append(set, "pinned_fp=?")

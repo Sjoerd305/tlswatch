@@ -19,19 +19,20 @@ const targetCols = `t.id, t.name, t.host, t.port, t.protocol, t.servername, t.tr
 	t.renewal_managed, t.renewal_set, t.expected_issuer, t.warn_days, t.crit_days, t.interval_s, t.timeout_s, t.retries, t.debounce,
 	t.remind_warn_s, t.remind_crit_s, t.all_addresses, t.all_channels, t.tags, t.notes, t.enabled, t.created_at, t.created_by, t.updated_at,
 	t.status, t.pinned_fp, t.current_fp, t.not_after, t.tls_version, t.address_count, t.last_check, t.last_error,
-	t.fail_streak, t.ok_streak, t.dns_fail_streak, t.dns_ok_streak, t.next_check`
+	t.fail_streak, t.ok_streak, t.dns_fail_streak, t.dns_ok_streak, t.next_check, t.legacy_check, t.legacy_checked, t.legacy_accepted`
 
 const targetFrom = ` FROM targets t LEFT JOIN ca_bundles b ON b.id = t.bundle_id `
 
 func scanTarget(r interface{ Scan(...any) error }) (Target, error) {
 	var t Target
-	var proto, trust, tags string
+	var proto, trust, tags, legacy string
+	var legacyCheck bool
 	var warn, crit, interval, timeout, retries, debounce, rw, rc sql.NullInt64
 	err := r.Scan(&t.ID, &t.Name, &t.Host, &t.Port, &proto, &t.ServerName, &trust, &t.BundleID, &t.BundleName,
 		&t.RenewalManaged, &t.RenewalSet, &t.ExpectedIssuer, &warn, &crit, &interval, &timeout, &retries, &debounce,
 		&rw, &rc, &t.AllAddresses, &t.AllChannels, &tags, &t.Notes, &t.Enabled, &t.CreatedAt, &t.CreatedBy, &t.UpdatedAt,
 		&t.Status, &t.PinnedFP, &t.CurrentFP, &t.NotAfter, &t.TLSVersion, &t.AddressCount, &t.LastCheck, &t.LastError,
-		&t.FailStreak, &t.OkStreak, &t.DNSFail, &t.DNSOk, &t.NextCheck)
+		&t.FailStreak, &t.OkStreak, &t.DNSFail, &t.DNSOk, &t.NextCheck, &legacyCheck, &t.LegacyChecked, &legacy)
 	if err != nil {
 		return t, err
 	}
@@ -40,6 +41,10 @@ func scanTarget(r interface{ Scan(...any) error }) (Target, error) {
 	t.Retries, t.Debounce, t.RemindWarnS, t.RemindCritS = intPtr(retries), intPtr(debounce), intPtr(rw), intPtr(rc)
 	if tags != "" {
 		t.Tags = strings.Split(tags, ",")
+	}
+	t.SkipLegacy = !legacyCheck
+	if legacy != "" {
+		t.LegacyAccepted = strings.Split(legacy, ",")
 	}
 	return t, nil
 }
@@ -232,19 +237,22 @@ func (s *Service) SaveTarget(ctx context.Context, t Target, user string) (int64,
 	args := []any{t.Name, t.Host, t.Port, string(t.Protocol), t.ServerName, string(t.Trust), bundle,
 		t.RenewalManaged, t.RenewalSet, t.ExpectedIssuer, nullInt(t.WarnDays), nullInt(t.CritDays), nullInt(t.IntervalS),
 		nullInt(t.TimeoutS), nullInt(t.Retries), nullInt(t.Debounce), nullInt(t.RemindWarnS), nullInt(t.RemindCritS),
-		t.AllAddresses, t.AllChannels, strings.Join(t.Tags, ","), t.Notes, t.Enabled, now}
+		t.AllAddresses, !t.SkipLegacy, t.AllChannels, strings.Join(t.Tags, ","), t.Notes, t.Enabled, now}
 	if t.ID == 0 {
 		res, err := tx.ExecContext(ctx, `INSERT INTO targets(name, host, port, protocol, servername, trust_mode, bundle_id,
 			renewal_managed, renewal_set, expected_issuer, warn_days, crit_days, interval_s, timeout_s, retries, debounce,
-			remind_warn_s, remind_crit_s, all_addresses, all_channels, tags, notes, enabled, updated_at, created_at, created_by, status, next_check)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`, append(args, now, user, StatusPending)...)
+			remind_warn_s, remind_crit_s, all_addresses, legacy_check, all_channels, tags, notes, enabled, updated_at, created_at, created_by, status, next_check)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`, append(args, now, user, StatusPending)...)
 		if err != nil {
 			return 0, uniqueTarget(err)
 		}
 		t.ID, _ = res.LastInsertId()
 	} else {
-		var oldTrust, oldHost, oldSNI string
-		err := tx.QueryRowContext(ctx, "SELECT trust_mode, host, servername FROM targets WHERE id = ?", t.ID).Scan(&oldTrust, &oldHost, &oldSNI)
+		var oldTrust, oldHost, oldSNI, oldProto string
+		var oldPort int
+		var oldLegacy bool
+		err := tx.QueryRowContext(ctx, "SELECT trust_mode, host, servername, port, protocol, legacy_check FROM targets WHERE id = ?", t.ID).
+			Scan(&oldTrust, &oldHost, &oldSNI, &oldPort, &oldProto, &oldLegacy)
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
 		}
@@ -253,7 +261,7 @@ func (s *Service) SaveTarget(ctx context.Context, t Target, user string) (int64,
 		}
 		_, err = tx.ExecContext(ctx, `UPDATE targets SET name=?, host=?, port=?, protocol=?, servername=?, trust_mode=?, bundle_id=?,
 			renewal_managed=?, renewal_set=?, expected_issuer=?, warn_days=?, crit_days=?, interval_s=?, timeout_s=?, retries=?, debounce=?,
-			remind_warn_s=?, remind_crit_s=?, all_addresses=?, all_channels=?, tags=?, notes=?, enabled=?, updated_at=? WHERE id = ?`,
+			remind_warn_s=?, remind_crit_s=?, all_addresses=?, legacy_check=?, all_channels=?, tags=?, notes=?, enabled=?, updated_at=? WHERE id = ?`,
 			append(args, t.ID)...)
 		if err != nil {
 			return 0, uniqueTarget(err)
@@ -261,6 +269,13 @@ func (s *Service) SaveTarget(ctx context.Context, t Target, user string) (int64,
 		// A new endpoint or trust mode starts a new pin and history baseline.
 		if oldTrust != string(t.Trust) || oldHost != t.Host || oldSNI != t.ServerName {
 			if _, err := tx.ExecContext(ctx, "UPDATE targets SET pinned_fp = '', next_check = 0 WHERE id = ?", t.ID); err != nil {
+				return 0, err
+			}
+		}
+		// A new endpoint, or the test switched on or off, forgets the last
+		// test of the old versions, so the next check runs it.
+		if oldHost != t.Host || oldSNI != t.ServerName || oldPort != t.Port || oldProto != string(t.Protocol) || oldLegacy == t.SkipLegacy {
+			if _, err := tx.ExecContext(ctx, "UPDATE targets SET legacy_checked = 0, legacy_accepted = '' WHERE id = ?", t.ID); err != nil {
 				return 0, err
 			}
 		}

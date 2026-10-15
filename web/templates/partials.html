@@ -56,6 +56,7 @@
   {{- range $r.R.SkippedIPv6}}<dt>Skipped</dt><dd class="mono">{{.}} · no IPv6 route</dd>{{end}}
   {{- with $r.Cert}}
   {{- range $r.R.Addresses}}{{if .OK}}<dt>Protocol</dt><dd class="mono">{{.TLSVersion}} · {{.Cipher}}</dd>{{break}}{{end}}{{end}}
+  {{- if $r.O.LegacyChecked}}<dt>TLS 1.0, 1.1</dt><dd>{{if $r.O.Legacy}}<span class="warn-t">{{join $r.O.Legacy ", "}} accepted</span>{{else}}refused{{end}}</dd>{{end}}
   <dt>Subject</dt><dd>{{.SubjectCN}}</dd>
   <dt>Issuer</dt><dd>{{.IssuerCN}}</dd>
   <dt>Not after</dt><dd><span class="mono">{{date $p.Loc .NotAfter.Unix}}</span> · {{$r.Days}} days · {{$r.Used}}% of lifetime used</dd>

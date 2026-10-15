@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sjoerd305/tlswatch/internal/auth"
 	"github.com/sjoerd305/tlswatch/internal/authz"
@@ -876,5 +877,33 @@ func TestAdminSetsPasswordWithoutMail(t *testing.T) {
 	}
 	if rec := hs.do(authz.Admin, "POST", fmt.Sprintf("/settings/users/%d/password", u.ID), set, true); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") == "/settings/users" {
 		t.Fatalf("password reset with SMTP: %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+}
+
+func TestLegacyProtocolOnTargetPage(t *testing.T) {
+	hs := newHarness(t)
+	now := time.Now().Unix()
+	if _, err := hs.db.W.Exec(`UPDATE targets SET legacy_checked = ?, legacy_accepted = 'TLS 1.0,TLS 1.1', last_check = ?, last_check_id = 'c1' WHERE id = 1`, now, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := hs.db.W.Exec(`INSERT INTO observations(target_id, check_id, address, checked_at, status, tls_version) VALUES(1, 'c1', '192.0.2.1', ?, 'ok', 'TLS 1.3')`, now); err != nil {
+		t.Fatal(err)
+	}
+	body := hs.do(authz.Viewer, "GET", "/targets/1", nil, false).Body.String()
+	if !strings.Contains(body, "TLS 1.0, TLS 1.1 accepted") || !strings.Contains(body, "tested daily") {
+		t.Fatal("target page does not show the accepted old versions")
+	}
+
+	f := url.Values{"host": {"example.org"}, "protocol": {"tls"}, "trust_mode": {"system"}, "legacy": {"off"}, "all_channels": {"1"}, "action": {"save"}}
+	if rec := hs.do(authz.Operator, "POST", "/targets/1/edit", f, true); rec.Code != http.StatusSeeOther {
+		t.Fatalf("save: %d", rec.Code)
+	}
+	tg, _ := hs.srv.Core.Target(context.Background(), 1)
+	if !tg.SkipLegacy || tg.LegacyChecked != 0 || tg.LegacyAccepted != nil {
+		t.Fatalf("switched off: %+v", tg)
+	}
+	body = hs.do(authz.Operator, "GET", "/targets/1/edit", nil, false).Body.String()
+	if !strings.Contains(body, `<option value="off" selected>Do not test</option>`) {
+		t.Fatal("form does not show the test switched off")
 	}
 }

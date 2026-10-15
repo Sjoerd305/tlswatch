@@ -56,13 +56,14 @@
         <select id="addr" name="addresses" class="input"><option value="all"{{if $t.AllAddresses}} selected{{end}}>All, max 8</option><option value="first"{{if not $t.AllAddresses}} selected{{end}}>First only</option></select></div>
     </div>
     <span class="help lift">Empty fields follow Settings › Defaults: {{$d.Manual.WarnDays}}/{{$d.Manual.CritDays}} days for manual renewal, {{$d.Managed.WarnDays}}/{{$d.Managed.CritDays}} for renewal managed.</span>
-    <details{{if or $f.Timeout $f.Retries $f.Debounce $f.RemindW $f.RemindC $e.timeout_s $e.retries $e.debounce $e.remind_warn_s $e.remind_crit_s}} open{{end}}>
+    <details{{if or $f.Timeout $f.Retries $f.Debounce $f.RemindW $f.RemindC $t.SkipLegacy $e.timeout_s $e.retries $e.debounce $e.remind_warn_s $e.remind_crit_s}} open{{end}}>
       <summary class="label">Probe and reminder settings</summary>
       <div class="fgrid c4">
         <div class="field"><label class="label" for="timeout">Timeout, s</label><input id="timeout" name="timeout_s" class="input mono{{if $e.timeout_s}} invalid{{end}}" value="{{$f.Timeout}}" inputmode="numeric" placeholder="{{$d.TimeoutS}}">{{template "err" $e.timeout_s}}</div>
         <div class="field"><label class="label" for="retries">Retries</label><input id="retries" name="retries" class="input mono{{if $e.retries}} invalid{{end}}" value="{{$f.Retries}}" inputmode="numeric" placeholder="{{$d.Retries}}">{{template "err" $e.retries}}</div>
         <div class="field"><label class="label" for="debounce">Debounce, checks</label><input id="debounce" name="debounce" class="input mono{{if $e.debounce}} invalid{{end}}" value="{{$f.Debounce}}" inputmode="numeric" placeholder="{{$d.Debounce}}">{{template "err" $e.debounce}}</div>
-        <div></div>
+        <div class="field"><label class="label" for="legacy">TLS 1.0 and 1.1</label>
+          <select id="legacy" name="legacy" class="input"><option value="on"{{if not $t.SkipLegacy}} selected{{end}}>Test daily</option><option value="off"{{if $t.SkipLegacy}} selected{{end}}>Do not test</option></select></div>
         <div class="field"><label class="label" for="rw">Remind warning</label>{{template "remind-select" (dict "Name" "remind_warn_s" "ID" "rw" "Value" $f.RemindW "Default" $d.RemindWarnS "Min" 86400)}}{{template "err" $e.remind_warn_s}}</div>
         <div class="field"><label class="label" for="rc">Remind critical</label>{{template "remind-select" (dict "Name" "remind_crit_s" "ID" "rc" "Value" $f.RemindC "Default" $d.RemindCritS "Min" 3600)}}{{template "err" $e.remind_crit_s}}</div>
       </div>

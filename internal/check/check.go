@@ -4,6 +4,7 @@
 package check
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"slices"
@@ -24,6 +25,7 @@ const (
 	SelfSigned         Kind = "self_signed"
 	HostnameMismatch   Kind = "hostname_mismatch"
 	WeakSignature      Kind = "weak_signature"
+	LegacyProtocol     Kind = "legacy_protocol"
 	CertificateChanged Kind = "certificate_changed"
 	IssuerChanged      Kind = "issuer_changed"
 	Inconsistent       Kind = "inconsistent"
@@ -33,7 +35,7 @@ const (
 )
 
 // Kinds lists every kind, for filters.
-var Kinds = []Kind{Expiring, Expired, ChainUntrusted, SelfSigned, HostnameMismatch, WeakSignature, CertificateChanged, IssuerChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed}
+var Kinds = []Kind{Expiring, Expired, ChainUntrusted, SelfSigned, HostnameMismatch, WeakSignature, LegacyProtocol, CertificateChanged, IssuerChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed}
 
 // Label is the human name of a kind.
 func (k Kind) Label() string {
@@ -46,6 +48,8 @@ func (k Kind) Label() string {
 		return "Hostname mismatch"
 	case WeakSignature:
 		return "Weak signature"
+	case LegacyProtocol:
+		return "Legacy protocol"
 	case CertificateChanged:
 		return "Certificate changed"
 	case IssuerChanged:
@@ -72,6 +76,8 @@ func (k Kind) Short() string {
 		return "hostname"
 	case WeakSignature:
 		return "weak"
+	case LegacyProtocol:
+		return "legacy"
 	case TLSUnavailable:
 		return "starttls"
 	case DNSFailed:
@@ -186,6 +192,7 @@ type Target struct {
 	ExpectedIssuer string
 	Debounce       int
 	PinnedFP       string
+	SkipLegacy     bool // TLS 1.0 and 1.1 are not tested
 }
 
 // Previous is the state left by the last check.
@@ -229,13 +236,17 @@ type Outcome struct {
 	RenewalManaged bool
 	Thresholds     Thresholds
 	PinFP          string // non-empty: pin this fingerprint (self-signed trust)
-	Answered       bool   // at least one address completed a handshake
-	FailStreak     int
-	OkStreak       int
-	DNSFail        int
-	DNSOk          int
-	Addresses      map[string]AddressOutcome
-	Error          string // summary error when nothing answered
+	// LegacyChecked reports that this check tested the legacy versions;
+	// Legacy lists those any address accepted.
+	LegacyChecked bool
+	Legacy        []string
+	Answered      bool // at least one address completed a handshake
+	FailStreak    int
+	OkStreak      int
+	DNSFail       int
+	DNSOk         int
+	Addresses     map[string]AddressOutcome
+	Error         string // summary error when nothing answered
 	// Waiting lists network kinds that failed this check but are not open
 	// yet: the debounce wants more consecutive failures.
 	Waiting []Kind
@@ -280,6 +291,7 @@ func Evaluate(t Target, prev Previous, r probe.Result, now time.Time) Outcome {
 
 	e.inconsistent(ok)
 	e.facts(ok)
+	e.legacy(ok)
 	e.expectedIssuer(info)
 	e.changes(info)
 	return e.out
@@ -471,6 +483,58 @@ func (e *evaluation) facts(ok []probe.Address) {
 			e.open(f)
 		}
 	}
+}
+
+// legacy opens legacy_protocol while an address accepts TLS 1.0 or 1.1.
+// The versions are tested about once a day, so a check that did not test
+// them leaves the finding as it is; so does a test that found nothing but
+// could not reach every address.
+func (e *evaluation) legacy(ok []probe.Address) {
+	if e.t.SkipLegacy {
+		return
+	}
+	on := map[string][]string{}
+	tested, all := false, true
+	for _, a := range ok {
+		tested = tested || a.LegacyChecked || len(a.Legacy) > 0
+		all = all && a.LegacyChecked
+		for _, v := range a.Legacy {
+			on[v] = append(on[v], a.IP)
+		}
+	}
+	if !tested || len(on) == 0 && !all {
+		e.keep(LegacyProtocol)
+		return
+	}
+	e.out.LegacyChecked = true
+	// Versions accepted by the same addresses share one part of the text:
+	// "TLS 1.0, TLS 1.1 accepted", or "… accepted on 192.0.2.1".
+	var where []string
+	versions := map[string][]string{}
+	for _, v := range probe.LegacyVersions {
+		name := tls.VersionName(v)
+		ips, found := on[name]
+		if !found {
+			continue
+		}
+		e.out.Legacy = append(e.out.Legacy, name)
+		w := ""
+		if len(ips) < len(ok) {
+			w = " on " + strings.Join(ips, ", ")
+		}
+		if versions[w] == nil {
+			where = append(where, w)
+		}
+		versions[w] = append(versions[w], name)
+	}
+	if len(where) == 0 {
+		return
+	}
+	var parts []string
+	for _, w := range where {
+		parts = append(parts, strings.Join(versions[w], ", ")+" accepted"+w)
+	}
+	e.open(Finding{Kind: LegacyProtocol, Severity: Warning, Details: strings.Join(parts, "; ")})
 }
 
 // worse reports whether f is worse than old, a finding of the same kind:

@@ -295,7 +295,7 @@ func (s *Scheduler) dispatch(ctx context.Context) {
 }
 
 func (s *Scheduler) run(ctx context.Context, id int64, done chan struct{}) {
-	t, err := s.check(ctx, id)
+	t, err := s.check(ctx, id, false)
 	switch {
 	case errors.Is(err, core.ErrStale):
 		// Edited or disabled meanwhile; the reload picks up the new slot.
@@ -377,7 +377,9 @@ func (s *Scheduler) setLocked(id, next, stored int64) {
 	heap.Push(&s.q, it)
 }
 
-func (s *Scheduler) check(ctx context.Context, id int64) (core.Target, error) {
+// check probes and stores one target; legacy tests TLS 1.0 and 1.1 even
+// when the daily test is not due.
+func (s *Scheduler) check(ctx context.Context, id int64, legacy bool) (core.Target, error) {
 	t, err := s.Core.Target(ctx, id)
 	if err != nil {
 		return t, err
@@ -387,6 +389,7 @@ func (s *Scheduler) check(ctx context.Context, id int64) (core.Target, error) {
 	if err != nil {
 		return t, err
 	}
+	req.Legacy = req.Legacy || legacy && !t.SkipLegacy
 	pf := probe.Probe
 	if s.Probe != nil {
 		pf = s.Probe
@@ -438,7 +441,7 @@ func (s *Scheduler) CheckNow(ctx context.Context, id int64) (core.Target, error)
 		s.mu.Unlock()
 		close(done)
 	}()
-	t, err := s.check(ctx, id)
+	t, err := s.check(ctx, id, true)
 	if errors.Is(err, core.ErrStale) {
 		return s.Core.Target(ctx, id) // edited meanwhile; it is checked again soon
 	}
