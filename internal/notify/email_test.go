@@ -1,7 +1,9 @@
 package notify
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -72,7 +74,7 @@ func TestSMTPMultipart(t *testing.T) {
 		t.Fatalf("content type %q: %v", mt, err)
 	}
 	mr := multipart.NewReader(msg.Body, params["boundary"])
-	var types, bodies []string
+	var types, bodies, raws []string
 	for {
 		p, err := mr.NextRawPart()
 		if err == io.EOF {
@@ -81,14 +83,37 @@ func TestSMTPMultipart(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		b, _ := io.ReadAll(quotedprintable.NewReader(p))
+		raw, _ := io.ReadAll(p)
+		b, _ := io.ReadAll(quotedprintable.NewReader(bytes.NewReader(raw)))
+		raws = append(raws, string(raw))
 		types = append(types, p.Header.Get("Content-Type"))
 		bodies = append(bodies, strings.ReplaceAll(string(b), "\r\n", "\n"))
 	}
-	if len(types) != 2 || !strings.HasPrefix(types[0], "text/plain") || !strings.HasPrefix(types[1], "text/html") {
+	if len(types) != 2 || !strings.HasPrefix(types[0], "text/plain") || !strings.HasPrefix(types[1], "multipart/related") {
 		t.Fatalf("parts %q", types)
 	}
-	if bodies[0] != m.Body || bodies[1] != m.HTML {
-		t.Fatal("part bodies differ from the message")
+	if bodies[0] != m.Body {
+		t.Fatal("text part differs from the message")
+	}
+	// The HTML part and the mark it shows inline.
+	_, params, _ = mime.ParseMediaType(types[1])
+	rel := multipart.NewReader(strings.NewReader(raws[1]), params["boundary"])
+	html, err := rel.NextRawPart()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(quotedprintable.NewReader(html))
+	if strings.ReplaceAll(string(b), "\r\n", "\n") != m.HTML || !strings.Contains(m.HTML, `src="cid:`+markCID+`"`) {
+		t.Fatal("HTML part differs from the message or lacks the mark")
+	}
+	img, err := rel.NextRawPart()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if img.Header.Get("Content-ID") != "<"+markCID+">" || img.Header.Get("Content-Type") != "image/png" {
+		t.Fatalf("image part headers %v", img.Header)
+	}
+	if data, _ := io.ReadAll(base64.NewDecoder(base64.StdEncoding, img)); !bytes.Equal(data, markPNG) {
+		t.Fatal("image part is not the mark")
 	}
 }

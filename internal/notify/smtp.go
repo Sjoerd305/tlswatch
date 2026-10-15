@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"mime"
@@ -259,16 +260,45 @@ func buildMessage(from string, to []string, m Message, now time.Time) []byte {
 	boundary := "tlswatch-" + NewRef()
 	h("Content-Type", `multipart/alternative; boundary="`+boundary+`"`)
 	b.WriteString("\r\n")
-	for _, part := range []struct{ typ, body string }{{"text/plain", m.Body}, {"text/html", m.HTML}} {
-		b.WriteString("--" + boundary + "\r\n")
-		h("Content-Type", part.typ+"; charset=utf-8")
+	text := func(typ, body string) {
+		h("Content-Type", typ+"; charset=utf-8")
 		h("Content-Transfer-Encoding", "quoted-printable")
 		b.WriteString("\r\n")
-		writeQP(&b, part.body)
+		writeQP(&b, body)
 		b.WriteString("\r\n")
+	}
+	b.WriteString("--" + boundary + "\r\n")
+	text("text/plain", m.Body)
+	b.WriteString("--" + boundary + "\r\n")
+	if strings.Contains(m.HTML, "cid:"+markCID) {
+		// The HTML with the mark it shows inline (RFC 2387).
+		related := boundary + "-related"
+		h("Content-Type", `multipart/related; type="text/html"; boundary="`+related+`"`)
+		b.WriteString("\r\n--" + related + "\r\n")
+		text("text/html", m.HTML)
+		b.WriteString("--" + related + "\r\n")
+		h("Content-Type", "image/png")
+		h("Content-Transfer-Encoding", "base64")
+		h("Content-ID", "<"+markCID+">")
+		h("Content-Disposition", `inline; filename="tlswatch.png"`)
+		b.WriteString("\r\n")
+		writeBase64(&b, markPNG)
+		b.WriteString("--" + related + "--\r\n")
+	} else {
+		text("text/html", m.HTML)
 	}
 	b.WriteString("--" + boundary + "--\r\n")
 	return b.Bytes()
+}
+
+// writeBase64 writes data base64 in lines of 76 characters.
+func writeBase64(b *bytes.Buffer, data []byte) {
+	enc := base64.StdEncoding.EncodeToString(data)
+	for len(enc) > 76 {
+		b.WriteString(enc[:76] + "\r\n")
+		enc = enc[76:]
+	}
+	b.WriteString(enc + "\r\n")
 }
 
 // writeQP writes text quoted-printable with CRLF line ends.

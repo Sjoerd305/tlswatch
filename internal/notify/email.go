@@ -2,6 +2,7 @@ package notify
 
 import (
 	"bytes"
+	_ "embed"
 	"html/template"
 	"strings"
 )
@@ -12,6 +13,16 @@ import (
 // clients drop or ignore much of CSS, so the light tokens are inline styles
 // and a <style> block adds the dark tokens for clients that honour it.
 // Fonts fall back to system faces; a mail does not load web fonts.
+
+// markPNG is the shield mark of the UI and favicon, rendered at three times
+// its 18px size: most mail clients do not show inline SVG. The mail carries
+// it as an inline part (multipart/related) that the HTML refers to by
+// Content-ID, so it shows without loading remote images.
+//
+//go:embed mark.png
+var markPNG []byte
+
+const markCID = "mark@tlswatch"
 
 const (
 	sansStack = `'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif`
@@ -41,7 +52,7 @@ var emailStyles = map[string]string{
 	"body":    "margin:0;padding:0;background:#f5f6f7;",
 	"outer":   "padding:24px 12px;",
 	"bar":     "background:#1c2430;color:#e8edf2;padding:12px 20px;border-radius:6px 0 0 0;font:600 15px/1.2 " + sansStack + ";",
-	"mark":    "color:#6ea0ec;",
+	"mark":    "display:inline-block;width:18px;height:18px;border:0;vertical-align:-4px;",
 	"barnote": "background:#1c2430;color:#95a2b1;padding:12px 20px;border-radius:0 6px 0 0;font:400 12px/1.2 " + sansStack + ";text-align:right;",
 	"card":    "background:#ffffff;border:1px solid #dde2e7;border-top:0;border-radius:0 0 6px 6px;padding:22px 24px 24px;font:400 13px/1.5 " + sansStack + ";color:#1a2330;",
 	"event":   "font:400 12px/1.4 " + sansStack + ";color:#5c6b7a;",
@@ -118,7 +129,7 @@ var emailTemplates = template.Must(template.New("email").Funcs(emailFuncs).Parse
 <table role="presentation" class="outer" width="100%" cellpadding="0" cellspacing="0" border="0" style="{{st "body"}}"><tr><td align="center" class="outer" style="{{st "outer"}}">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;">
 <tr>
-<td class="bar" style="{{st "bar"}}"><span class="mark" style="{{st "mark"}}">&#9632;</span>&nbsp;tlswatch</td>
+<td class="bar" style="{{st "bar"}}"><img src="cid:{{.MarkCID}}" width="18" height="18" alt="" style="{{st "mark"}}">&nbsp;tlswatch</td>
 <td class="barnote" style="{{st "barnote"}}">{{.Label}}</td>
 </tr>
 <tr><td colspan="2" class="card" style="{{st "card"}}">
@@ -213,6 +224,7 @@ type emailDoc struct {
 	Link      string
 	LinkText  string
 	CSS       template.CSS
+	MarkCID   string
 	Alert     *alertView
 	Batch     *batchView
 	Digest    *digestView
@@ -255,6 +267,7 @@ type testView struct{ Channel string }
 // renderHTML renders an email; an error leaves the mail plain text.
 func renderHTML(d emailDoc) string {
 	d.CSS = template.CSS(darkCSS) // #nosec G203 -- constant
+	d.MarkCID = markCID
 	if d.LinkText == "" {
 		d.LinkText = "Open in tlswatch"
 	}
