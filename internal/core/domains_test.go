@@ -245,6 +245,10 @@ func TestDomainSourceFailure(t *testing.T) {
 	if d.FailSince == 0 || !strings.Contains(d.PollError, "502") || d.Status() != StatusUnreachable {
 		t.Fatalf("after a failed poll: %+v", d)
 	}
+	st := e.svc.CurrentSettings(e.ctx)
+	if e.svc.DomainDue(d, st, e.clock.Now().Add(10*time.Minute)) || !e.svc.DomainDue(d, st, e.clock.Now().Add(16*time.Minute)) {
+		t.Fatal("a failed poll is not retried after 15 minutes")
+	}
 	if len(e.domainFindings(d.ID)) != 0 {
 		t.Fatal("ct_source_failed opened within the day")
 	}

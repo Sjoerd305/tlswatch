@@ -136,6 +136,16 @@ const Backlog = 90 * 24 * time.Hour
 // sourceFailAfter is how long polls may fail before ct_source_failed opens.
 const sourceFailAfter = 24 * time.Hour
 
+// pollRetry is how soon a failed poll is tried again, whatever the
+// interval, so a transient error on a daily interval does not cost a day;
+// a source that asks for more (Retry-After) gets more. pollGap is the
+// pause between two polls of one run, so a run over many watches does not
+// land on a free, shared service as a burst.
+const (
+	pollRetry = 15 * time.Minute
+	pollGap   = 2 * time.Second
+)
+
 // ErrDomainExists is returned when a watch with the name exists.
 var ErrDomainExists = usererr.New("A watch for this domain already exists")
 
@@ -406,7 +416,10 @@ func (s *Service) ctSource(st config.Settings) (ct.Source, error) {
 }
 
 // DomainDue reports whether a watch is due for a poll: never polled, or
-// the interval (with a per-watch jitter of up to a tenth) has passed.
+// the interval has passed. A per-watch jitter of up to a quarter of the
+// interval spreads the watches over it, so they do not all come due in
+// the same minute; after a failure polled_at is set so that the retry
+// comes sooner (see pollFailed).
 func (s *Service) DomainDue(d Domain, st config.Settings, now time.Time) bool {
 	if !d.Enabled {
 		return false
@@ -417,7 +430,10 @@ func (s *Service) DomainDue(d Domain, st config.Settings, now time.Time) bool {
 	every := time.Duration(st.CT.IntervalS) * time.Second
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(d.Name))
-	jitter := time.Duration(h.Sum32()%uint32(every/10/time.Second+1)) * time.Second
+	jitter := time.Duration(h.Sum32()%uint32(every/4/time.Second+1)) * time.Second
+	if d.FailSince > 0 {
+		jitter = 0
+	}
 	return now.Sub(time.Unix(d.PolledAt, 0)) >= every-time.Minute+jitter
 }
 
@@ -431,10 +447,22 @@ func (s *Service) PollDomains(ctx context.Context) error {
 		return err
 	}
 	now := s.now()
+	polled := 0
 	for _, d := range ds {
 		if !s.DomainDue(d, st, now) {
 			continue
 		}
+		if polled > 0 {
+			// One poll at a time, a breath apart: the sources are free
+			// services shared with everyone, and a burst is how one gets
+			// a 429 or a 502.
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(pollGap):
+			}
+		}
+		polled++
 		if err := s.PollDomain(ctx, d.ID); err != nil && s.Log != nil {
 			s.Log.Warn("ct poll", "domain", d.Name, "err", err)
 		}
@@ -475,20 +503,25 @@ func (s *Service) PollDomain(ctx context.Context, id int64) error {
 }
 
 // pollFailed records a failed poll and, after a day of failures, opens
-// ct_source_failed on the watch. A rate limit postpones the next poll by
-// what the source asked.
+// ct_source_failed on the watch. The retry comes after pollRetry, or after
+// what a rate-limiting source asked for, whichever is longer; polled_at is
+// set back so that DomainDue sees it due then.
 func (s *Service) pollFailed(ctx context.Context, d Domain, now time.Time, cause error) error {
 	since := d.FailSince
 	if since == 0 {
 		since = now.Unix()
 	}
-	polled := now.Unix()
+	retry := pollRetry
 	var ra *ct.RetryAfterError
-	if errors.As(cause, &ra) {
-		// The next poll is due when the interval has passed since the time
-		// the source asked for, so polled_at moves ahead.
-		polled = now.Add(ra.After).Unix()
+	if errors.As(cause, &ra) && ra.After > retry {
+		retry = ra.After
 	}
+	st := s.CurrentSettings(ctx)
+	every := time.Duration(st.CT.IntervalS) * time.Second
+	if retry > every {
+		retry = every
+	}
+	polled := now.Add(retry + time.Minute - every).Unix()
 	msg := cause.Error()
 	if len(msg) > 300 {
 		msg = msg[:300]
