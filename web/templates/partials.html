@@ -34,18 +34,18 @@
   <td data-label="Status" class="m-lead">{{if waiting $t}}<span class="st off" title="The node is offline; last checked {{when $p.Loc $p.Now $t.LastCheck}}">Waiting for node</span>{{else}}{{template "status" $t.Status}}{{end}}</td>
   <td data-label="Name" class="m-lead"><a href="/targets/{{$t.ID}}" class="ink strong" data-row-link>{{$t.Name}}</a></td>
   <td data-label="Host" class="mono m-full">{{$t.HostPort}}{{if ne (print $t.Protocol) "tls"}} <span class="tag">{{$t.Protocol}}</span>{{end}}{{if gt $t.AddressCount 1}} <span class="tag">{{$t.AddressCount}} addr</span>{{end}}</td>
-  {{- if $r.ShowNode}}<td data-label="Node" class="m-hide">{{if $t.NodeID}}<a class="tag" href="/targets?node={{$t.NodeID}}" data-chip-for="#targets" data-chip-key="node" data-chip-value="{{$t.NodeID}}" title="Show only targets probed from {{$t.NodeName}}">{{$t.NodeName}}</a>{{else}}<span class="muted">server</span>{{end}}</td>{{end}}
+  {{- if $r.ShowNode}}<td data-label="Node" class="m-hide hide-960">{{if $t.NodeID}}<a class="tag" href="/targets?node={{$t.NodeID}}" data-chip-for="#targets" data-chip-key="node" data-chip-value="{{$t.NodeID}}" title="Show only targets probed from {{$t.NodeName}}">{{$t.NodeName}}</a>{{else}}<span class="muted">server</span>{{end}}</td>{{end}}
   {{- if $t.NotAfter}}{{$c := $t.ExpiryClass $p.Settings.Defaults $p.Now}}
   <td data-label="Days" class="num mono days m-lead m-end{{if $c}} {{$c}}-t{{end}}">{{template "days-left" (days $p.Now $t.NotAfter)}}</td>
-  <td data-label="Lifetime" class="m-hide">{{if $t.Cert}}{{template "bar" (dict "Used" (used $p.Now $t.Cert.NotBefore $t.Cert.NotAfter) "Class" ($t.BarClass $p.Settings.Defaults $p.Now))}}{{end}}</td>
-  <td data-label="Expires" class="mono m-hide">{{date $p.Loc $t.NotAfter}}</td>
-  <td data-label="Issuer" class="m-hide">{{if $t.Cert}}{{$t.Cert.IssuerName}}{{if eq (print $t.Trust) "self-signed"}} <span class="tag">pinned</span>{{else if $t.RenewalManaged}} <span class="tag">auto</span>{{end}}{{end}}</td>
-  <td data-label="TLS" class="mono muted m-hide">{{$t.TLSVersion}}</td>
+  <td data-label="Lifetime" class="m-hide hide-1380">{{if $t.Cert}}{{template "bar" (dict "Used" (used $p.Now $t.Cert.NotBefore $t.Cert.NotAfter) "Class" ($t.BarClass $p.Settings.Defaults $p.Now))}}{{end}}</td>
+  <td data-label="Expires" class="mono m-hide hide-1240">{{date $p.Loc $t.NotAfter}}</td>
+  <td data-label="Issuer" class="m-hide hide-1140">{{if $t.Cert}}{{$t.Cert.IssuerName}}{{if eq (print $t.Trust) "self-signed"}} <span class="tag">pinned</span>{{else if $t.RenewalManaged}} <span class="tag">auto</span>{{end}}{{end}}</td>
+  <td data-label="TLS" class="mono muted m-hide hide-1520">{{$t.TLSVersion}}</td>
   {{- else}}
-  <td data-label="Days" class="num mono m-lead m-end">—</td><td data-label="Lifetime" class="m-hide"></td><td data-label="Expires" class="mono m-hide">—</td><td data-label="Issuer" class="m-full">{{if $t.LastError}}<span class="muted ellipsis" title="{{$t.LastError}}">{{$t.LastError}}</span>{{else}}—{{end}}</td><td data-label="TLS" class="m-hide"></td>
+  <td data-label="Days" class="num mono m-lead m-end">—</td><td data-label="Lifetime" class="m-hide hide-1380"></td><td data-label="Expires" class="mono m-hide hide-1240">—</td><td data-label="Issuer" class="m-full hide-1140">{{if $t.LastError}}<span class="muted ellipsis" title="{{$t.LastError}}">{{$t.LastError}}</span>{{else}}—{{end}}</td><td data-label="TLS" class="m-hide hide-1520"></td>
   {{- end}}
-  <td data-label="Tags">{{if $t.Tags}}{{$n := len $t.Tags}}{{$shown := $t.Tags}}{{if gt $n 3}}{{$shown = slice $t.Tags 0 2}}{{end}}<span class="tags line">{{range $shown}}<a class="tag" href="/targets?tag={{.}}" data-chip-for="#targets" data-chip-key="tag" data-chip-value="{{.}}" title="Show only {{.}}">{{.}}</a>{{end}}{{if gt $n 3}}<span class="tag" title="{{join (slice $t.Tags 2) ", "}}">+{{sub $n 2}}</span>{{end}}</span>{{end}}</td>
-  <td data-label="Checked" class="mono muted m-hide">{{when $p.Loc $p.Now $t.LastCheck}}</td>
+  <td data-label="Tags" class="hide-890">{{if $t.Tags}}{{$n := len $t.Tags}}{{$shown := $t.Tags}}{{if gt $n 3}}{{$shown = slice $t.Tags 0 2}}{{end}}<span class="tags line">{{range $shown}}<a class="tag" href="/targets?tag={{.}}" data-chip-for="#targets" data-chip-key="tag" data-chip-value="{{.}}" title="Show only {{.}}">{{.}}</a>{{end}}{{if gt $n 3}}<span class="tag" title="{{join (slice $t.Tags 2) ", "}}">+{{sub $n 2}}</span>{{end}}</span>{{end}}</td>
+  <td data-label="Checked" class="mono muted m-hide hide-1520">{{when $p.Loc $p.Now $t.LastCheck}}</td>
   <td data-label="" class="m-end">{{if $p.Can "targets.edit"}}
     {{- if $t.Enabled}}<form method="post" action="/targets/{{$t.ID}}/check" data-api="/api/v1/targets/{{$t.ID}}/check" data-replace="row">{{template "csrf" $p.CSRF}}<input type="hidden" name="next" value="/targets"><button type="submit" class="btn btn-xs">Check</button></form>
     {{- else}}<form method="post" action="/targets/{{$t.ID}}/enable">{{template "csrf" $p.CSRF}}<input type="hidden" name="next" value="/targets"><button type="submit" class="btn btn-xs">Enable</button></form>{{end}}

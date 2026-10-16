@@ -19,20 +19,20 @@
   <noscript><button type="submit" class="btn btn-xs">Filter</button></noscript>
   <span class="spacer small"><a href="{{$d.GroupHref}}">{{if $d.Group}}ungroup{{else}}group by tag{{end}}</a></span>
 </form>
-<div class="card clip scroll-x">
+<div class="card clip">
   <table class="tbl cards compact" id="targets" data-sort-default="days" data-sort-key="{{$s.Key}}" data-sort-dir="{{if $s.Desc}}desc{{else}}asc{{end}}">
     <thead><tr>
       {{- template "th" (dict "S" $s "K" "status" "L" "Status")}}
       {{- template "th" (dict "S" $s "K" "name" "L" "Name")}}
       {{- template "th" (dict "S" $s "K" "host" "L" "Host")}}
-      {{- if $d.ShowNode}}{{template "th" (dict "S" $s "K" "node" "L" "Node")}}{{end}}
+      {{- if $d.ShowNode}}{{template "th" (dict "S" $s "K" "node" "L" "Node" "C" "hide-960")}}{{end}}
       {{- template "th" (dict "S" $s "K" "days" "L" "Days" "C" "num" "N" true)}}
-      {{- template "th" (dict "S" $s "K" "lifetime" "L" "Lifetime" "N" true)}}
-      {{- template "th" (dict "S" $s "K" "expires" "L" "Expires" "N" true)}}
-      {{- template "th" (dict "S" $s "K" "issuer" "L" "Issuer")}}
-      {{- template "th" (dict "S" $s "K" "tls" "L" "TLS")}}
-      {{- template "th" (dict "S" $s "K" "tags" "L" "Tags")}}
-      {{- template "th" (dict "S" $s "K" "checked" "L" "Checked" "N" true)}}
+      {{- template "th" (dict "S" $s "K" "lifetime" "L" "Lifetime" "C" "hide-1380" "N" true)}}
+      {{- template "th" (dict "S" $s "K" "expires" "L" "Expires" "C" "hide-1240" "N" true)}}
+      {{- template "th" (dict "S" $s "K" "issuer" "L" "Issuer" "C" "hide-1140")}}
+      {{- template "th" (dict "S" $s "K" "tls" "L" "TLS" "C" "hide-1520")}}
+      {{- template "th" (dict "S" $s "K" "tags" "L" "Tags" "C" "hide-890")}}
+      {{- template "th" (dict "S" $s "K" "checked" "L" "Checked" "C" "hide-1520" "N" true)}}
       <th><span class="sr-only">Actions</span></th>
     </tr></thead>
     {{- if $d.Group}}
