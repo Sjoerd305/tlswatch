@@ -4,6 +4,7 @@ Newest first, one line per change.
 
 ## Unreleased
 
+- Targets list: a row's tags stay on one line. Up to three are shown; with more, the first two and a "+N" tag that lists the rest on hover. Before, the tags column was squeezed to its widest tag, so several tags stacked into a ragged column, and when the table was wider than the page its right edge (tags, last check, Check) was cut off; it now scrolls sideways instead.
 - Filter chips on Targets, Certificates and Findings flow on one wrapping line: before, a chip group that did not fit (tags, once node chips were added) dropped to the next line as a whole, leaving a stray divider and a ragged edge.
 - `tlswatch seed` is gone: demo data does not belong in the production binary. Add targets under Targets › Add target. `make run` starts an empty throw-away instance.
 - Nodes use less data: the long-poll is held for up to 55 seconds instead of 30, so an idle node sends about half as many requests (a node is marked offline after 165 seconds without one instead of 90), and results and facts go up gzipped once the server says it accepts that. A proxy in front of the server needs a read and idle timeout of at least 60 seconds.

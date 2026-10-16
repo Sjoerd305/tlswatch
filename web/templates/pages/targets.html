@@ -19,7 +19,7 @@
   <noscript><button type="submit" class="btn btn-xs">Filter</button></noscript>
   <span class="spacer small"><a href="{{$d.GroupHref}}">{{if $d.Group}}ungroup{{else}}group by tag{{end}}</a></span>
 </form>
-<div class="card clip">
+<div class="card clip scroll-x">
   <table class="tbl cards compact" id="targets" data-sort-default="days" data-sort-key="{{$s.Key}}" data-sort-dir="{{if $s.Desc}}desc{{else}}asc{{end}}">
     <thead><tr>
       {{- template "th" (dict "S" $s "K" "status" "L" "Status")}}

@@ -24,7 +24,8 @@
  *            .grid-settings · .tiles · .stack · .row · .spacer · .divider
  *            .gap-sm · .between
  * Cards      .card · .card.pad · .card.crit-border / .warn-border
- *            .card.clip (overflow hidden for tables)
+ *            .card.clip (overflow hidden for tables; + .scroll-x scrolls a
+ *            table wider than the card instead of cutting it off)
  *            .sec (section head) + h2 + .meta · .li + .t (list item, time)
  *            .tile + .n + .l (stat tile) · .h-sec (uppercase card title)
  *            .h3 (14px card heading) · .notes (notes block in side column)
@@ -42,6 +43,7 @@
  *            .detail-grid (label/value grid inside an expanded row)
  * Status     .st + .ok .warn .crit .off .info (dot + word) · .st.sm (12px)
  *            .pill + .ok .warn .crit .off .info · .tag (mono tag badge)
+ *            .tags (.line keeps them on one line)
  *            .chip · .chip.on · .chip .x (count)
  * Lifetime   .bar (110px) · .bar.w140 · .bar.full (100%, 8px)
  *            .bar > .f + .ok/.warn/.crit/.off · .p0 … .p100 (fill width)
@@ -293,6 +295,7 @@ tr.muted a.ink{color:var(--muted)}
 /* ---------- Cards and sections ---------- */
 .card{background:var(--surface);border:1px solid var(--line);border-radius:6px;min-width:0}
 .card.clip{overflow:hidden}
+.card.clip.scroll-x{overflow-x:auto}
 .card.pad{padding:16px 18px;display:flex;flex-direction:column;gap:14px}
 .card.crit-border{border-color:var(--crit)}
 .card.warn-border{border-color:var(--warn)}
@@ -392,6 +395,7 @@ a.tile:hover{text-decoration:none;border-color:var(--input-line)}
 .tag{display:inline-flex;align-items:center;height:20px;padding:0 6px;border-radius:4px;background:var(--surface-2);border:1px solid var(--line);color:var(--muted);font-size:11px;font-family:"IBM Plex Mono",ui-monospace,monospace;white-space:nowrap}
 a.tag:hover{text-decoration:none;color:var(--ink)}
 .tags{display:inline-flex;gap:4px;flex-wrap:wrap}
+.tags.line{flex-wrap:nowrap}
 .chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:14px;border:1px solid var(--input-line);background:var(--btn-bg);font:inherit;font-size:12px;font-weight:500;color:var(--ink);cursor:pointer;white-space:nowrap}
 .chip:hover{text-decoration:none;background:var(--btn-hover)}
 .chip.on,.chip.on:hover{background:var(--chip-on-bg);color:var(--chip-on-fg);border-color:var(--chip-on-bg)}
@@ -640,6 +644,7 @@ input[type="file"].input{padding:5px 8px;height:auto}
   .tbl.cards tr.detail{background:var(--surface-2)}
   .tbl.cards tr.detail td{display:block;padding:8px 0;text-align:left}
   .tbl.cards .bar{width:110px}
+  .tbl.cards .tags.line{flex-wrap:wrap}
   /* Compact cards: the main lists show a few cells per card and no labels.
      .m-lead cells form the first line (.m-end pushed right), .m-full takes
      a line of its own, .m-hide stays on wider screens. */

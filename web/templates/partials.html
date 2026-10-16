@@ -44,7 +44,7 @@
   {{- else}}
   <td data-label="Days" class="num mono m-lead m-end">—</td><td data-label="Lifetime" class="m-hide"></td><td data-label="Expires" class="mono m-hide">—</td><td data-label="Issuer" class="m-full">{{if $t.LastError}}<span class="muted ellipsis" title="{{$t.LastError}}">{{$t.LastError}}</span>{{else}}—{{end}}</td><td data-label="TLS" class="m-hide"></td>
   {{- end}}
-  <td data-label="Tags">{{if $t.Tags}}<span class="tags">{{range $t.Tags}}<a class="tag" href="/targets?tag={{.}}" data-chip-for="#targets" data-chip-key="tag" data-chip-value="{{.}}" title="Show only {{.}}">{{.}}</a>{{end}}</span>{{end}}</td>
+  <td data-label="Tags">{{if $t.Tags}}{{$n := len $t.Tags}}{{$shown := $t.Tags}}{{if gt $n 3}}{{$shown = slice $t.Tags 0 2}}{{end}}<span class="tags line">{{range $shown}}<a class="tag" href="/targets?tag={{.}}" data-chip-for="#targets" data-chip-key="tag" data-chip-value="{{.}}" title="Show only {{.}}">{{.}}</a>{{end}}{{if gt $n 3}}<span class="tag" title="{{join (slice $t.Tags 2) ", "}}">+{{sub $n 2}}</span>{{end}}</span>{{end}}</td>
   <td data-label="Checked" class="mono muted m-hide">{{when $p.Loc $p.Now $t.LastCheck}}</td>
   <td data-label="" class="m-end">{{if $p.Can "targets.edit"}}
     {{- if $t.Enabled}}<form method="post" action="/targets/{{$t.ID}}/check" data-api="/api/v1/targets/{{$t.ID}}/check" data-replace="row">{{template "csrf" $p.CSRF}}<input type="hidden" name="next" value="/targets"><button type="submit" class="btn btn-xs">Check</button></form>
