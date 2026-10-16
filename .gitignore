@@ -4,3 +4,4 @@ node_modules/
 /tlswatch
 /tmp/
 .DS_Store
+.claude
