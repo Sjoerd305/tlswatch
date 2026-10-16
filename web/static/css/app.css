@@ -75,6 +75,7 @@
  * Sign in    .login · .login-card · .wordmark (+ svg) · .or · .login-foot
  * Panels     .panel (side panel card) · .panel-head · .panel-close (×)
  * Bulk       .bulkbar (actions on checked rows) · th.chk/td.chk · .rowcheck
+ *            .field.opt + .check.change + .bulk-value (bulk edit fields)
  * Misc       .copyable (identifier with copy/pem buttons) · .menu
  *            .kbd · .pre (PEM / code block)
  */
@@ -584,13 +585,21 @@ input[type="file"].input{padding:5px 8px;height:auto}
    A bar above a table acts on the rows whose checkbox (form="bulk-…") is
    checked; it shows only while at least one is. */
 .bulkbar{display:none;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--info-bg)}
-.card:has(input[form="bulk-ack"]:checked) .bulkbar{display:flex}
+.card:has(input[form^="bulk-"]:checked) .bulkbar{display:flex}
 .bulkbar .input{height:30px}
 .bulkbar .input.grow{flex:1 1 200px;width:auto}
 .bulkbar .help{flex-basis:100%}
 .tbl th.chk,.tbl td.chk{width:34px;padding-right:0}
 .tbl th.chk input,.rowcheck input{width:16px;height:16px;margin:0;accent-color:var(--acc);cursor:pointer;vertical-align:middle}
 .rowcheck{display:inline-flex;padding:4px;margin:-4px;cursor:pointer}
+
+/* Bulk edit: a setting is written only when its Change box is ticked;
+   the field shows while it is. */
+.field.opt>.check.change .label{margin:0}
+.field.opt>.check.change .muted{margin-left:auto}
+.field.opt>.bulk-value{display:none;flex-direction:column;gap:6px}
+.field.opt:has(>.check.change input:checked)>.bulk-value{display:flex}
+.err-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px}
 
 /* ---------- Side panel ---------- */
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:14px;min-width:0}

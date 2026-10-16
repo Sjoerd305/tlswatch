@@ -1,0 +1,141 @@
+{{define "content"}}{{$p := .}}{{$f := .Data}}{{$t := $f.T}}{{$e := $f.Errors}}{{$c := $f.Change}}{{$d := $p.Settings.Defaults}}{{$n := len $f.Targets}}
+<div class="crumbs"><a href="/targets">Targets</a><span>/</span><span>Edit {{$n}} {{plural $n "target" "targets"}}</span></div>
+<div class="page-head"><div><h1>Edit {{$n}} {{plural $n "target" "targets"}}</h1><span class="summary">Only the settings with Change ticked are written; everything else stays as it is on each target.</span></div></div>
+{{- if $e}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{if $e.form}}{{$e.form}}{{else}}Nothing was changed yet. Check the highlighted fields.{{end}}</div></div>{{end}}
+<form class="card form" method="post" action="/targets/bulk-edit" novalidate>
+  {{template "csrf" $p.CSRF}}
+  {{- range $f.Targets}}<input type="hidden" name="id" value="{{.ID}}">{{end}}
+  <div class="field"><span class="label">Selected</span>
+    <div class="tags">{{range $f.Targets}}<a class="tag" href="/targets/{{.ID}}" title="{{.HostPort}}">{{.Name}}</a>{{end}}</div>
+  </div>
+
+  <p class="form-sec">State and tags</p>
+  <div class="fgrid c3">
+    <div class="field"><label class="label" for="enabled">Checks</label>
+      <select id="enabled" name="enabled" class="input">
+        <option value="">Leave as they are</option>
+        <option value="enable"{{if eq $f.Enabled "enable"}} selected{{end}}>Enable: check them again</option>
+        <option value="disable"{{if eq $f.Enabled "disable"}} selected{{end}}>Disable: stop checking, close findings</option>
+      </select></div>
+    <div class="field"><label class="label" for="add-tags">Add tags</label><input id="add-tags" name="add_tags" class="input mono{{if $e.add_tags}} invalid{{end}}" value="{{$f.AddTags}}" spellcheck="false" placeholder="customer:example, sip">{{template "err" $e.add_tags}}</div>
+    <div class="field"><label class="label" for="remove-tags">Remove tags</label><input id="remove-tags" name="remove_tags" class="input mono{{if $e.remove_tags}} invalid{{end}}" value="{{$f.RemoveTags}}" spellcheck="false" placeholder="site:old">{{template "err" $e.remove_tags}}</div>
+  </div>
+  <span class="help lift">Comma separated, 40 characters each. Tags the targets already carry are kept.</span>
+
+  <p class="form-sec">Probing</p>
+  {{- if $f.Nodes}}
+  <div class="field opt">{{template "change" (dict "C" $c "K" "node_id" "L" "Probe from")}}
+    <div class="bulk-value">
+      <select id="node" name="node_id" class="input{{if $e.node_id}} invalid{{end}}" aria-label="Probe from">
+        <option value="0">This server</option>
+        {{- range $f.Nodes}}<option value="{{.ID}}"{{if eq .ID $t.NodeID}} selected{{end}}>Node {{.Label}}{{if .Facts.Hostname}} ({{.Facts.Hostname}}){{end}}</option>{{end}}
+      </select><span class="help">A new vantage point starts each target's view anew.</span>{{template "err" $e.node_id}}
+    </div>
+  </div>
+  {{- end}}
+  <div class="fgrid c2">
+    <div class="field opt">{{template "change" (dict "C" $c "K" "trust" "L" "Verify against")}}
+      <div class="bulk-value">
+        <div class="seg" role="radiogroup" aria-label="Verify against">
+          <label><input type="radio" name="trust_mode" value="system"{{if eq (print $t.Trust) "system"}} checked{{end}}><span>System store</span></label>
+          <label><input type="radio" name="trust_mode" value="bundle"{{if eq (print $t.Trust) "bundle"}} checked{{end}}><span>CA bundle</span></label>
+          <label><input type="radio" name="trust_mode" value="self-signed"{{if eq (print $t.Trust) "self-signed"}} checked{{end}}><span>Self-signed, pin</span></label>
+        </div>
+        <select id="bundle" name="bundle_id" class="input{{if $e.bundle_id}} invalid{{end}}" aria-label="Bundle">
+          <option value="0">{{if $f.Bundles}}— choose a bundle —{{else}}no bundles; add one under Settings › CA bundles{{end}}</option>
+          {{- range $f.Bundles}}<option value="{{.ID}}"{{if eq .ID $t.BundleID}} selected{{end}}>{{.Name}} ({{len .Certs}})</option>{{end}}
+        </select><span class="help">The bundle applies with "CA bundle". A new trust mode starts a new pin.</span>{{template "err" $e.trust_mode}}{{template "err" $e.bundle_id}}
+      </div>
+    </div>
+    <div class="field opt">{{template "change" (dict "C" $c "K" "renewal" "L" "Renewal")}}
+      <div class="bulk-value">
+        <select id="renewal" name="renewal" class="input" aria-label="Renewal">
+          <option value="auto"{{if eq $f.Renewal "auto"}} selected{{end}}>Detect from issuer (ACME → managed)</option>
+          <option value="managed"{{if eq $f.Renewal "managed"}} selected{{end}}>Managed by ACME: renewals are logged, not alerted</option>
+          <option value="manual"{{if eq $f.Renewal "manual"}} selected{{end}}>Manual: every new certificate is confirmed</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  <div class="fgrid c2">
+    <div class="field opt">{{template "change" (dict "C" $c "K" "expected_issuer" "L" "Expected issuer")}}
+      <div class="bulk-value"><input id="issuer" name="expected_issuer" class="input" value="{{$t.ExpectedIssuer}}" placeholder="e.g. Sectigo; empty removes it" aria-label="Expected issuer"></div>
+    </div>
+    <div class="field opt">{{template "change" (dict "C" $c "K" "addresses" "L" "Addresses")}}
+      <div class="bulk-value"><select id="addr" name="addresses" class="input" aria-label="Addresses"><option value="all"{{if $t.AllAddresses}} selected{{end}}>All, max 8</option><option value="first"{{if not $t.AllAddresses}} selected{{end}}>First only</option></select></div>
+    </div>
+  </div>
+
+  <p class="form-sec">Thresholds and schedule</p>
+  <div class="fgrid c2">
+    <div class="field opt">{{template "change" (dict "C" $c "K" "thresholds" "L" "Warning and critical, days")}}
+      <div class="bulk-value">
+        <div class="fgrid c2">
+          <input id="warn" name="warn_days" class="input mono{{if $e.warn_days}} invalid{{end}}" value="{{$f.Warn}}" inputmode="numeric" placeholder="warning, {{$d.Manual.WarnDays}}" aria-label="Warning, days">
+          <input id="crit" name="crit_days" class="input mono{{if $e.crit_days}} invalid{{end}}" value="{{$f.Crit}}" inputmode="numeric" placeholder="critical, {{$d.Manual.CritDays}}" aria-label="Critical, days">
+        </div>
+        <span class="help">Empty follows Settings › Defaults: {{$d.Manual.WarnDays}} and {{$d.Manual.CritDays}} days for manual renewal, {{$d.Managed.WarnDays}} and {{$d.Managed.CritDays}} for renewal managed.</span>{{template "err" $e.warn_days}}{{template "err" $e.crit_days}}
+      </div>
+    </div>
+    <div class="field opt">{{template "change" (dict "C" $c "K" "interval_s" "L" "Interval")}}
+      <div class="bulk-value">
+        <select id="interval" name="interval_s" class="input" aria-label="Interval">
+          <option value="">Default ({{duration $d.IntervalS}})</option>
+          {{- range $v := (seq 0 5)}}{{$s := index (dict "0" 3600 "1" 21600 "2" 43200 "3" 86400 "4" 259200 "5" 604800) (print $v)}}<option value="{{$s}}"{{if eq $f.Interval (print $s)}} selected{{end}}>{{duration $s}}</option>{{end}}
+        </select>{{template "err" $e.interval_s}}
+      </div>
+    </div>
+  </div>
+
+  <p class="form-sec">Probe and reminder settings</p>
+  <div class="fgrid c2">
+    <div class="field opt">{{template "change" (dict "C" $c "K" "probe" "L" "Timeout, retries, debounce")}}
+      <div class="bulk-value">
+        <div class="fgrid c3">
+          <input id="timeout" name="timeout_s" class="input mono{{if $e.timeout_s}} invalid{{end}}" value="{{$f.Timeout}}" inputmode="numeric" placeholder="timeout {{$d.TimeoutS}} s" aria-label="Timeout, seconds">
+          <input id="retries" name="retries" class="input mono{{if $e.retries}} invalid{{end}}" value="{{$f.Retries}}" inputmode="numeric" placeholder="retries {{$d.Retries}}" aria-label="Retries">
+          <input id="debounce" name="debounce" class="input mono{{if $e.debounce}} invalid{{end}}" value="{{$f.Debounce}}" inputmode="numeric" placeholder="debounce {{$d.Debounce}}" aria-label="Debounce, checks">
+        </div>
+        <span class="help">Empty follows Settings › Defaults.</span>{{template "err" $e.timeout_s}}{{template "err" $e.retries}}{{template "err" $e.debounce}}
+      </div>
+    </div>
+    <div class="field opt">{{template "change" (dict "C" $c "K" "legacy" "L" "TLS 1.0 and 1.1")}}
+      <div class="bulk-value"><select id="legacy" name="legacy" class="input" aria-label="TLS 1.0 and 1.1"><option value="on"{{if not $t.SkipLegacy}} selected{{end}}>Test daily</option><option value="off"{{if $t.SkipLegacy}} selected{{end}}>Do not test</option></select></div>
+    </div>
+  </div>
+  <div class="field opt">{{template "change" (dict "C" $c "K" "reminders" "L" "Reminders")}}
+    <div class="bulk-value">
+      <div class="fgrid c2">
+        <div class="field"><label class="label" for="rw">Remind warning</label>{{template "remind-select" (dict "Name" "remind_warn_s" "ID" "rw" "Value" $f.RemindW "Default" $d.RemindWarnS "Min" 86400)}}{{template "err" $e.remind_warn_s}}</div>
+        <div class="field"><label class="label" for="rc">Remind critical</label>{{template "remind-select" (dict "Name" "remind_crit_s" "ID" "rc" "Value" $f.RemindC "Default" $d.RemindCritS "Min" 3600)}}{{template "err" $e.remind_crit_s}}</div>
+      </div>
+    </div>
+  </div>
+
+  <p class="form-sec">Channels and notes</p>
+  <div class="field opt">{{template "change" (dict "C" $c "K" "channels" "L" "Channels")}}
+    <div class="bulk-value">
+      {{- if $f.Channels}}
+      <div class="checks">
+        <label class="check"><input type="checkbox" name="all_channels" value="1"{{if $t.AllChannels}} checked{{end}}> All channels, including new ones</label>
+        {{- range $f.Channels}}<label class="check"><input type="checkbox" name="channel" value="{{.ID}}"{{if or $t.AllChannels (hasID $t.ChannelIDs .ID)}} checked{{end}}> {{.Name}} <span class="muted">{{sevShort .MinSeverity}}+</span></label>{{end}}
+      </div>
+      <span class="help">Replaces each target's channels. With "All channels" checked, the individual choices are ignored.</span>
+      {{- else}}
+      <input type="hidden" name="all_channels" value="1">
+      <span class="help">No channels yet; alerts go to every channel an admin adds under Settings › Channels.</span>
+      {{- end}}
+    </div>
+  </div>
+  <div class="field opt">{{template "change" (dict "C" $c "K" "notes" "L" "Notes")}}
+    <div class="bulk-value"><textarea id="notes" name="notes" class="input" rows="3" maxlength="4000" placeholder="Replaces the notes of every selected target; empty clears them" aria-label="Notes">{{$t.Notes}}</textarea>{{template "err" $e.notes}}</div>
+  </div>
+  <div class="form-foot">
+    <button type="submit" class="btn btn-primary">Save {{$n}} {{plural $n "target" "targets"}}</button>
+    <a href="/targets" class="cancel">Cancel</a>
+  </div>
+</form>
+{{end}}
+
+{{/* change: the "Change" box that switches a bulk edit field on. dict "C" change map "K" key "L" label */}}
+{{define "change"}}<label class="check change"><input type="checkbox" name="change" value="{{.K}}"{{if index .C .K}} checked{{end}}> <span class="label">{{.L}}</span><span class="muted small">change</span></label>{{end}}

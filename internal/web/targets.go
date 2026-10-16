@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"net"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -499,10 +500,21 @@ func (s *Server) targetEdit(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "target-form", &Page{Title: "Edit " + t.Name, Nav: "targets", Data: f})
 }
 
-// parseTargetForm reads the form into a target and form state.
+// parseTargetForm reads the form into a target and form state, validated.
 func (s *Server) parseTargetForm(r *http.Request, existing *core.Target) targetForm {
 	_ = r.ParseForm()
-	v := r.PostForm
+	f := readTargetForm(r.PostForm, existing)
+	for k, e := range f.T.Validate(info(r).settings) {
+		if _, ok := f.Errors[k]; !ok {
+			f.Errors[k] = e
+		}
+	}
+	return f
+}
+
+// readTargetForm reads the form's fields into a target and form state
+// without validating; Errors holds what could not be read at all.
+func readTargetForm(v url.Values, existing *core.Target) targetForm {
 	var t core.Target
 	if existing != nil {
 		t = *existing
@@ -579,11 +591,6 @@ func (s *Server) parseTargetForm(r *http.Request, existing *core.Target) targetF
 		}
 	}
 	t.Notes = strings.TrimSpace(strings.ReplaceAll(v.Get("notes"), "\r\n", "\n"))
-	for k, e := range t.Validate(info(r).settings) {
-		if _, ok := f.Errors[k]; !ok {
-			f.Errors[k] = e
-		}
-	}
 	f.T = t
 	return f
 }

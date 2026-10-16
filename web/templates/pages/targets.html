@@ -1,9 +1,10 @@
-{{define "content"}}{{$p := .}}{{$d := .Data}}{{$s := $d.Sort}}
+{{define "content"}}{{$p := .}}{{$d := .Data}}{{$s := $d.Sort}}{{$edit := $p.Can "targets.edit"}}{{$cols := 11}}{{if $d.ShowNode}}{{$cols = add $cols 1}}{{end}}{{if $edit}}{{$cols = add $cols 1}}{{end}}
 <div class="page-head">
   <div><h1>Targets</h1></div>
   {{- if $p.Can "targets.edit"}}
   <div class="actions row">
     {{- if $d.Targets}}<form method="post" action="/targets/check-all" data-api="/api/v1/targets/check-all">{{template "csrf" $p.CSRF}}<input type="hidden" name="next" value="/targets"><button type="submit" class="btn">Check all</button></form>{{end}}
+    <a href="/targets/bulk-add" class="btn">Add many</a>
     <a href="/targets/new" class="btn btn-primary">Add target</a>
   </div>
   {{- end}}
@@ -20,8 +21,17 @@
   <span class="spacer small"><a href="{{$d.GroupHref}}">{{if $d.Group}}ungroup{{else}}group by tag{{end}}</a></span>
 </form>
 <div class="card clip">
+  {{- if $edit}}
+  <form id="bulk-targets" class="bulkbar" method="post" action="/targets/bulk" aria-label="Edit selected targets">
+    {{template "csrf" $p.CSRF}}
+    <span class="strong" data-bulk-count aria-live="polite">Selected targets</span>
+    <button type="submit" class="btn btn-primary">Edit settings…</button>
+    <span class="help">Change the settings, tags or state of the selected targets at once.</span>
+  </form>
+  {{- end}}
   <table class="tbl cards compact" id="targets" data-sort-default="days" data-sort-key="{{$s.Key}}" data-sort-dir="{{if $s.Desc}}desc{{else}}asc{{end}}">
     <thead><tr>
+      {{- if $edit}}<th class="chk"><input type="checkbox" data-select-all="#targets" aria-label="Select all shown targets"></th>{{end}}
       {{- template "th" (dict "S" $s "K" "status" "L" "Status")}}
       {{- template "th" (dict "S" $s "K" "name" "L" "Name")}}
       {{- template "th" (dict "S" $s "K" "host" "L" "Host")}}
@@ -38,7 +48,7 @@
     {{- if $d.Group}}
     {{- range $d.Groups}}
     <tbody>
-      <tr class="group-head"><th colspan="{{if $d.ShowNode}}12{{else}}11{{end}}">{{if .Tag}}<span class="tag">{{.Tag}}</span>{{else}}no tag{{end}} <span class="muted">{{len .Rows}}</span></th></tr>
+      <tr class="group-head"><th colspan="{{$cols}}">{{if .Tag}}<span class="tag">{{.Tag}}</span>{{else}}no tag{{end}} <span class="muted">{{len .Rows}}</span></th></tr>
       {{- range .Rows}}{{template "target-row" (frag $p .)}}{{end}}
     </tbody>
     {{- end}}

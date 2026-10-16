@@ -1,0 +1,36 @@
+{{define "content"}}{{$p := .}}{{$f := .Data}}{{$t := $f.T}}{{$e := $f.Errors}}
+<div class="crumbs"><a href="/targets">Targets</a><span>/</span><span>Add targets</span></div>
+<div class="page-head"><div><h1>Add targets</h1><span class="summary">Several endpoints at once, with the same settings. Each can be edited on its own afterwards.</span></div></div>
+{{- if or $e $f.LineErrs}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>Nothing was added yet. Check the highlighted fields.</div></div>{{end}}
+<form class="card form" method="post" action="/targets/bulk-add" novalidate>
+  {{template "csrf" $p.CSRF}}
+  <div class="field"><label class="label" for="hosts">Hosts, one per line</label>
+    <textarea id="hosts" name="hosts" class="input tall{{if $f.LineErrs}} invalid{{end}}" rows="8" required spellcheck="false" placeholder="portal.example.nl
+mail.example.nl:587 Mail server
+https://shop.example.nl/
+# lines starting with # are skipped">{{$f.Lines}}</textarea>
+    <span class="help">A host, <span class="mono">host:port</span> or URL, followed by an optional name. Without a port the protocol's default is used; the name defaults to the host and the server name follows a DNS host.</span>
+    {{- if $f.LineErrs}}<ul class="err-list">{{range $f.LineErrs}}<li class="err">{{.}}</li>{{end}}</ul>{{end}}
+  </div>
+  <div class="fgrid c2">
+    <div class="field"><label class="label" for="protocol">Protocol</label>
+      <select id="protocol" name="protocol" class="input">
+        {{- range $f.Protocols}}<option value="{{.}}"{{if eq . $t.Protocol}} selected{{end}}>{{template "proto-label" .}} · port {{defaultPort .}}</option>{{end}}
+      </select>{{template "err" $e.protocol}}</div>
+    {{- if $f.Nodes}}
+    <div class="field"><label class="label" for="node">Probe from</label>
+      <select id="node" name="node_id" class="input{{if $e.node_id}} invalid{{end}}">
+        <option value="0">This server</option>
+        {{- range $f.Nodes}}<option value="{{.ID}}"{{if eq .ID $t.NodeID}} selected{{end}}>Node {{.Label}}{{if .Facts.Hostname}} ({{.Facts.Hostname}}){{end}}</option>{{end}}
+      </select>{{template "err" $e.node_id}}</div>
+    {{- end}}
+  </div>
+  {{template "target-trust-fields" (dict "P" $p "F" $f)}}
+  {{template "target-schedule-fields" (dict "P" $p "F" $f)}}
+  {{template "target-org-fields" (dict "P" $p "F" $f)}}
+  <div class="form-foot">
+    <button type="submit" class="btn btn-primary">Add targets</button>
+    <a href="/targets" class="cancel">Cancel</a>
+  </div>
+</form>
+{{end}}

@@ -31,6 +31,7 @@
 {{/* target-row: one row of the targets table. frag{P, Item: targetRow} */}}
 {{define "target-row"}}{{$p := .P}}{{$r := .Item}}{{$t := $r.T}}
 <tr id="target-{{$t.ID}}" data-search="{{$r.Search}}" data-status="{{$r.StatusToken}}" data-tag="{{join $t.Tags " "}}" data-node="{{$r.NodeToken}}"{{$r.SortAttrs}}{{if not $t.Enabled}} class="muted"{{end}}{{if $r.Hidden}} hidden{{end}}>
+  {{- if $p.Can "targets.edit"}}<td class="chk m-lead" data-label=""><label class="rowcheck"><input type="checkbox" name="id" value="{{$t.ID}}" form="bulk-targets" aria-label="Select {{$t.Name}}"></label></td>{{end}}
   <td data-label="Status" class="m-lead">{{if waiting $t}}<span class="st off" title="The node is offline; last checked {{when $p.Loc $p.Now $t.LastCheck}}">Waiting for node</span>{{else}}{{template "status" $t.Status}}{{end}}</td>
   <td data-label="Name" class="m-lead"><a href="/targets/{{$t.ID}}" class="ink strong" data-row-link>{{$t.Name}}</a></td>
   <td data-label="Host" class="mono m-full">{{$t.HostPort}}{{if ne (print $t.Protocol) "tls"}} <span class="tag">{{$t.Protocol}}</span>{{end}}{{if gt $t.AddressCount 1}} <span class="tag">{{$t.AddressCount}} addr</span>{{end}}</td>
@@ -171,3 +172,89 @@
 {{end}}
 
 {{define "env-note"}}<span class="readonly-note">set by environment ({{.}})</span>{{end}}
+
+{{/* target-trust-fields, target-schedule-fields, target-org-fields: the settings a target shares with others, used by the target form and the bulk add form. dict "P" page "F" targetForm */}}
+{{define "target-trust-fields"}}{{$p := .P}}{{$f := .F}}{{$t := $f.T}}{{$e := $f.Errors}}{{$d := $p.Settings.Defaults}}
+    <p class="form-sec">Trust</p>
+    <div class="fgrid trust">
+      <div class="field"><span class="label" id="trust-label">Verify against</span>
+        <div class="seg" role="radiogroup" aria-labelledby="trust-label">
+          <label><input type="radio" name="trust_mode" value="system"{{if eq (print $t.Trust) "system"}} checked{{end}}><span>System store</span></label>
+          <label><input type="radio" name="trust_mode" value="bundle"{{if eq (print $t.Trust) "bundle"}} checked{{end}}><span>CA bundle</span></label>
+          <label><input type="radio" name="trust_mode" value="self-signed"{{if eq (print $t.Trust) "self-signed"}} checked{{end}}><span>Self-signed, pin</span></label>
+        </div>{{template "err" $e.trust_mode}}</div>
+      <div class="field bundle-field"><label class="label" for="bundle">Bundle</label>
+        <select id="bundle" name="bundle_id" class="input{{if $e.bundle_id}} invalid{{end}}">
+          <option value="0">{{if $f.Bundles}}— choose a bundle —{{else}}no bundles; add one under Settings › CA bundles{{end}}</option>
+          {{- range $f.Bundles}}<option value="{{.ID}}"{{if eq .ID $t.BundleID}} selected{{end}}>{{.Name}} ({{len .Certs}})</option>{{end}}
+        </select>{{template "err" $e.bundle_id}}</div>
+    </div>
+    <div class="fgrid c2 end">
+      <div class="field"><label class="label" for="renewal">Renewal</label>
+        <select id="renewal" name="renewal" class="input">
+          <option value="auto"{{if eq $f.Renewal "auto"}} selected{{end}}>Detect from issuer (ACME → managed)</option>
+          <option value="managed"{{if eq $f.Renewal "managed"}} selected{{end}}>Managed by ACME: renewals are logged, not alerted</option>
+          <option value="manual"{{if eq $f.Renewal "manual"}} selected{{end}}>Manual: every new certificate is confirmed</option>
+        </select></div>
+      <div class="field"><label class="label" for="issuer">Expected issuer, optional</label><input id="issuer" name="expected_issuer" class="input" value="{{$t.ExpectedIssuer}}" placeholder="e.g. Sectigo"></div>
+    </div>
+
+{{end}}
+
+{{define "target-schedule-fields"}}{{$p := .P}}{{$f := .F}}{{$t := $f.T}}{{$e := $f.Errors}}{{$d := $p.Settings.Defaults}}
+    <p class="form-sec">Thresholds and schedule</p>
+    <div class="fgrid c4">
+      <div class="field"><label class="label" for="warn">Warning, days</label><input id="warn" name="warn_days" class="input mono{{if $e.warn_days}} invalid{{end}}" value="{{$f.Warn}}" inputmode="numeric" placeholder="{{$d.Manual.WarnDays}} manual · {{$d.Managed.WarnDays}} managed">{{template "err" $e.warn_days}}</div>
+      <div class="field"><label class="label" for="crit">Critical, days</label><input id="crit" name="crit_days" class="input mono{{if $e.crit_days}} invalid{{end}}" value="{{$f.Crit}}" inputmode="numeric" placeholder="{{$d.Manual.CritDays}} manual · {{$d.Managed.CritDays}} managed">{{template "err" $e.crit_days}}</div>
+      <div class="field"><label class="label" for="interval">Interval</label>
+        <select id="interval" name="interval_s" class="input">
+          <option value="">Default ({{duration $d.IntervalS}})</option>
+          {{- range $v := (seq 0 5)}}{{$s := index (dict "0" 3600 "1" 21600 "2" 43200 "3" 86400 "4" 259200 "5" 604800) (print $v)}}<option value="{{$s}}"{{if eq $f.Interval (print $s)}} selected{{end}}>{{duration $s}}</option>{{end}}
+        </select>{{template "err" $e.interval_s}}</div>
+      <div class="field"><label class="label" for="addr">Addresses</label>
+        <select id="addr" name="addresses" class="input"><option value="all"{{if $t.AllAddresses}} selected{{end}}>All, max 8</option><option value="first"{{if not $t.AllAddresses}} selected{{end}}>First only</option></select></div>
+    </div>
+    <span class="help lift">Empty fields follow Settings › Defaults: warning {{$d.Manual.WarnDays}} and critical {{$d.Manual.CritDays}} days for manual renewal, {{$d.Managed.WarnDays}} and {{$d.Managed.CritDays}} for renewal managed.</span>
+    <details{{if or $f.Timeout $f.Retries $f.Debounce $f.RemindW $f.RemindC $t.SkipLegacy $e.timeout_s $e.retries $e.debounce $e.remind_warn_s $e.remind_crit_s}} open{{end}}>
+      <summary class="label">Probe and reminder settings</summary>
+      <div class="fgrid c4">
+        <div class="field"><label class="label" for="timeout">Timeout, s</label><input id="timeout" name="timeout_s" class="input mono{{if $e.timeout_s}} invalid{{end}}" value="{{$f.Timeout}}" inputmode="numeric" placeholder="{{$d.TimeoutS}}">{{template "err" $e.timeout_s}}</div>
+        <div class="field"><label class="label" for="retries">Retries</label><input id="retries" name="retries" class="input mono{{if $e.retries}} invalid{{end}}" value="{{$f.Retries}}" inputmode="numeric" placeholder="{{$d.Retries}}">{{template "err" $e.retries}}</div>
+        <div class="field"><label class="label" for="debounce">Debounce, checks</label><input id="debounce" name="debounce" class="input mono{{if $e.debounce}} invalid{{end}}" value="{{$f.Debounce}}" inputmode="numeric" placeholder="{{$d.Debounce}}">{{template "err" $e.debounce}}</div>
+        <div class="field"><label class="label" for="legacy">TLS 1.0 and 1.1</label>
+          <select id="legacy" name="legacy" class="input"><option value="on"{{if not $t.SkipLegacy}} selected{{end}}>Test daily</option><option value="off"{{if $t.SkipLegacy}} selected{{end}}>Do not test</option></select></div>
+        <div class="field"><label class="label" for="rw">Remind warning</label>{{template "remind-select" (dict "Name" "remind_warn_s" "ID" "rw" "Value" $f.RemindW "Default" $d.RemindWarnS "Min" 86400)}}{{template "err" $e.remind_warn_s}}</div>
+        <div class="field"><label class="label" for="rc">Remind critical</label>{{template "remind-select" (dict "Name" "remind_crit_s" "ID" "rc" "Value" $f.RemindC "Default" $d.RemindCritS "Min" 3600)}}{{template "err" $e.remind_crit_s}}</div>
+      </div>
+    </details>
+
+{{end}}
+
+{{define "target-org-fields"}}{{$p := .P}}{{$f := .F}}{{$t := $f.T}}{{$e := $f.Errors}}{{$d := $p.Settings.Defaults}}
+    <p class="form-sec">Organisation</p>
+    <div class="field"><label class="label" for="tags">Tags</label><input id="tags" name="tags" class="input mono{{if $e.tags}} invalid{{end}}" value="{{$f.TagsText}}" spellcheck="false" placeholder="customer:example, site:amsterdam, sip"><span class="help">Comma separated, 40 characters each.</span>{{template "err" $e.tags}}</div>
+    <div class="field"><span class="label">Channels</span>
+      {{- if $f.Channels}}
+      <div class="checks">
+        <label class="check"><input type="checkbox" name="all_channels" value="1"{{if $t.AllChannels}} checked{{end}}> All channels, including new ones</label>
+        {{- range $f.Channels}}<label class="check"><input type="checkbox" name="channel" value="{{.ID}}"{{if or $t.AllChannels (hasID $t.ChannelIDs .ID)}} checked{{end}}> {{.Name}} <span class="muted">{{sevShort .MinSeverity}}+</span></label>{{end}}
+      </div>
+      <span class="help">With "All channels" checked, the individual choices are ignored.</span>
+      {{- else}}
+      <input type="hidden" name="all_channels" value="1">
+      <span class="help">No channels yet; alerts go to every channel an admin adds under Settings › Channels.</span>
+      {{- end}}
+    </div>
+    <div class="field"><label class="label" for="notes">Notes</label><textarea id="notes" name="notes" class="input" rows="3" maxlength="4000" placeholder="Owner, ticket number, renewal procedure">{{$t.Notes}}</textarea>{{template "err" $e.notes}}</div>
+{{end}}
+
+{{define "proto-label"}}{{if eq (print .) "tls"}}tls, implicit{{else if eq (print .) "smtp"}}smtp STARTTLS{{else if eq (print .) "imap"}}imap STARTTLS{{else if eq (print .) "pop3"}}pop3 STLS{{else if eq (print .) "ftp"}}ftp AUTH TLS{{else}}{{.}} SSLRequest{{end}}{{end}}
+
+{{define "remind-select"}}
+<select id="{{.ID}}" name="{{.Name}}" class="input">
+  <option value="">Default ({{duration .Default}})</option>
+  {{- $v := .Value}}{{$min := .Min}}
+  {{- range $s := (seq 0 5)}}{{$n := index (dict "0" 3600 "1" 21600 "2" 86400 "3" 259200 "4" 604800 "5" 1209600) (print $s)}}{{if ge $n $min}}<option value="{{$n}}"{{if eq $v (print $n)}} selected{{end}}>every {{duration $n}}</option>{{end}}{{end}}
+  <option value="0"{{if eq $v "0"}} selected{{end}}>never</option>
+</select>
+{{end}}
