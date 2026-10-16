@@ -2,7 +2,7 @@ VERSION ?= $(shell sh scripts/version.sh)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 DEVDATA := ./tmp/dev
 
-.PHONY: build frontend test test-go test-frontend lint run seed clean
+.PHONY: build frontend test test-go test-frontend lint run clean
 
 build: frontend
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o tlswatch ./cmd/tlswatch
@@ -26,10 +26,9 @@ lint:
 	govulncheck ./...
 	gosec -quiet ./...
 
-# A throw-away instance on http://127.0.0.1:8080 with the demo targets.
+# A throw-away instance on http://127.0.0.1:8080.
 run: build
 	mkdir -p $(DEVDATA)
-	TLSWATCH_DB=$(DEVDATA)/tlswatch.db ./tlswatch seed
 	TLSWATCH_DB=$(DEVDATA)/tlswatch.db TLSWATCH_LOG_JSON=false ./tlswatch serve
 
 clean:

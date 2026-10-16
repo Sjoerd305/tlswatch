@@ -208,7 +208,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 	}()
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
-	refresh := time.NewTicker(time.Minute) // picks up targets added outside the UI, e.g. by seed
+	refresh := time.NewTicker(time.Minute) // picks up targets added outside the UI
 	defer refresh.Stop()
 	for {
 		select {

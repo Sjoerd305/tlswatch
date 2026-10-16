@@ -27,7 +27,6 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/db"
 	"github.com/sjoerd305/tlswatch/internal/node"
 	"github.com/sjoerd305/tlswatch/internal/notify"
-	"github.com/sjoerd305/tlswatch/internal/probe"
 	"github.com/sjoerd305/tlswatch/internal/sched"
 	"github.com/sjoerd305/tlswatch/internal/secret"
 	"github.com/sjoerd305/tlswatch/internal/web"
@@ -80,7 +79,6 @@ Usage:
   tlswatch check HOST[:PORT] [flags]   probe one endpoint, print JSON, exit 0/1/2 by severity
   tlswatch node [flags]                run as a probe node inside another network
                                        (tlswatch node -h for enrol, uninstall and flags)
-  tlswatch seed                        add a few public demo targets
   tlswatch version                     print the version
 
 Configuration is done in the web UI. Optional environment variables:
@@ -114,8 +112,6 @@ func main() {
 		os.Exit(checkCmd(args, os.Stdout, os.Stderr))
 	case "node":
 		err = nodeCmd(args)
-	case "seed":
-		err = seed()
 	case "version", "-version", "--version":
 		fmt.Println("tlswatch", version)
 	case "help", "-h", "--help":
@@ -413,50 +409,6 @@ func backup(args []string) error {
 		return err
 	}
 	fmt.Printf("backup written to %s (the secret key file %s is needed to read stored credentials)\n", args[0], b.SecretKeyFile)
-	return nil
-}
-
-func seed() error {
-	a, err := open()
-	if err != nil {
-		return err
-	}
-	defer a.db.Close()
-	ctx := context.Background()
-	demo := []core.Target{
-		{Name: "Let's Encrypt site", Host: "letsencrypt.org", Tags: []string{"demo"}},
-		{Name: "Expired", Host: "expired.badssl.com", Tags: []string{"demo", "badssl"}},
-		{Name: "Self-signed", Host: "self-signed.badssl.com", Tags: []string{"demo", "badssl"}},
-		{Name: "Wrong host", Host: "wrong.host.badssl.com", Tags: []string{"demo", "badssl"}},
-		{Name: "TLS 1.0", Host: "tls-v1-0.badssl.com", Port: 1010, Tags: []string{"demo", "badssl"}},
-		{Name: "Untrusted root", Host: "untrusted-root.badssl.com", Tags: []string{"demo", "badssl"}},
-		{Name: "Gmail SMTP", Host: "smtp.gmail.com", Port: 587, Protocol: probe.SMTP, Tags: []string{"demo", "mail"}},
-	}
-	st, _ := a.settings.Get(ctx)
-	added := 0
-	for _, t := range demo {
-		if t.Protocol == "" {
-			t.Protocol = probe.TLS
-		}
-		if t.Port == 0 {
-			t.Port = probe.DefaultPort(t.Protocol)
-		}
-		if t.Trust == "" {
-			t.Trust = probe.TrustSystem
-		}
-		t.ServerName, t.AllAddresses, t.AllChannels, t.Enabled = t.Host, true, true, true
-		if errs := t.Validate(st); len(errs) > 0 {
-			return fmt.Errorf("%s: %v", t.Host, errs)
-		}
-		if _, err := a.core.SaveTarget(ctx, t, "seed"); err != nil {
-			if errors.Is(err, core.ErrTargetExists) {
-				continue
-			}
-			return err
-		}
-		added++
-	}
-	fmt.Printf("%d demo targets added; they are checked when the server runs.\n", added)
 	return nil
 }
 

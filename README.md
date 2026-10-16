@@ -70,7 +70,6 @@ tlswatch healthcheck                 exit 0 when the running server's /healthz i
 tlswatch rotate-key                  re-encrypt stored credentials under a new secret key
 tlswatch check HOST[:PORT] [flags]   probe one endpoint, print JSON, exit 0/1/2 by severity
 tlswatch node [flags]                run as a probe node inside another network (enrol, uninstall)
-tlswatch seed                        add a few public demo targets
 tlswatch version                     print the version
 ```
 
@@ -78,7 +77,7 @@ tlswatch version                     print the version
 
 ```sh
 make test     # node --test for the TypeScript helpers, go test -race for the rest
-make run      # a throw-away instance with demo targets (badssl.com and friends)
+make run      # a throw-away instance on http://127.0.0.1:8080
 make lint     # gofmt, go vet, govulncheck, gosec
 ```
 

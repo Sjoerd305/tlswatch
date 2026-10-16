@@ -421,7 +421,7 @@ Settings pages added for this: **General** (base URL, proxy trust, local targets
 
 **Operations**: `/healthz` reports database reachability and scheduler progress (last run, backlog, how long the oldest due check has waited); when enabled under Settings › General, `/metrics` serves Prometheus gauges without sign-in (targets by status, open findings by severity, alerts pending and given up, each target's certificate expiry, scheduler backlog and checks, checks running on nodes and targets held; nodes online and offline, seconds since each node was seen, jobs completed and failed per node); structured logs with request IDs and one line per check; a daily backup is the `backup` subcommand on a cron, and Settings › Backup downloads and restores an encrypted backup of the whole instance. Upgrades are a binary swap; migrations are forward-only and refuse to run a database written by a newer version.
 
-**Development**: `make build`, `make test`, `make frontend`, `make run` with a throw-away database; a seed subcommand that adds a few public targets (letsencrypt.org, expired.badssl.com, self-signed.badssl.com, wrong.host.badssl.com, tls-v1-0.badssl.com:1010) so the UI shows every state immediately; the README screenshot is taken from the same seed.
+**Development**: `make build`, `make test`, `make frontend`, `make run` with a throw-away database. There is no seed subcommand: test data does not ship in the binary. The README screenshot shows letsencrypt.org and the badssl.com hosts (expired, self-signed, wrong host, untrusted root, tls-v1-0.badssl.com:1010), added through the UI.
 
 ## Security
 
@@ -507,6 +507,6 @@ Where the requirements said "not sure" or "what do you recommend", this document
 - E-mail goes through an SMTP relay that already exists; the tool is not a mail server.
 - The fonts are OFL and can be redistributed with an MIT-licensed project.
 
-**Open points settled.** The questions the first draft left open were decided on 16 October 2026 and are recorded in the sections above: MIT as the licence; all addresses as the default; TOTP as a later version; `info` findings outside the weekly digest; and letsencrypt.org plus the badssl.com hosts as the seed and screenshot data. No open point remains for version 1.
+**Open points settled.** The questions the first draft left open were decided on 16 October 2026 and are recorded in the sections above: MIT as the licence; all addresses as the default; TOTP as a later version; `info` findings outside the weekly digest; and letsencrypt.org plus the badssl.com hosts as the screenshot data. No open point remains for version 1.
 
 **Later versions**, in rough priority: a public REST API with tokens; bulk import and export of targets as YAML; TOTP as a second factor for local accounts; OCSP and CRL checks; Certificate Transparency monitoring for own domains; TLS configuration grading; Microsoft Teams, PagerDuty and Matrix channels; ticket creation in a service desk on critical findings.

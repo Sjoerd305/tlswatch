@@ -10,7 +10,7 @@ Then, in the browser:
 2. **Settings › Channels**: an SMTP relay (host, port, STARTTLS / implicit TLS / none, username, password, sender, recipients) and/or a Telegram bot (token from @BotFather, chat IDs). Under "More types": a Slack incoming webhook (Mattermost and Rocket.Chat take the same), a Discord channel webhook, an ntfy topic (server, topic, optional access token), or a webhook of your own (URL, optional signing secret). Use **Test** on each.
 3. **Settings › Sign-in** (optional): Google client ID and secret, and a Workspace domain. Register the redirect URI shown there.
 4. **Settings › Users**: invite people. Password users get a one-time link (mailed through the first SMTP channel when there is one); Google users just sign in.
-5. **Targets › Add target**, or `tlswatch seed` for a few public demo targets.
+5. **Targets › Add target**.
 
 ## Environment overrides
 
