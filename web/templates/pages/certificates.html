@@ -4,10 +4,10 @@
   <div class="actions row"><a href="/certificates.csv" class="btn">Export CSV</a></div>
 </div>
 {{- if not $d.Items}}
-<section class="card"><div class="empty center"><span class="h3">No certificates seen yet</span><span>Certificates appear here after the first check of a target.</span></div></section>
+<section class="card"><div class="empty"><span class="h3">No certificates seen yet</span><span>Certificates appear here after the first check of a target.</span></div></section>
 {{- else}}
 <form class="row filters" method="get" action="/certificates" role="search">
-  <div class="filter w300">{{template "search-icon"}}<input class="input" type="search" name="q" value="{{$d.Query}}" placeholder="Filter: subject, SAN, fingerprint, serial" aria-label="Filter certificates" aria-keyshortcuts="/" title="Press / to filter" data-filter="#certs">{{template "key-hint"}}</div>
+  <div class="filter">{{template "search-icon"}}<input class="input" type="search" name="q" value="{{$d.Query}}" placeholder="Filter: subject, SAN, fingerprint, serial" aria-label="Filter certificates" aria-keyshortcuts="/" title="Press / to filter" data-filter="#certs">{{template "key-hint"}}</div>
   <span class="chips" data-chip-group="#certs">{{template "chips" $d.Windows}}</span>
   <span class="divider"></span>
   {{- /* Up to eight issuers are chips; more become a select, as the design says. */}}

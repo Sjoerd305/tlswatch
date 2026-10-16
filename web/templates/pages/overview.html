@@ -14,7 +14,7 @@
 
 {{- if not $o.Total}}
 <section class="card">
-  <div class="empty center">
+  <div class="empty">
     <span class="h3">No targets yet</span>
     <span>Add one{{if $p.Can "targets.edit"}} with <a href="/targets/new">Add target</a>{{end}}, or try an endpoint from the command line first: <span class="mono">tlswatch check example.org</span></span>
   </div>
@@ -41,7 +41,7 @@
           <td data-label="Target" class="m-lead"><a href="/targets/{{.ID}}" class="ink strong" data-row-link>{{.Name}}</a></td>
           <td data-label="Host" class="mono muted m-full">{{.HostPort}}</td>
           <td data-label="Days" class="num mono days m-lead m-end{{if $c}} {{$c}}-t{{end}}">{{template "days-left" (days $p.Now .NotAfter)}}</td>
-          <td data-label="Lifetime" class="m-hide">{{template "bar" (dict "Used" (used $p.Now .Cert.NotBefore .Cert.NotAfter) "Class" (.BarClass $p.Settings.Defaults $p.Now) "Wide" "w140")}}</td>
+          <td data-label="Lifetime" class="m-hide">{{template "bar" (dict "Used" (used $p.Now .Cert.NotBefore .Cert.NotAfter) "Class" (.BarClass $p.Settings.Defaults $p.Now))}}</td>
           <td data-label="Expires" class="mono m-hide">{{date $p.Loc .NotAfter}}</td>
           <td data-label="Issuer" class="muted">{{.Cert.IssuerName}}{{if .RenewalManaged}} <span class="tag">auto</span>{{end}}</td>
         </tr>
