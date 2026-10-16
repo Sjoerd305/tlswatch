@@ -24,16 +24,18 @@ const LegacyEvery = 24 * time.Hour
 
 const legacySlack = time.Hour
 
-// ProbeRequest builds the probe request for a target. The legacy versions
-// are tested when the last test is older than LegacyEvery; the caller sets
-// req.Legacy to test them anyway (Check now, Test without saving).
+// ProbeRequest builds the probe request for a target. The configuration
+// test runs when the last test is older than LegacyEvery, or when the
+// target has no grade yet (or one under older rules), so an upgrade grades
+// every target on its next check instead of a day later; the caller sets
+// req.Legacy to test anyway (Check now, Test without saving).
 func (s *Service) ProbeRequest(ctx context.Context, t Target, st config.Settings) (probe.Request, error) {
 	eff := t.Effective(st.Defaults)
 	req := probe.Request{
 		Host: t.Host, Port: t.Port, Protocol: t.Protocol, ServerName: t.ServerName, Trust: t.Trust,
 		FirstOnly: !t.AllAddresses, Timeout: time.Duration(eff.TimeoutS) * time.Second, Retries: eff.Retries,
 		AllowLocal: st.General.AllowLocal, Now: s.Now,
-		Legacy: !t.SkipLegacy && s.now().Sub(time.Unix(t.LegacyChecked, 0)) >= LegacyEvery-legacySlack,
+		Legacy: !t.SkipLegacy && (s.now().Sub(time.Unix(t.LegacyChecked, 0)) >= LegacyEvery-legacySlack || t.Grade == "" || t.GradeRules < check.GradeRules),
 	}
 	if t.Trust == probe.TrustBundle {
 		p, err := s.BundlePool(ctx, t.BundleID)

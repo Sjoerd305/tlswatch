@@ -966,7 +966,7 @@ func TestLegacyProtocolDaily(t *testing.T) {
 	leaf := ca.leaf(t, now, now.Add(days(300)), "portal.example.nl")
 	tested := func(versions ...string) probe.Result {
 		a := served("192.0.2.1", leaf, ca.cert)
-		a.LegacyChecked, a.Legacy = true, versions
+		a.LegacyChecked, a.Legacy, a.SuitesChecked = true, versions, true
 		return result(a)
 	}
 	due := func(tg Target) bool {
