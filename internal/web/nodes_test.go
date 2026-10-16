@@ -172,4 +172,21 @@ func TestStampFollowsEnrolment(t *testing.T) {
 	if _, busy := stamp(); busy {
 		t.Error("still busy after the node was confirmed")
 	}
+	// A running update is followed quickly too, and its end changes the
+	// stamp.
+	n, _ := c.Node(ctx, id)
+	if err := c.StartNodeUpdate(ctx, n, "v9.9.9"); err != nil {
+		t.Fatal(err)
+	}
+	afterStart, busy := stamp()
+	if !busy {
+		t.Error("not busy while a node updates")
+	}
+	n, _ = c.Node(ctx, id)
+	if err := c.EndNodeUpdate(ctx, n, "404 Not Found"); err != nil {
+		t.Fatal(err)
+	}
+	if afterEnd, busy := stamp(); busy || afterEnd == afterStart {
+		t.Errorf("after the update ended: busy %v, stamp %s then %s", busy, afterStart, afterEnd)
+	}
 }

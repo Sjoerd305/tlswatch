@@ -21,7 +21,7 @@ import (
 // reason, which the old binary reports on its polls until one succeeds.
 const (
 	markerFile   = "update.json"
-	rollbackFile = "update-failed.json"
+	rollbackFile = "update-failed.json" // why the last update was rolled back or went nowhere
 )
 
 type marker struct {
@@ -50,8 +50,8 @@ func readRollback(data string) string {
 	return r.Reason
 }
 
-// clearUpdateFiles runs after the first successful poll: the binary in
-// place works, and a reported rollback has reached the server.
+// clearUpdateFiles runs after a successful poll: the binary in place
+// works, and a reported rollback or failure has reached the server.
 func clearUpdateFiles(data string) {
 	_ = os.Remove(filepath.Join(data, markerFile))
 	_ = os.Remove(filepath.Join(data, rollbackFile))
@@ -83,11 +83,11 @@ func (c *Client) update(ctx context.Context, version string) error {
 	c.running.Wait()
 	exe, err := c.executable()
 	if err != nil {
-		c.Log.Error("update: cannot find the running binary", "err", err)
+		c.updateFailed("cannot find the running binary: " + err.Error())
 		return nil
 	}
 	if err := c.replace(ctx, exe); err != nil {
-		c.Log.Error("update failed; staying on this version", "err", err)
+		c.updateFailed(err.Error())
 		return nil
 	}
 	b, _ := json.Marshal(marker{From: c.Version, To: version, At: time.Now()})
@@ -172,6 +172,15 @@ func copyFile(from, to string) error {
 		return err
 	}
 	return out.Close()
+}
+
+// updateFailed records why an update went nowhere, so the next poll
+// reports it and the server ends the update with that reason instead of
+// waiting out UpdateWindow.
+func (c *Client) updateFailed(reason string) {
+	c.Log.Error("update failed; staying on this version", "err", reason)
+	b, _ := json.Marshal(map[string]string{"reason": reason})
+	_ = os.WriteFile(filepath.Join(c.Data, rollbackFile), b, 0o600)
 }
 
 // watchUpdate rolls an update back when the new binary has not completed

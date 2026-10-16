@@ -471,6 +471,32 @@ func TestSelfUpdateAndRollback(t *testing.T) {
 	if !e.disp.wantUpdate(ctx, n, "") {
 		t.Fatal("Update by an admin was not sent")
 	}
+
+	// A download that fails goes nowhere on the node, and the reason is
+	// reported on its next poll so the server does not wait out the
+	// window.
+	e.disp.Executable = func() (string, error) { return "", errors.New("binary gone") }
+	if err := c.update(ctx, "v1.2.0"); err != nil {
+		t.Fatalf("failed update: %v", err)
+	}
+	if b, _ := os.ReadFile(exe); string(b) != "old" {
+		t.Fatalf("binary changed by a failed update: %q", b)
+	}
+	if _, ok := readMarker(c.Data); ok {
+		t.Fatal("marker written for a failed update")
+	}
+	reason = readRollback(c.Data)
+	if reason == "" {
+		t.Fatal("failed download not recorded")
+	}
+	n, _ = e.core.Node(ctx, n.ID)
+	if e.disp.wantUpdate(ctx, n, reason) {
+		t.Fatal("update sent again while the failure is reported")
+	}
+	n, _ = e.core.Node(ctx, n.ID)
+	if n.UpdateFailed != reason || n.UpdateStarted != 0 {
+		t.Fatalf("failure not recorded: %+v", n)
+	}
 }
 
 func TestUpdatesOneAtATime(t *testing.T) {

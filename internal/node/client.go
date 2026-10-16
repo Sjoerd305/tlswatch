@@ -228,15 +228,18 @@ func (c *Client) Run(ctx context.Context) error {
 			continue
 		}
 		backoff = time.Second
-		pollOnce.Do(func() {
-			close(polled)
+		// The binary in place works, and a reported rollback or failure
+		// has reached the server.
+		pollOnce.Do(func() { close(polled); clearUpdateFiles(c.Data) })
+		if rollback != "" {
 			clearUpdateFiles(c.Data)
 			rollback = ""
-		})
+		}
 		if resp.Update {
 			if err := c.update(ctx, resp.ServerVersion); err != nil {
 				return err
 			}
+			rollback = readRollback(c.Data) // set when the update went nowhere
 			continue
 		}
 		for _, j := range resp.Jobs {
@@ -259,6 +262,7 @@ func (c *Client) Run(ctx context.Context) error {
 				if err := c.update(ctx, v); err != nil {
 					return err
 				}
+				rollback = readRollback(c.Data)
 			default:
 				c.Log.Warn("unknown job kind; this node may be older than the server", "kind", j.Kind)
 			}
