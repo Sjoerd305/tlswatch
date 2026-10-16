@@ -216,13 +216,14 @@ func TestEnrolConfirmProbe(t *testing.T) {
 		t.Errorf("status: %+v", st)
 	}
 
-	// System trust: the node's verdict against its own store stands.
+	// System trust: the server verifies the chain itself; the node's
+	// verdict ("unknown authority", a text no server produces) is not used.
 	req.Trust, req.Roots = probe.TrustSystem, nil
 	r, err = e.disp.Probe(pctx, n.ID, req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a := r.Addresses[0]; a.Verified || a.VerifyError != "unknown authority" {
+	if a := r.Addresses[0]; a.Verified || a.VerifyError == "" || a.VerifyError == "unknown authority" {
 		t.Errorf("system trust: %+v", a)
 	}
 	cancel()
@@ -431,8 +432,22 @@ func TestDownloadOwnBinary(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.disp.Executable = func() (string, error) { return bin, nil }
-	// Without signed release checksums, a release server serves nothing.
+	// Without a credential or an install token: no download.
 	resp, err := http.Get(e.srv.URL + "/agent/v1/download/" + OwnPlatform())
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("download without a token: %s", resp.Status)
+	}
+	_, tok, err := e.core.CreateNode(context.Background(), "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dl := e.srv.URL + "/agent/v1/download/" + OwnPlatform() + "?token=" + tok
+	// Without signed release checksums, a release server serves nothing.
+	resp, err = http.Get(dl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -442,14 +457,14 @@ func TestDownloadOwnBinary(t *testing.T) {
 	}
 	// Signed by the wrong key: the same.
 	e.release(t, false, map[string][]byte{e.ownAsset(): []byte("binary")})
-	resp, _ = http.Get(e.srv.URL + "/agent/v1/download/" + OwnPlatform())
+	resp, _ = http.Get(dl)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusBadGateway {
 		t.Fatalf("download with a bad signature: %s", resp.Status)
 	}
 	// Its own binary is the released one: served from here, checksum along.
 	e.release(t, true, map[string][]byte{e.ownAsset(): []byte("binary")})
-	resp, err = http.Get(e.srv.URL + "/agent/v1/download/" + OwnPlatform())
+	resp, err = http.Get(dl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -470,7 +485,7 @@ func TestDownloadOwnBinary(t *testing.T) {
 	// node is sent to the release asset instead.
 	e.release(t, true, map[string][]byte{e.ownAsset(): []byte("released")})
 	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	resp, _ = noFollow.Get(e.srv.URL + "/agent/v1/download/" + OwnPlatform())
+	resp, _ = noFollow.Get(dl)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusFound || !strings.HasSuffix(resp.Header.Get("Location"), "/v1.2.0/"+e.ownAsset()) {
 		t.Fatalf("download of other bytes: %s %s", resp.Status, resp.Header.Get("Location"))
@@ -503,6 +518,7 @@ func TestUpdateRefusals(t *testing.T) {
 		}
 	}
 	c := e.client(t, "v1.1.0")
+	e.enrolled(t, c) // the download takes the node's credential
 	try("no checksums", c, "v1.2.0", "signed checksums")
 	e.release(t, false, map[string][]byte{e.ownAsset(): []byte("new")})
 	try("bad signature", c, "v1.2.0", "signed checksums")

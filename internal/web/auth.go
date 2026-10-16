@@ -252,7 +252,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, map[string]any{
 		"ok": ok && !stalled && !behind, "database": ok, "scheduler_running": !stalled && !st.LastLoop.IsZero(),
 		"last_check": last, "backlog": st.Backlog, "overdue_s": int64(st.Overdue / time.Second), "running": st.Running,
-		"checks": st.Checks, "version": s.Version,
+		"checks": st.Checks, // the version is not here: this route needs no sign-in
 	})
 }
 

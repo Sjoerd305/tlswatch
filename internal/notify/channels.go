@@ -221,15 +221,18 @@ func (s *Channels) seal(c Channel) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.Key.Seal(b), nil
+	return s.Key.Seal(sealContext, b), nil
 }
+
+// sealContext names where channel settings live, for Seal.
+const sealContext = "channels.settings"
 
 // ErrUnreadable is wrapped by errors for a channel whose settings cannot be
 // decrypted; the channel is still returned, with Unreadable set.
 var ErrUnreadable = errors.New("cannot decrypt channel settings (secret key changed?)")
 
 func (s *Channels) unseal(c *Channel, blob []byte) error {
-	pt, err := s.Key.Open(blob)
+	pt, err := s.Key.Open(sealContext, blob)
 	if err != nil {
 		c.Unreadable = ErrUnreadable.Error()
 		return fmt.Errorf("channel %q: %w", c.Name, ErrUnreadable)
@@ -300,12 +303,12 @@ func Reencrypt(ctx context.Context, tx *sql.Tx, old, new *secret.Key) (n int, un
 		return 0, nil, err
 	}
 	for _, r := range all {
-		pt, err := old.Open(r.blob)
+		pt, err := old.Open(sealContext, r.blob)
 		if err != nil {
 			unreadable = append(unreadable, r.name)
 			continue
 		}
-		if _, err := tx.ExecContext(ctx, "UPDATE channels SET settings = ? WHERE id = ?", new.Seal(pt), r.id); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE channels SET settings = ? WHERE id = ?", new.Seal(sealContext, pt), r.id); err != nil {
 			return n, unreadable, err
 		}
 		n++

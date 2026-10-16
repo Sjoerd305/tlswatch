@@ -186,6 +186,7 @@ func (c *Client) replace(ctx context.Context, exe, version string) error {
 		return err
 	}
 	req.Header.Set(HeaderVersion, c.Version)
+	req.Header.Set("Authorization", "Bearer "+c.cred)
 	client := *c.client()
 	client.Timeout = 0 // the context bounds the download
 	resp, err := client.Do(req)

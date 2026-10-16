@@ -57,7 +57,7 @@ echo "Linux $ARCH with $FETCH and systemd"
 step "Downloading tlswatch for $OS/$ARCH from $SERVER"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-URL="$SERVER/agent/v1/download/$OS/$ARCH"
+URL="$SERVER/agent/v1/download/$OS/$ARCH?token=$TOKEN"
 status=0
 if [ "$FETCH" = curl ]; then
 	curl -fsSL -D "$TMP/headers" -o "$TMP/tlswatch" "$URL" || status=$?

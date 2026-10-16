@@ -450,7 +450,9 @@ func prepare(ctx context.Context, path string, sealed, instance *secret.Key) err
 	// Migrate in a pass of its own: Open refuses a newer schema.
 	m, err := db.Open(path)
 	if err != nil {
-		return usererr.New("The backup could not be brought up to date: " + err.Error())
+		// Logged by the caller as a server error; the text of a migration
+		// failure is for the operator's log, not the browser.
+		return fmt.Errorf("migrate the backup: %w", err)
 	}
 	defer m.Close()
 	var admins int

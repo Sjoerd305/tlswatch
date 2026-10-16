@@ -261,15 +261,15 @@ func (p ProbeResult) Decode(req probe.Request, started time.Time) (probe.Result,
 	return r, nil
 }
 
-// judge redoes on the server what is decided there.
+// judge redoes on the server what is decided there: the chain is verified
+// against the server's roots or bundle and the hostname checked, whatever
+// the node reported, so a node can say what it saw but not what to trust.
 func judge(a *probe.Address, req probe.Request) {
 	switch req.Trust {
-	case probe.TrustBundle:
-		probe.Verify(a, req) // the hostname too
 	case probe.TrustSelfSigned:
 		a.Verified, a.VerifyError, a.VerifiedChain = false, "", nil
-		fallthrough
-	default:
 		a.HostnameChecked, a.HostnameOK = probe.CheckHostname(a.Chain[0], req.ServerName)
+	default:
+		probe.Verify(a, req) // system roots or the bundle; the hostname too
 	}
 }

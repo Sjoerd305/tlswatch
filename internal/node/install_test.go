@@ -56,8 +56,8 @@ echo "Enrolled with $4"`)
 	// The stub uname says linux/amd64; the script asks for the platform
 	// this test server serves from its own binary instead.
 	installer := func(tok string) string {
-		return strings.Replace(InstallScript(e.srv.URL, tok), `URL="$SERVER/agent/v1/download/$OS/$ARCH"`,
-			`URL="$SERVER/agent/v1/download/`+OwnPlatform()+`"`, 1)
+		return strings.Replace(InstallScript(e.srv.URL, tok), `URL="$SERVER/agent/v1/download/$OS/$ARCH?token=$TOKEN"`,
+			`URL="$SERVER/agent/v1/download/`+OwnPlatform()+`?token=$TOKEN"`, 1)
 	}
 	script := installer(tok)
 	cmd := exec.Command("sh", "-s")

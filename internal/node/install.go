@@ -70,10 +70,10 @@ func InstallCommands(server, token, version string) Commands {
 		Script: script,
 		Docker: fmt.Sprintf("docker run -d --name tlswatch-node --restart unless-stopped -v tlswatch-node:/data %s:%s node -server %s -token %s",
 			Image, tag, server, token),
-		Manual: fmt.Sprintf("curl -fsSL -D headers -o tlswatch %s%s/download/linux/amd64\n"+
+		Manual: fmt.Sprintf("curl -fsSL -D headers -o tlswatch '%s%s/download/linux/amd64?token=%s'\n"+
 			"tr -d '\\r' <headers | awk 'tolower($1)==\"x-tlswatch-sha256:\" {print $2 \"  tlswatch\"}' | sha256sum -c && chmod +x tlswatch\n"+
 			"./tlswatch node enrol -server %s -token %s -data ./tlswatch-node\n"+
-			"./tlswatch node -server %s -data ./tlswatch-node", server, Prefix, server, token, server),
+			"./tlswatch node -server %s -data ./tlswatch-node", server, Prefix, token, server, token, server),
 	}
 }
 

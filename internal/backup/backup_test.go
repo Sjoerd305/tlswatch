@@ -53,7 +53,7 @@ func source(t *testing.T, k *secret.Key, role string) *db.DB {
 	d := fileDB(t)
 	exec(t, d, "INSERT INTO users(email, role, method, created_at) VALUES('a@example.test', ?, 'local', 1)", role)
 	exec(t, d, "INSERT INTO sessions(hash, user_id, csrf, created_at, last_seen) VALUES('h', 1, 'c', 1, 1)")
-	exec(t, d, "INSERT INTO channels(name, kind, settings, created_at, updated_at) VALUES('mail', 'smtp', ?, 1, 1)", k.Seal([]byte(`{"password":"pw"}`)))
+	exec(t, d, "INSERT INTO channels(name, kind, settings, created_at, updated_at) VALUES('mail', 'smtp', ?, 1, 1)", k.Seal("channels.settings", []byte(`{"password":"pw"}`)))
 	exec(t, d, "INSERT INTO targets(name, host, port, created_at, updated_at) VALUES('t', 'example.org', 443, 1, 1)")
 	return d
 }
@@ -100,7 +100,7 @@ func TestRoundTripOtherInstance(t *testing.T) {
 	if err := dst.R.QueryRow("SELECT settings FROM channels").Scan(&blob); err != nil {
 		t.Fatal(err)
 	}
-	if pt, err := kb.Open(blob); err != nil || string(pt) != `{"password":"pw"}` {
+	if pt, err := kb.Open("channels.settings", blob); err != nil || string(pt) != `{"password":"pw"}` {
 		t.Fatalf("credentials not re-sealed under the new key: %q %v", pt, err)
 	}
 	// Still writable through the same pools.
@@ -170,7 +170,7 @@ func TestPlainCopy(t *testing.T) {
 	}
 	var blob []byte
 	dst.R.QueryRow("SELECT settings FROM channels").Scan(&blob)
-	if _, err := k.Open(blob); err != nil {
+	if _, err := k.Open("channels.settings", blob); err != nil {
 		t.Fatal("credentials of a plain copy changed")
 	}
 }

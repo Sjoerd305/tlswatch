@@ -320,6 +320,7 @@ func createAdmin(args []string) error {
 	fs := flag.NewFlagSet("create-admin", flag.ExitOnError)
 	email := fs.String("email", "", "e-mail address of the admin")
 	name := fs.String("name", "", "display name")
+	out := fs.String("out", "", "write the one-time password link to this file (mode 0600) instead of the terminal")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -341,7 +342,18 @@ func createAdmin(args []string) error {
 		return err
 	}
 	a.core.Audit(ctx, "cli", "user.create", "user "+u.Email, "role=admin via create-admin")
-	fmt.Printf("Admin %s created. Set the password within 7 days:\n\n  %s/invite?token=%s\n\n", u.Email, a.linkBase(ctx), tok)
+	link := fmt.Sprintf("%s/invite?token=%s", a.linkBase(ctx), tok)
+	if *out != "" {
+		if err := os.WriteFile(*out, []byte(link+"\n"), 0o600); err != nil {
+			return fmt.Errorf("the admin exists, but the link could not be written: %w", err)
+		}
+		fmt.Printf("Admin %s created. The one-time password link is in %s; it is valid for 7 days.\n", u.Email, *out)
+		return nil
+	}
+	// On stderr: the link is for the person at the terminal, not for a
+	// pipe or a log that captures stdout.
+	fmt.Printf("Admin %s created. Set the password within 7 days with the link below (-out FILE writes it to a file instead).\n", u.Email)
+	fmt.Fprintf(os.Stderr, "\n  %s\n\n", link)
 	return nil
 }
 

@@ -98,20 +98,29 @@ func (k *Key) derive(purpose string) []byte {
 	return m.Sum(nil)
 }
 
-// Seal encrypts plaintext; the nonce is prepended.
-func (k *Key) Seal(plaintext []byte) []byte {
+// Seal encrypts plaintext for the place named by context (a table and
+// column, a settings key), which is bound to the ciphertext as additional
+// data: a sealed value moved to another place no longer opens. The nonce
+// is prepended.
+func (k *Key) Seal(context string, plaintext []byte) []byte {
 	nonce := make([]byte, k.aead.NonceSize(), k.aead.NonceSize()+len(plaintext)+k.aead.Overhead())
 	if _, err := rand.Read(nonce); err != nil {
 		panic(err)
 	}
-	return k.aead.Seal(nonce, nonce, plaintext, nil)
+	return k.aead.Seal(nonce, nonce, plaintext, []byte(context))
 }
 
-// Open decrypts what Seal produced.
-func (k *Key) Open(sealed []byte) ([]byte, error) {
+// Open decrypts what Seal produced for context. A value sealed by a build
+// before contexts existed (no additional data) still opens; a key rotation
+// or a restore re-seals it with its context.
+func (k *Key) Open(context string, sealed []byte) ([]byte, error) {
 	n := k.aead.NonceSize()
 	if len(sealed) < n {
 		return nil, errors.New("ciphertext too short")
 	}
-	return k.aead.Open(nil, sealed[:n], sealed[n:], nil)
+	pt, err := k.aead.Open(nil, sealed[:n], sealed[n:], []byte(context))
+	if err != nil && context != "" {
+		return k.aead.Open(nil, sealed[:n], sealed[n:], nil)
+	}
+	return pt, err
 }

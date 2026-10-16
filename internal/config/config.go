@@ -337,7 +337,7 @@ func (s *Store) loadSealed(ctx context.Context, key string) (value string, unrea
 	if err != nil {
 		return "", false, err
 	}
-	pt, err := s.open(sealed)
+	pt, err := s.open(key, sealed)
 	if err != nil {
 		return "", true, nil
 	}
@@ -381,7 +381,7 @@ func (s *Store) SaveCT(ctx context.Context, c CT, clearKey bool) error {
 		s.invalidate()
 		return err
 	case c.APIKey != "":
-		b, _ := json.Marshal(s.key.Seal([]byte(c.APIKey)))
+		b, _ := json.Marshal(s.key.Seal("settings:"+keyCTKey, []byte(c.APIKey)))
 		_, err := s.db.W.ExecContext(ctx, "INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", keyCTKey, string(b))
 		s.invalidate()
 		return err
@@ -437,14 +437,14 @@ func Reencrypt(ctx context.Context, tx *sql.Tx, old, new *secret.Key) (n int, un
 		if err := json.Unmarshal([]byte(v), &raw); err != nil {
 			return n, unreadable, err
 		}
-		pt, err := old.Open(raw)
+		pt, err := old.Open("settings:"+k, raw)
 		if err != nil {
 			// Sealed under yet another key: left as it is, and reported
 			// as unreadable by Get.
 			unreadable = append(unreadable, sealedNames[k])
 			continue
 		}
-		b, _ := json.Marshal(new.Seal(pt))
+		b, _ := json.Marshal(new.Seal("settings:"+k, pt))
 		if _, err := tx.ExecContext(ctx, "UPDATE settings SET value = ? WHERE key = ?", string(b), k); err != nil {
 			return n, unreadable, err
 		}
@@ -453,12 +453,12 @@ func Reencrypt(ctx context.Context, tx *sql.Tx, old, new *secret.Key) (n int, un
 	return n, unreadable, nil
 }
 
-func (s *Store) open(v string) ([]byte, error) {
+func (s *Store) open(key, v string) ([]byte, error) {
 	var raw []byte
 	if err := json.Unmarshal([]byte(v), &raw); err != nil {
 		return nil, err
 	}
-	return s.key.Open(raw)
+	return s.key.Open("settings:"+key, raw)
 }
 
 // SaveGeneral stores the general settings.
@@ -494,7 +494,7 @@ func (s *Store) SaveSignIn(ctx context.Context, si SignIn, clearSecret bool) err
 		s.invalidate()
 		return err
 	case si.GoogleClientSecret != "":
-		b, _ := json.Marshal(s.key.Seal([]byte(si.GoogleClientSecret)))
+		b, _ := json.Marshal(s.key.Seal("settings:"+keySecret, []byte(si.GoogleClientSecret)))
 		_, err := s.db.W.ExecContext(ctx, "INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", keySecret, string(b))
 		s.invalidate()
 		return err

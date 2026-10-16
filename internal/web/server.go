@@ -180,6 +180,9 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()")
+		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		h.Set("Cross-Origin-Resource-Policy", "same-origin")
 		if ri.https {
 			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
@@ -325,12 +328,21 @@ func (w *statusWriter) WriteHeader(code int) {
 
 // clientInfo returns the client IP and whether the request arrived over
 // HTTPS, trusting forwarded headers from one proxy hop only when configured.
+// Before that is configured, a peer on a loopback or private address that
+// says X-Forwarded-Proto: https is believed about the scheme alone, so the
+// cookies of a fresh install behind a TLS proxy are Secure from the first
+// sign-in; the address is never taken from a header until then.
 func clientInfo(r *http.Request, behindProxy bool) (string, bool) {
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		ip = r.RemoteAddr
 	}
 	https := r.TLS != nil
+	if !behindProxy && !https && strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https") {
+		if peer := net.ParseIP(ip); peer != nil && (peer.IsLoopback() || peer.IsPrivate()) {
+			https = true
+		}
+	}
 	if behindProxy {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 			parts := strings.Split(xff, ",")

@@ -300,8 +300,11 @@ func (s *Service) sealToken(tok string) []byte {
 	if s.Key == nil {
 		return nil
 	}
-	return s.Key.Seal([]byte(tok))
+	return s.Key.Seal(tokenContext, []byte(tok))
 }
+
+// tokenContext names where install tokens live, for Seal.
+const tokenContext = "nodes.token_sealed"
 
 // ReencryptNodeTokens re-seals the unspent install tokens from old to new
 // within tx, for a key rotation or a restore. A token old cannot open is
@@ -329,14 +332,14 @@ func ReencryptNodeTokens(ctx context.Context, tx *sql.Tx, old, new *secret.Key) 
 		return 0, err
 	}
 	for _, r := range all {
-		pt, err := old.Open(r.blob)
+		pt, err := old.Open(tokenContext, r.blob)
 		if err != nil {
 			if _, err := tx.ExecContext(ctx, "UPDATE nodes SET token_sealed = NULL WHERE id = ?", r.id); err != nil {
 				return n, err
 			}
 			continue
 		}
-		if _, err := tx.ExecContext(ctx, "UPDATE nodes SET token_sealed = ? WHERE id = ?", new.Seal(pt), r.id); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE nodes SET token_sealed = ? WHERE id = ?", new.Seal(tokenContext, pt), r.id); err != nil {
 			return n, err
 		}
 		n++
@@ -356,7 +359,7 @@ func (s *Service) NodeToken(ctx context.Context, id int64) (string, error) {
 	if err != nil || expires <= s.now().Unix() || s.Key == nil || len(sealed) == 0 {
 		return "", err
 	}
-	pt, err := s.Key.Open(sealed)
+	pt, err := s.Key.Open(tokenContext, sealed)
 	if err != nil {
 		return "", nil
 	}

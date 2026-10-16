@@ -39,7 +39,9 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && rest == "uninstall":
 		d.uninstall(w, r)
 	case r.Method == http.MethodGet && len(parts) == 3 && parts[0] == "download":
-		d.download(w, r, parts[1], parts[2])
+		if d.mayDownload(w, r) {
+			d.download(w, r, parts[1], parts[2])
+		}
 	case r.Method == http.MethodGet && rest == "release/sums":
 		d.releaseSums(w, r)
 	case r.Method == http.MethodPost && rest == "enrol":
@@ -272,6 +274,25 @@ func (d *Dispatcher) uninstall(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = io.WriteString(w, UninstallScript(base))
+}
+
+// mayDownload admits a binary download to a node's credential or to the
+// unspent install token the install command carries (?token=), and
+// answers anything else as a failed attempt: the binary is public code,
+// but the route costs the server a file read or a fetch from GitHub.
+func (d *Dispatcher) mayDownload(w http.ResponseWriter, r *http.Request) bool {
+	if cred, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
+		if _, err := d.Core.NodeByCredential(r.Context(), strings.TrimSpace(cred)); err == nil {
+			return true
+		}
+	}
+	if tok := r.URL.Query().Get("token"); tok != "" {
+		if ok, err := d.Core.ValidNodeToken(r.Context(), tok); err == nil && ok {
+			return true
+		}
+	}
+	d.failed(w, d.clientIP(r), http.StatusUnauthorized, "the download needs a node credential or an unspent install token")
+	return false
 }
 
 // failed records a request without a valid credential or token from ip and

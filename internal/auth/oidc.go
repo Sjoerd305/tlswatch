@@ -95,7 +95,7 @@ func (s *Service) OIDCStart(cfg OIDCConfig) (string, OIDCState, error) {
 // SealState encrypts the state for a cookie.
 func (s *Service) SealState(st OIDCState) string {
 	b, _ := json.Marshal(st)
-	return base64.RawURLEncoding.EncodeToString(s.Key.Seal(b))
+	return base64.RawURLEncoding.EncodeToString(s.Key.Seal("oidc.state", b))
 }
 
 // OpenState decrypts and checks a sealed state.
@@ -105,7 +105,7 @@ func (s *Service) OpenState(v string) (OIDCState, error) {
 	if err != nil {
 		return st, ErrTokenInvalid
 	}
-	b, err := s.Key.Open(raw)
+	b, err := s.Key.Open("oidc.state", raw)
 	if err != nil {
 		return st, ErrTokenInvalid
 	}

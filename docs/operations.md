@@ -2,7 +2,7 @@
 
 ## First start
 
-`tlswatch serve` needs no configuration. On first start it creates the data directory and generates `secret.key` (mode 0600) next to the database. While no account exists, every page leads to a setup screen where you create the first admin with your own e-mail address and password; you are signed in right after. Do this before the port is reachable by others: until then, whoever opens tlswatch first becomes admin. For scripted installs, `tlswatch create-admin -email you@example.org` creates the admin from the command line and prints a password link instead.
+`tlswatch serve` needs no configuration. On first start it creates the data directory and generates `secret.key` (mode 0600) next to the database. While no account exists, every page leads to a setup screen where you create the first admin with your own e-mail address and password; you are signed in right after. Do this before the port is reachable by others: until then, whoever opens tlswatch first becomes admin. For scripted installs, `tlswatch create-admin -email you@example.org` creates the admin from the command line and shows a one-time password link on the terminal instead (`-out FILE` writes it to a file, mode 0600, for a script that captures stdout).
 
 Then, in the browser:
 
@@ -70,7 +70,7 @@ A node is `tlswatch node` on a host inside a network the server cannot reach. It
 > [!IMPORTANT]
 > If a reverse proxy or load balancer in front of the server has a read or idle timeout under 60 seconds, raise it before you deploy a version with the 55-second poll, or polls will be cut off and nodes will keep reconnecting. For example: nginx `proxy_read_timeout 75s;`, HAProxy `timeout server 75s`, or the idle timeout of an AWS load balancer. Cloudflare's 100 seconds is enough.
 
-**Installing.** Settings › Nodes › Add node shows one command to run as root on a host with systemd; it installs `/var/lib/tlswatch-node/bin/tlswatch` (linked from `/usr/local/bin/tlswatch`), `/etc/tlswatch-node.env`, the unit `tlswatch-node.service` and the system user `tlswatch-node`. The same screen has a Docker command and a manual one for hosts without systemd or root. The command holds a one-time token valid for an hour. Once the machine enrolled, the screen shows what it reported (hostname, system, addresses); confirm it and name it, and it can take targets ("Probe from" on the target form).
+**Installing.** The binary download on the server takes a node's credential or an unspent install token, so a machine needs the install command, not just the URL. Settings › Nodes › Add node shows one command to run as root on a host with systemd; it installs `/var/lib/tlswatch-node/bin/tlswatch` (linked from `/usr/local/bin/tlswatch`), `/etc/tlswatch-node.env`, the unit `tlswatch-node.service` and the system user `tlswatch-node`. The same screen has a Docker command and a manual one for hosts without systemd or root. The command holds a one-time token valid for an hour. Once the machine enrolled, the screen shows what it reported (hostname, system, addresses); confirm it and name it, and it can take targets ("Probe from" on the target form).
 
 **Settings on the node** are flags or environment variables, read from `/etc/tlswatch-node.env` by the unit:
 
