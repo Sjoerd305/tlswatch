@@ -463,7 +463,7 @@ LICENSE, README.md, CONTRIBUTING.md, SECURITY.md, CHANGELOG.md
 
 1. Frontend: `npm ci`, `npm audit --audit-level=low`, `check-deps` (typescript only), `tsc`, `node --test`.
 2. Backend: `gofmt -l`, `go vet`, `go test -race ./...`, `govulncheck`, `gosec`.
-3. Build: binaries for the three platforms and the Docker image, pushed to `ghcr.io` on a tag.
+3. Build: binaries for the three platforms and the Docker image, pushed to `ghcr.io` on a tag. The release workflow runs the same frontend and backend jobs on the tagged commit first and publishes nothing when they fail; the release notes are generated from the commits since the previous tag. A `v0.0.x` tag is a test release: marked as a prerelease and not moving the image's `latest` tag.
 4. Renovate or Dependabot for pinned dependencies and action digests.
 
 **Versioning**: semantic versions from `v0.1.0`; `v1.0.0` when the scope in this document is complete and the database schema is considered stable. `CHANGELOG.md` kept by hand, one line per change, newest first.

@@ -24,6 +24,9 @@ RUN CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "-s -w -X main.ver
  && mkdir -p /data && chown 65532:65532 /data
 
 FROM scratch
+LABEL org.opencontainers.image.source="https://github.com/sjoerd305/tlswatch" \
+      org.opencontainers.image.description="Monitors the TLS certificates served on your hosts and alerts before they expire or change" \
+      org.opencontainers.image.licenses="MIT"
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build /tlswatch /tlswatch
 COPY --from=build --chown=65532:65532 /data /data

@@ -6,7 +6,14 @@ permissions:
   contents: write
   packages: write
 jobs:
+  ci:
+    # The same checks as on every push to main; nothing is published
+    # unless they pass on the tagged commit.
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
   binaries:
+    needs: ci
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +33,12 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
+          generate_release_notes: true
+          # v0.0.x tags are test releases: marked as such, and the image
+          # below does not move "latest" for them.
+          prerelease: ${{ startsWith(github.ref_name, 'v0.0.') }}
   image:
+    needs: ci
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,6 +55,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           build-args: VERSION=${{ github.ref_name }}
+          # The image name is spelled out: ghcr.io wants it lower case, and
+          # github.repository carries the account's capital letter.
           tags: |
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/sjoerd305/tlswatch:${{ github.ref_name }}
+            ${{ !startsWith(github.ref_name, 'v0.0.') && 'ghcr.io/sjoerd305/tlswatch:latest' || '' }}

@@ -3,6 +3,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call: # the release workflow runs these jobs before it publishes anything
 permissions:
   contents: read
 jobs:
