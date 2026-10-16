@@ -32,7 +32,7 @@ type marker struct {
 
 func readMarker(data string) (marker, bool) {
 	var m marker
-	b, err := os.ReadFile(filepath.Join(data, markerFile))
+	b, err := os.ReadFile(filepath.Join(data, markerFile)) // #nosec G304 -- the node's own data directory
 	if err != nil || json.Unmarshal(b, &m) != nil {
 		return m, false
 	}
@@ -43,7 +43,7 @@ func readRollback(data string) string {
 	var r struct {
 		Reason string `json:"reason"`
 	}
-	b, err := os.ReadFile(filepath.Join(data, rollbackFile))
+	b, err := os.ReadFile(filepath.Join(data, rollbackFile)) // #nosec G304 -- the node's own data directory
 	if err != nil || json.Unmarshal(b, &r) != nil {
 		return ""
 	}
