@@ -30,6 +30,7 @@ type checkResult struct {
 	Issuer     string         `json:"issuer,omitempty"`
 	SANs       []string       `json:"sans,omitempty"`
 	SHA256     string         `json:"sha256,omitempty"`
+	Grade      string         `json:"grade,omitempty"`
 	Addresses  []checkAddress `json:"addresses"`
 	Findings   []checkFinding `json:"findings"`
 	DNSError   string         `json:"dns_error,omitempty"`
@@ -43,10 +44,15 @@ type checkAddress struct {
 	SHA256     string `json:"sha256,omitempty"`
 	Verified   bool   `json:"verified"`
 	// Legacy lists the TLS versions under 1.2 the address accepted;
-	// absent when they were not tested or got no verdict.
-	Legacy     *[]string `json:"legacy_accepted,omitempty"`
-	Error      string    `json:"error,omitempty"`
-	DurationMS int64     `json:"duration_ms"`
+	// absent when they were not tested or got no verdict. WeakSuites lists
+	// the weak cipher suite classes accepted, with the suite picked for
+	// each; Grade and GradeReasons the configuration grade that follows.
+	Legacy       *[]string `json:"legacy_accepted,omitempty"`
+	WeakSuites   *[]string `json:"weak_suites_accepted,omitempty"`
+	Grade        string    `json:"grade,omitempty"`
+	GradeReasons []string  `json:"grade_reasons,omitempty"`
+	Error        string    `json:"error,omitempty"`
+	DurationMS   int64     `json:"duration_ms"`
 }
 
 type checkFinding struct {
@@ -102,7 +108,8 @@ func parseCheck(args []string, stderr io.Writer) (checkRun, error) {
 	timeout := fs.Duration("timeout", 10*time.Second, "connect and handshake timeout")
 	first := fs.Bool("first", false, "probe only the first resolved address")
 	allowLocal := fs.Bool("allow-local", true, "allow loopback and link-local addresses")
-	noLegacy := fs.Bool("no-legacy", false, "do not test whether TLS 1.0 and 1.1 are accepted")
+	noConfig := fs.Bool("no-config-test", false, "skip the configuration test (TLS 1.0 and 1.1, weak cipher suites, the grade)")
+	noLegacy := fs.Bool("no-legacy", false, "alias of -no-config-test")
 	if err := fs.Parse(reorder(args, map[string]bool{"protocol": true, "servername": true, "ca-file": true, "warn": true, "crit": true, "timeout": true})); err != nil {
 		return checkRun{}, errUsage
 	}
@@ -123,7 +130,7 @@ func parseCheck(args []string, stderr io.Writer) (checkRun, error) {
 		sni = host
 	}
 	req := probe.Request{Host: host, Port: port, Protocol: proto, ServerName: sni, Trust: probe.TrustSystem,
-		Timeout: *timeout, Retries: 1, FirstOnly: *first, AllowLocal: *allowLocal, Legacy: !*noLegacy}
+		Timeout: *timeout, Retries: 1, FirstOnly: *first, AllowLocal: *allowLocal, Legacy: !*noLegacy && !*noConfig}
 	if *insecure {
 		req.Trust = probe.TrustSelfSigned
 	}
@@ -183,8 +190,28 @@ func checkReport(req probe.Request, r probe.Result, out check.Outcome, now time.
 			l := append([]string{}, a.Legacy...)
 			ca.Legacy = &l
 		}
+		if a.SuitesChecked || len(a.Suites) > 0 {
+			w := []string{}
+			for i, c := range a.Suites {
+				if c == probe.ClassCBC {
+					continue
+				}
+				name := c.Label()
+				if i < len(a.SuiteNames) {
+					name += " (" + a.SuiteNames[i] + ")"
+				}
+				w = append(w, name)
+			}
+			ca.WeakSuites = &w
+		}
+		for _, g := range out.AddressGrades {
+			if g.IP == a.IP {
+				ca.Grade, ca.GradeReasons = g.Grade, g.Reasons
+			}
+		}
 		res.Addresses = append(res.Addresses, ca)
 	}
+	res.Grade = out.Grade
 	if out.Leaf != nil {
 		ci := probe.Describe(out.Leaf)
 		d := check.DaysLeft(out.NotAfter, now)
@@ -198,6 +225,11 @@ func checkReport(req probe.Request, r probe.Result, out check.Outcome, now time.
 	case check.Critical:
 		return withStatus(res, "critical"), 2
 	case check.Warning:
+		return withStatus(res, "warning"), 1
+	}
+	// A grade of C or F without a finding (a weak key under 2048 bits is
+	// weak_signature, so this is rare) still fails a script.
+	if out.GradeChecked && check.GradeRank(out.Grade) <= check.GradeRank(check.GradeC) {
 		return withStatus(res, "warning"), 1
 	}
 	return withStatus(res, "ok"), 0

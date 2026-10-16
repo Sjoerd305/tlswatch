@@ -89,8 +89,9 @@ type Request struct {
 	// Allow, when set, refuses an address it returns an error for; a node
 	// uses it for its own allowlist.
 	Allow func(net.IP) error
-	// Legacy also tests every answering address for TLS 1.0 and 1.1, one
-	// handshake per version pinned to it.
+	// Legacy runs the configuration test on every answering address: one
+	// handshake per legacy version (TLS 1.0 and 1.1) pinned to it, then one
+	// pinned to TLS 1.2 per cipher suite class (see SuiteClasses).
 	Legacy   bool
 	Resolver *net.Resolver
 	Now      func() time.Time
@@ -129,6 +130,12 @@ type Address struct {
 	// verdict; Legacy lists the ones the address accepted.
 	LegacyChecked bool
 	Legacy        []string
+	// SuitesChecked reports whether every class in SuiteClasses got a
+	// verdict; Suites lists the classes the address accepted, and
+	// SuiteNames the suite it picked for each, in the same order.
+	SuitesChecked bool
+	Suites        []SuiteClass
+	SuiteNames    []string
 }
 
 // LegacyVersions are the deprecated TLS versions Request.Legacy tests for,
@@ -276,6 +283,7 @@ func probeAddress(ctx context.Context, req Request, ip net.IP) (Address, bool) {
 	}
 	if a.OK && req.Legacy {
 		a.Legacy, a.LegacyChecked = probeLegacy(ctx, req, ip, a.TLSVersion)
+		a.Suites, a.SuiteNames, a.SuitesChecked = probeSuites(ctx, req, ip)
 	}
 	return a, false
 }
@@ -318,30 +326,41 @@ func probeLegacy(ctx context.Context, req Request, ip net.IP, negotiated string)
 // exactly version v. A refused handshake is (false, nil); err is set when
 // no verdict was reached.
 func handshakeVersion(ctx context.Context, req Request, ip net.IP, v uint16) (bool, error) {
+	cfg := clientConfig(req.ServerName)
+	cfg.MinVersion, cfg.MaxVersion = v, v
+	st, err := handshakeWith(ctx, req, ip, cfg)
+	return st != nil, err
+}
+
+// handshakeWith connects, runs the protocol's STARTTLS and a handshake with
+// cfg, and returns the connection state when it completed. A refused
+// handshake (an alert, a closed connection) is (nil, nil); err is set when
+// no verdict was reached: connect, STARTTLS or a timeout.
+func handshakeWith(ctx context.Context, req Request, ip net.IP, cfg *tls.Config) (*tls.ConnectionState, error) {
 	start := time.Now()
 	d := net.Dialer{Timeout: req.Timeout}
 	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(ip.String(), strconv.Itoa(req.Port)))
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(start.Add(req.Timeout))
 	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Now()) })
 	defer stop()
 	if err := startTLS(conn, req.Protocol); err != nil {
-		return false, err
+		return nil, err
 	}
-	cfg := clientConfig(req.ServerName)
-	cfg.MinVersion, cfg.MaxVersion = v, v
-	err = tls.Client(conn, cfg).HandshakeContext(ctx)
+	tc := tls.Client(conn, cfg)
+	err = tc.HandshakeContext(ctx)
 	if err == nil {
-		return true, nil
+		st := tc.ConnectionState()
+		return &st, nil
 	}
 	var ne net.Error
 	if ctx.Err() != nil || errors.As(err, &ne) && ne.Timeout() || errors.Is(err, os.ErrDeadlineExceeded) {
-		return false, err
+		return nil, err
 	}
-	return false, nil
+	return nil, nil
 }
 
 func probeOnce(ctx context.Context, req Request, ip net.IP) (Address, error) {

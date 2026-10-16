@@ -17,9 +17,9 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/probe"
 )
 
-// LegacyEvery is how often a target is tested for TLS 1.0 and 1.1. The
-// hour of slack keeps a daily test on a daily slot whose check starts a
-// few seconds early.
+// LegacyEvery is how often a target gets the configuration test (TLS 1.0
+// and 1.1, the cipher suite classes). The hour of slack keeps a daily test
+// on a daily slot whose check starts a few seconds early.
 const LegacyEvery = 24 * time.Hour
 
 const legacySlack = time.Hour
@@ -50,7 +50,7 @@ func (s *Service) ProbeRequest(ctx context.Context, t Target, st config.Settings
 func (s *Service) Evaluate(ctx context.Context, t Target, r probe.Result, st config.Settings) (check.Outcome, error) {
 	prev := check.Previous{
 		LeafFP: t.CurrentFP, FailStreak: t.FailStreak, OkStreak: t.OkStreak, DNSFail: t.DNSFail, DNSOk: t.DNSOk,
-		Open: map[check.Kind]bool{},
+		Open: map[check.Kind]bool{}, Grade: t.Grade,
 	}
 	if t.CurrentFP != "" {
 		if c, err := s.Certificate(ctx, t.CurrentFP); err == nil {
@@ -360,6 +360,14 @@ func updateTargetTx(ctx context.Context, tx *sql.Tx, t Target, r probe.Result, o
 	if out.LegacyChecked {
 		set = append(set, "legacy_checked=?", "legacy_accepted=?")
 		args = append(args, checkedAt, strings.Join(out.Legacy, ","))
+	}
+	if out.GradeChecked {
+		ct, err := json.Marshal(out.AddressGrades)
+		if err != nil {
+			return err
+		}
+		set = append(set, "grade=?", "grade_reasons=?", "grade_rules=?", "config_test=?")
+		args = append(args, out.Grade, strings.Join(out.GradeReasons, "\n"), out.GradeRules, string(ct))
 	}
 	if out.PinFP != "" {
 		set = append(set, "pinned_fp=?")

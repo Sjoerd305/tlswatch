@@ -6,7 +6,7 @@ tlswatch watches the TLS certificates that are actually served on your hostnames
 - Every address behind a name is probed, so the one stale node behind a load balancer is caught.
 - System store, private CA bundles, or pinned self-signed certificates.
 - Let's Encrypt and other ACME renewals are recognised and not alerted.
-- A daily test for TLS 1.0 and 1.1, which a server on TLS 1.3 can still accept unnoticed; switchable per target.
+- A daily test for TLS 1.0 and 1.1, which a server on TLS 1.3 can still accept unnoticed, and for RC4, 3DES, RSA key exchange and CBC suites, summed up in a configuration grade A to F per target with its reasons; switchable per target.
 - A certificate inventory: every certificate seen, where it is served, when it expires, exportable as CSV.
 - Alerts on transitions, with reminders, recovery notices, acknowledgements (also in bulk) and an optional weekly digest. Mail has a plain-text and an HTML part.
 - Live pages that update as checks land.
@@ -36,7 +36,7 @@ tlswatch check mail.example.nl:587 -protocol smtp
 tlswatch check 10.0.0.5:443 -servername portal.example.nl -ca-file internal-ca.pem
 ```
 
-`check` prints JSON, including the old TLS versions each address still accepts (`-no-legacy` skips that test).
+`check` prints JSON, including the old TLS versions and weak cipher suites each address still accepts and the grade that follows (`-no-config-test` skips that test).
 
 ## Configuration
 

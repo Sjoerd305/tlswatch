@@ -262,10 +262,11 @@ func (s *Server) funcs() template.FuncMap {
 		},
 		"defaultPort": func(p probe.Protocol) int { return probe.DefaultPort(p) },
 		// waiting: the target's node is offline, so it shows "Waiting for node".
-		"waiting":  s.waiting,
-		"since":    func(now time.Time, unix int64) string { return sinceLabel(now, unix) },
-		"offset":   offsetLabel,
-		"hostport": func(host string, port int) string { return core.Target{Host: host, Port: port}.HostPort() },
+		"waiting":    s.waiting,
+		"gradeClass": check.GradeClass,
+		"since":      func(now time.Time, unix int64) string { return sinceLabel(now, unix) },
+		"offset":     offsetLabel,
+		"hostport":   func(host string, port int) string { return core.Target{Host: host, Port: port}.HostPort() },
 	}
 }
 

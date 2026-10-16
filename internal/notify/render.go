@@ -248,7 +248,13 @@ type DigestData struct {
 	Findings []DigestFinding
 	Expiring []DigestExpiry
 	Failed   []DigestFailure
+	Grades   []DigestGrade // targets whose configuration grade dropped this week
 	Link     string
+}
+
+// DigestGrade is a target whose configuration grade dropped.
+type DigestGrade struct {
+	Name, HostPort, Details string
 }
 
 // DigestFinding is an open finding in the digest.
@@ -298,6 +304,12 @@ func RenderDigest(d DigestData, tag string) Message {
 		fmt.Fprintf(&b, "  %s (%s): %s\n", f.Name, f.HostPort, f.Error)
 	}
 	none(len(d.Failed))
+	if len(d.Grades) > 0 {
+		fmt.Fprintf(&b, "\nConfiguration grade dropped this week (%d)\n", len(d.Grades))
+		for _, g := range d.Grades {
+			fmt.Fprintf(&b, "  %s (%s): %s\n", g.Name, g.HostPort, g.Details)
+		}
+	}
 	if d.Link != "" {
 		b.WriteString("\n" + d.Link + "\n")
 	}

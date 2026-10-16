@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -65,5 +66,34 @@ func TestCheckReportStatus(t *testing.T) {
 		if res.Status != c.status || code != c.code || res.Target != "example.org:443" {
 			t.Errorf("%v: %s/%d", c.open, res.Status, code)
 		}
+	}
+}
+
+func TestCheckReportGrade(t *testing.T) {
+	req := probe.Request{Host: "example.org", Port: 443, Protocol: probe.TLS}
+	r := probe.Result{Addresses: []probe.Address{{IP: "192.0.2.1", TLSVersion: "TLS 1.3", SuitesChecked: true,
+		Suites: []probe.SuiteClass{probe.Class3DES, probe.ClassCBC}, SuiteNames: []string{"TLS_RSA_WITH_3DES_EDE_CBC_SHA", "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA"}}}}
+	out := check.Outcome{GradeChecked: true, Grade: check.GradeC, GradeRules: check.GradeRules,
+		AddressGrades: []check.AddressGrade{{IP: "192.0.2.1", Grade: check.GradeC, Reasons: []string{"accepts 3DES (TLS_RSA_WITH_3DES_EDE_CBC_SHA)"}}}}
+	res, code := checkReport(req, r, out, time.Now())
+	if res.Grade != "C" || code != 1 || res.Status != "warning" {
+		t.Fatalf("grade %q status %s code %d", res.Grade, res.Status, code)
+	}
+	a := res.Addresses[0]
+	if a.Grade != "C" || len(a.GradeReasons) != 1 || a.WeakSuites == nil || strings.Join(*a.WeakSuites, ",") != "3DES (TLS_RSA_WITH_3DES_EDE_CBC_SHA)" {
+		t.Fatalf("address: %+v weak %v", a, a.WeakSuites)
+	}
+	b, _ := json.Marshal(res)
+	for _, want := range []string{`"grade":"C"`, `"weak_suites_accepted":[`, `"grade_reasons":[`} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("json lacks %s: %s", want, b)
+		}
+	}
+	if _, err := parseCheck([]string{"-no-config-test", "example.org"}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	run, err := parseCheck([]string{"-no-legacy", "example.org"}, io.Discard)
+	if err != nil || run.req.Legacy {
+		t.Fatalf("-no-legacy alias: %v legacy %v", err, run.req.Legacy)
 	}
 }

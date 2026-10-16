@@ -449,6 +449,17 @@ a.tag:hover{text-decoration:none;color:var(--ink)}
 .countdown.warn{color:var(--warn)}
 .countdown.crit{color:var(--crit)}
 .countdown.off{color:var(--off)}
+/* The TLS configuration grade: a letter badge, status-coloured. */
+.grade{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border-radius:4px;font-weight:600;font-size:13px;letter-spacing:.02em;text-decoration:none}
+.grade:hover{text-decoration:none}
+.grade.ok{background:var(--ok-bg);color:var(--ok)}
+.grade.info{background:var(--info-bg);color:var(--info)}
+.grade.warn{background:var(--warn-bg);color:var(--warn)}
+.grade.crit{background:var(--crit-bg);color:var(--crit)}
+.grade.off{background:var(--off-bg);color:var(--off)}
+.grade.lg{min-width:30px;height:30px;font-size:17px}
+.grade-row{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap}
+.grade-why{font-size:13px;color:var(--muted)}
 .cmd{display:flex;gap:8px;align-items:flex-start;min-width:0}
 .cmd .pre{flex:1;min-width:0}
 .copyable,.fp-row{display:flex;align-items:center;gap:8px;min-width:0}
@@ -614,6 +625,7 @@ input[type="file"].input{padding:5px 8px;height:auto}
 
 /* ---------- Responsive ---------- */
 @media (min-width:761px) and (max-width:1520px){.tbl .hide-1520{display:none}}
+@media (min-width:761px) and (max-width:1450px){.tbl .hide-1450{display:none}}
 @media (min-width:761px) and (max-width:1380px){.tbl .hide-1380{display:none}}
 @media (min-width:761px) and (max-width:1240px){.tbl .hide-1240{display:none}}
 @media (min-width:761px) and (max-width:1140px){.tbl .hide-1140{display:none}}

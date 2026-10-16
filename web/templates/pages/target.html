@@ -36,6 +36,7 @@
       <div class="count-row">
         <span class="countdown {{if $cls}}{{$cls}}{{else}}ok{{end}}">{{if lt $days 0}}expired{{else}}{{$days}} {{plural $days "day" "days"}}{{end}}</span>
         <span class="when">{{if lt $days 0}}since{{else}}until expiry ·{{end}} <span class="mono">{{datetime $p.Loc $t.NotAfter}}</span></span>
+        {{- if $t.Grade}}<span class="grade-row"><span class="grade lg {{$t.GradeClass}}" title="TLS configuration grade">{{$t.Grade}}</span><span class="grade-why">{{if $t.GradeReasons}}{{range $i, $r := $t.GradeReasons}}{{if $i}} · {{end}}{{$r}}{{end}}{{else}}nothing to improve{{end}}</span></span>{{end}}
         {{- with $d.OpenMain}}
         <span class="meta">finding open since {{when $p.Loc $p.Now .OpenedAt}}{{if $p.Can "findings.ack"}} · <a href="/findings?sel={{.ID}}">{{if .Kind.AckResolves}}confirm{{else}}acknowledge{{end}}</a>{{end}}</span>
         {{- end}}
@@ -94,6 +95,11 @@
       </table>
       {{- if not $t.SkipLegacy}}
       <div class="li"><span class="muted">TLS 1.0 and 1.1 ·</span> {{if not $t.LegacyChecked}}<span class="muted">not tested yet</span>{{else}}{{if $t.LegacyAccepted}}<span class="st sm warn">{{join $t.LegacyAccepted ", "}} accepted</span>{{else}}<span class="st sm ok">refused</span>{{end}} <span class="muted">· tested {{when $p.Loc $p.Now $t.LegacyChecked}}</span>{{end}}</div>
+      {{- if $t.ConfigTest}}
+      {{- range $t.ConfigTest}}
+      <div class="li"><span class="muted">{{if gt (len $t.ConfigTest) 1}}<span class="mono">{{.IP}}</span> · {{end}}grade</span> <span class="grade {{gradeClass .Grade}}">{{.Grade}}</span> <span class="muted">{{if .Reasons}}{{join .Reasons "; "}}{{else}}nothing to improve{{end}}{{if .SuiteNames}} · accepted {{join .SuiteNames ", "}}{{else}} · no weak suite accepted{{end}}</span></div>
+      {{- end}}
+      {{- end}}
       {{- end}}
     </section>
     {{- end}}
@@ -133,7 +139,7 @@
         <dt>Interval</dt><dd class="mono">{{duration $d.Eff.IntervalS}}{{if $d.Slot}} · slot {{$d.Slot}}{{end}}</dd>
         <dt>Next check</dt><dd class="mono">{{if $t.Enabled}}{{whenTime $p.Loc $p.Now $t.NextCheck}}{{else}}—{{end}}</dd>
         <dt>Addresses</dt><dd>{{if $t.AllAddresses}}all, max 8{{else}}first only{{end}}</dd>
-        <dt>TLS 1.0, 1.1</dt><dd>{{if $t.SkipLegacy}}not tested{{else}}tested daily{{end}}</dd>
+        <dt>Configuration</dt><dd>{{if $t.SkipLegacy}}not tested{{else}}tested daily{{end}} <span class="muted">· TLS 1.0, 1.1 and ciphers</span></dd>
         <dt>Reminders</dt><dd class="mono">warn {{duration $d.Eff.RemindWarnS}} · crit {{duration $d.Eff.RemindCritS}}</dd>
         <dt>Channels</dt><dd>{{if $d.Channels}}{{join $d.Channels ", "}}{{else}}<span class="muted">none</span>{{end}}{{if $t.AllChannels}} <span class="muted">· all</span>{{end}}</dd>
         <dt>Added</dt><dd>{{date $p.Loc $t.CreatedAt}}{{if $t.CreatedBy}} by {{$t.CreatedBy}}{{end}}</dd>

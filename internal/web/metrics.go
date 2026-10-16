@@ -44,6 +44,16 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	for _, e := range m.CertificateTimes {
 		p.sample("tlswatch_certificate_not_after_seconds", map[string]string{"target": e.Name, "endpoint": e.Endpoint}, float64(e.NotAfter))
 	}
+	p.metric("tlswatch_targets_by_grade", "gauge", "Enabled targets by TLS configuration grade.")
+	for _, g := range check.Grades {
+		p.sample("tlswatch_targets_by_grade", map[string]string{"grade": g}, float64(m.TargetsByGrade[g]))
+	}
+	if len(m.TargetGrades) > 0 {
+		p.metric("tlswatch_target_grade", "gauge", "Each enabled target's TLS configuration grade as a label; the value ranks it, 4 for A down to 1 for F.")
+		for _, g := range m.TargetGrades {
+			p.sample("tlswatch_target_grade", map[string]string{"target": g.Name, "endpoint": g.Endpoint, "grade": g.Grade}, float64(check.GradeRank(g.Grade)))
+		}
+	}
 	p.metric("tlswatch_checks_total", "counter", "Checks stored since the process started.")
 	p.sample("tlswatch_checks_total", nil, float64(st.Checks))
 	p.metric("tlswatch_scheduler_backlog", "gauge", "Checks due and not yet started.")

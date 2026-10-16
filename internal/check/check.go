@@ -26,19 +26,23 @@ const (
 	HostnameMismatch   Kind = "hostname_mismatch"
 	WeakSignature      Kind = "weak_signature"
 	LegacyProtocol     Kind = "legacy_protocol"
+	WeakConfiguration  Kind = "weak_configuration"
 	CertificateChanged Kind = "certificate_changed"
 	IssuerChanged      Kind = "issuer_changed"
 	Inconsistent       Kind = "inconsistent"
 	TLSUnavailable     Kind = "tls_unavailable"
 	Unreachable        Kind = "unreachable"
 	DNSFailed          Kind = "dns_failed"
+	// GradeChanged is an event (info, recorded as resolved): the target's
+	// configuration grade moved since the last test.
+	GradeChanged Kind = "grade_changed"
 	// NodeOffline is opened on a node, not on a target, by the node
 	// dispatcher; Evaluate never returns it.
 	NodeOffline Kind = "node_offline"
 )
 
 // Kinds lists every kind, for filters.
-var Kinds = []Kind{Expiring, Expired, ChainUntrusted, SelfSigned, HostnameMismatch, WeakSignature, LegacyProtocol, CertificateChanged, IssuerChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed, NodeOffline}
+var Kinds = []Kind{Expiring, Expired, ChainUntrusted, SelfSigned, HostnameMismatch, WeakSignature, LegacyProtocol, WeakConfiguration, CertificateChanged, IssuerChanged, GradeChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed, NodeOffline}
 
 // Label is the human name of a kind.
 func (k Kind) Label() string {
@@ -53,6 +57,10 @@ func (k Kind) Label() string {
 		return "Weak signature"
 	case LegacyProtocol:
 		return "Legacy protocol"
+	case WeakConfiguration:
+		return "Weak configuration"
+	case GradeChanged:
+		return "Grade changed"
 	case CertificateChanged:
 		return "Certificate changed"
 	case IssuerChanged:
@@ -83,6 +91,10 @@ func (k Kind) Short() string {
 		return "weak"
 	case LegacyProtocol:
 		return "legacy"
+	case WeakConfiguration:
+		return "ciphers"
+	case GradeChanged:
+		return "grade"
 	case TLSUnavailable:
 		return "starttls"
 	case DNSFailed:
@@ -199,7 +211,7 @@ type Target struct {
 	ExpectedIssuer string
 	Debounce       int
 	PinnedFP       string
-	SkipLegacy     bool // TLS 1.0 and 1.1 are not tested
+	SkipLegacy     bool // the configuration test (TLS 1.0 and 1.1, cipher suites) is off
 }
 
 // Previous is the state left by the last check.
@@ -213,6 +225,7 @@ type Previous struct {
 	DNSFail    int
 	DNSOk      int
 	Open       map[Kind]bool
+	Grade      string // the stored configuration grade, "" for none yet
 }
 
 // Finding is a desired open finding (or an event).
@@ -247,6 +260,14 @@ type Outcome struct {
 	// Legacy lists those any address accepted.
 	LegacyChecked bool
 	Legacy        []string
+	// GradeChecked reports that every answering address got a full
+	// configuration verdict this check; Grade, GradeReasons and
+	// AddressGrades then hold the result under GradeRules.
+	GradeChecked  bool
+	Grade         string
+	GradeReasons  []string
+	GradeRules    int
+	AddressGrades []AddressGrade
 	Answered      bool // at least one address completed a handshake
 	FailStreak    int
 	OkStreak      int
@@ -299,6 +320,7 @@ func Evaluate(t Target, prev Previous, r probe.Result, now time.Time) Outcome {
 	e.inconsistent(ok)
 	e.facts(ok)
 	e.legacy(ok)
+	e.grade(ok)
 	e.expectedIssuer(info)
 	e.changes(info)
 	return e.out

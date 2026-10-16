@@ -99,8 +99,8 @@
         <span class="help">Empty follows Settings › Defaults.</span>{{template "err" $e.timeout_s}}{{template "err" $e.retries}}{{template "err" $e.debounce}}
       </div>
     </div>
-    <div class="field opt">{{template "change" (dict "C" $c "K" "legacy" "L" "TLS 1.0 and 1.1")}}
-      <div class="bulk-value"><select id="legacy" name="legacy" class="input" aria-label="TLS 1.0 and 1.1"><option value="on"{{if not $t.SkipLegacy}} selected{{end}}>Test daily</option><option value="off"{{if $t.SkipLegacy}} selected{{end}}>Do not test</option></select></div>
+    <div class="field opt">{{template "change" (dict "C" $c "K" "legacy" "L" "Configuration test")}}
+      <div class="bulk-value"><select id="legacy" name="legacy" class="input" aria-label="Configuration test"><option value="on"{{if not $t.SkipLegacy}} selected{{end}}>Test daily</option><option value="off"{{if $t.SkipLegacy}} selected{{end}}>Do not test</option></select></div>
     </div>
   </div>
   <div class="field opt">{{template "change" (dict "C" $c "K" "reminders" "L" "Reminders")}}

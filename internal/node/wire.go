@@ -125,10 +125,16 @@ func (j ProbeJob) Request(received time.Time) probe.Request {
 }
 
 // Timeout is how long the server waits for a leased job: the target's
-// timeout for every attempt, plus slack for the legacy handshakes and the
-// round trip.
+// timeout for every attempt, plus one timeout per handshake of the
+// configuration test (two legacy versions, four suite classes) and slack
+// for the round trip.
 func (j ProbeJob) Timeout() time.Duration {
-	return time.Duration(j.TimeoutMS)*time.Millisecond*time.Duration(j.Retries+1) + 30*time.Second
+	d := time.Duration(j.TimeoutMS) * time.Millisecond
+	t := d*time.Duration(j.Retries+1) + 30*time.Second
+	if j.Legacy {
+		t += 6 * d
+	}
+	return t
 }
 
 // Result is a node's answer to one job.
@@ -162,6 +168,9 @@ type Address struct {
 	DurationMS      int64           `json:"duration_ms"`
 	LegacyChecked   bool            `json:"legacy_checked,omitempty"`
 	Legacy          []string        `json:"legacy,omitempty"`
+	SuitesChecked   bool            `json:"suites_checked,omitempty"`
+	Suites          []string        `json:"suites,omitempty"`
+	SuiteNames      []string        `json:"suite_names,omitempty"`
 }
 
 // EncodeResult converts a probe result for the wire.
@@ -173,7 +182,28 @@ func EncodeResult(r probe.Result) *ProbeResult {
 			Chain: der(a.Chain), Verified: a.Verified, VerifyError: a.VerifyError, VerifiedChain: der(a.VerifiedChain),
 			HostnameChecked: a.HostnameChecked, HostnameOK: a.HostnameOK, DurationMS: a.Duration.Milliseconds(),
 			LegacyChecked: a.LegacyChecked, Legacy: a.Legacy,
+			SuitesChecked: a.SuitesChecked, Suites: classNames(a.Suites), SuiteNames: a.SuiteNames,
 		})
+	}
+	return out
+}
+
+// classNames and parseClasses carry the suite classes as strings; a class
+// a server of another version does not know is dropped, not refused.
+func classNames(cs []probe.SuiteClass) []string {
+	var out []string
+	for _, c := range cs {
+		out = append(out, string(c))
+	}
+	return out
+}
+
+func parseClasses(names []string) []probe.SuiteClass {
+	var out []probe.SuiteClass
+	for _, n := range names {
+		if c, ok := probe.ParseSuiteClass(n); ok {
+			out = append(out, c)
+		}
 	}
 	return out
 }
@@ -211,7 +241,8 @@ func (p ProbeResult) Decode(req probe.Request, started time.Time) (probe.Result,
 	for _, w := range p.Addresses {
 		a := probe.Address{IP: w.IP, OK: w.OK, ErrorKind: w.ErrorKind, Error: w.Error, TLSVersion: w.TLSVersion, Cipher: w.Cipher,
 			Verified: w.Verified, VerifyError: w.VerifyError, Duration: time.Duration(w.DurationMS) * time.Millisecond,
-			LegacyChecked: w.LegacyChecked, Legacy: w.Legacy}
+			LegacyChecked: w.LegacyChecked, Legacy: w.Legacy,
+			SuitesChecked: w.SuitesChecked, Suites: parseClasses(w.Suites), SuiteNames: w.SuiteNames}
 		var err error
 		if a.Chain, err = parseChain(w.Chain); err != nil {
 			return r, fmt.Errorf("address %s: chain: %w", w.IP, err)

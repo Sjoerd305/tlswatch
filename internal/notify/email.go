@@ -204,6 +204,14 @@ var emailTemplates = template.Must(template.New("email").Funcs(emailFuncs).Parse
 {{- end}}
 </table>
 {{- else}}<div class="muted" style="{{st "muted"}}">None.</div>{{end}}
+{{- if .Grades}}
+<div class="section" style="{{st "section"}}">Configuration grade dropped this week</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+{{- range .Grades}}
+<tr><td class="cell" style="{{st "cell"}}">{{.Name}} <span class="muted" style="{{st "muted"}}{{st "mono"}}">{{.HostPort}}</span><br><span class="s-warning" style="{{ink "warning"}}">{{.Details}}</span></td></tr>
+{{- end}}
+</table>
+{{- end}}
 {{end}}
 
 {{define "test"}}

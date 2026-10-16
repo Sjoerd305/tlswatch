@@ -103,7 +103,7 @@ type Target struct {
 	RemindCritS *int
 
 	AllAddresses bool
-	SkipLegacy   bool // do not test for TLS 1.0 and 1.1
+	SkipLegacy   bool // the configuration test (TLS 1.0 and 1.1, cipher suites) is off
 	AllChannels  bool
 	ChannelIDs   []int64
 	Tags         []string
@@ -135,10 +135,20 @@ type Target struct {
 	// LegacyAccepted lists the versions an address accepted then.
 	LegacyChecked  int64
 	LegacyAccepted []string
+	// Grade is the configuration grade (A, B, C, F; "" before the first
+	// full test) with its reasons, the rules version it was given under,
+	// and the per-address verdicts of the last full test.
+	Grade        string
+	GradeReasons []string
+	GradeRules   int
+	ConfigTest   []check.AddressGrade
 
 	// Joined for display.
 	Cert *Certificate
 }
+
+// GradeClass is the status colour of the target's grade.
+func (t Target) GradeClass() string { return check.GradeClass(t.Grade) }
 
 // HostPort is host:port with IPv6 literals bracketed.
 func (t Target) HostPort() string { return net.JoinHostPort(t.Host, strconv.Itoa(t.Port)) }

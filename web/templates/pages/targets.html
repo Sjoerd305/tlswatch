@@ -1,4 +1,4 @@
-{{define "content"}}{{$p := .}}{{$d := .Data}}{{$s := $d.Sort}}{{$edit := $p.Can "targets.edit"}}{{$cols := 11}}{{if $d.ShowNode}}{{$cols = add $cols 1}}{{end}}{{if $edit}}{{$cols = add $cols 1}}{{end}}
+{{define "content"}}{{$p := .}}{{$d := .Data}}{{$s := $d.Sort}}{{$edit := $p.Can "targets.edit"}}{{$cols := 12}}{{if $d.ShowNode}}{{$cols = add $cols 1}}{{end}}{{if $edit}}{{$cols = add $cols 1}}{{end}}
 <div class="page-head">
   <div><h1>Targets</h1></div>
   {{- if $p.Can "targets.edit"}}
@@ -16,6 +16,7 @@
   <div class="filter">{{template "search-icon"}}<input class="input" type="search" name="q" value="{{$d.Query}}" placeholder="Filter: name, host, tag, issuer" aria-label="Filter targets" aria-keyshortcuts="/" title="Press / to filter" data-filter="#targets">{{template "key-hint"}}</div>
   <span class="chips" data-chip-group="#targets">{{template "chips" $d.Status}}</span>
   {{- if $d.Tags}}<span class="divider"></span><span class="chips" data-chip-group="#targets">{{template "chips" $d.Tags}}</span>{{end}}
+  {{- if $d.Grades}}<span class="divider"></span><span class="chips" data-chip-group="#targets">{{template "chips" $d.Grades}}</span>{{end}}
   {{- if $d.Nodes}}<span class="divider"></span><span class="chips" data-chip-group="#targets">{{template "chips" $d.Nodes}}</span>{{end}}
   <noscript><button type="submit" class="btn btn-xs">Filter</button></noscript>
   <span class="spacer small"><a href="{{$d.GroupHref}}">{{if $d.Group}}ungroup{{else}}group by tag{{end}}</a></span>
@@ -41,6 +42,7 @@
       {{- template "th" (dict "S" $s "K" "expires" "L" "Expires" "C" "hide-1240" "N" true)}}
       {{- template "th" (dict "S" $s "K" "issuer" "L" "Issuer" "C" "hide-1140")}}
       {{- template "th" (dict "S" $s "K" "tls" "L" "TLS" "C" "hide-1520")}}
+      {{- template "th" (dict "S" $s "K" "grade" "L" "Grade" "C" "hide-1450")}}
       {{- template "th" (dict "S" $s "K" "tags" "L" "Tags" "C" "hide-890")}}
       {{- template "th" (dict "S" $s "K" "checked" "L" "Checked" "C" "hide-1520" "N" true)}}
       <th><span class="sr-only">Actions</span></th>

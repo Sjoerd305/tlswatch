@@ -69,6 +69,7 @@ type targetsData struct {
 	Shown     int
 	Status    []Chip
 	Tags      []Chip
+	Grades    []Chip
 	Nodes     []Chip // "Probe from" chips, when there are nodes
 	ShowNode  bool   // the node column
 	Query     string
@@ -78,7 +79,7 @@ type targetsData struct {
 
 // targetSortKeys are the sortable columns of the targets table; "days" is
 // the list's own order (expiry, unknown and disabled last).
-var targetSortKeys = []string{"status", "name", "host", "node", "days", "lifetime", "expires", "issuer", "tls", "tags", "checked"}
+var targetSortKeys = []string{"status", "name", "host", "node", "days", "lifetime", "expires", "issuer", "tls", "grade", "tags", "checked"}
 
 func (s *Server) targets(w http.ResponseWriter, r *http.Request) {
 	ts, err := s.Core.Targets(r.Context())
@@ -93,7 +94,7 @@ func (s *Server) targets(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	status, tag, text := q.Get("status"), q.Get("tag"), strings.ToLower(strings.TrimSpace(q.Get("q")))
-	nodeF := q.Get("node")
+	nodeF, gradeF := q.Get("node"), q.Get("grade")
 	d := targetsData{Query: q.Get("q"), Sort: sortFrom(r, "days", targetSortKeys...)}
 	counts := map[string]int{}
 	for _, t := range ts {
@@ -118,6 +119,26 @@ func (s *Server) targets(w http.ResponseWriter, r *http.Request) {
 	for i := range d.Tags {
 		d.Tags[i].Href = chipHref(r, "tag", d.Tags[i].Value)
 	}
+	// Grade chips, once a target has a grade: one per grade in use, and
+	// "no grade" for the targets not fully tested yet or with the test off.
+	perGrade := map[string]int{}
+	for _, t := range ts {
+		perGrade[gradeToken(t)]++
+	}
+	if len(perGrade) > 1 || perGrade["none"] == 0 {
+		d.Grades = append(d.Grades, Chip{Key: "grade", Value: "", Label: "Any grade", Count: len(ts), On: gradeF == ""})
+		for _, g := range check.Grades {
+			if perGrade[g] > 0 {
+				d.Grades = append(d.Grades, Chip{Key: "grade", Value: g, Label: "Grade " + g, Class: check.GradeClass(g), Count: perGrade[g], On: gradeF == g})
+			}
+		}
+		if perGrade["none"] > 0 {
+			d.Grades = append(d.Grades, Chip{Key: "grade", Value: "none", Label: "No grade", Count: perGrade["none"], On: gradeF == "none"})
+		}
+		for i := range d.Grades {
+			d.Grades[i].Href = chipHref(r, "grade", d.Grades[i].Value)
+		}
+	}
 	d.ShowNode = len(nodes) > 0
 	if d.ShowNode {
 		perNode := map[string]int{}
@@ -141,7 +162,7 @@ func (s *Server) targets(w http.ResponseWriter, r *http.Request) {
 	// works without JavaScript; rows are rendered hidden, not dropped.
 	now := s.now()
 	for _, t := range ts {
-		row := targetRow{T: t, Now: now, ShowNode: d.ShowNode, Hidden: !targetMatches(t, status, tag, text) || nodeF != "" && nodeToken(t) != nodeF}
+		row := targetRow{T: t, Now: now, ShowNode: d.ShowNode, Hidden: !targetMatches(t, status, tag, text) || nodeF != "" && nodeToken(t) != nodeF || gradeF != "" && gradeToken(t) != gradeF}
 		if !row.Hidden {
 			d.Shown++
 		}
@@ -241,6 +262,16 @@ func nodeToken(t core.Target) string {
 // NodeToken is the row's "node" chip value.
 func (r targetRow) NodeToken() string { return nodeToken(r.T) }
 
+// GradeToken is the row's "grade" chip value: the grade, or "none".
+func (r targetRow) GradeToken() string { return gradeToken(r.T) }
+
+func gradeToken(t core.Target) string {
+	if t.Grade == "" {
+		return "none"
+	}
+	return t.Grade
+}
+
 // Search is the text the live filter matches.
 func (r targetRow) Search() string { return targetSearch(r.T) }
 
@@ -272,6 +303,8 @@ func (r targetRow) sortVal(key string) sortVal {
 		return txt(t.Cert.IssuerName())
 	case "tls":
 		return txt(t.TLSVersion)
+	case "grade":
+		return numIf(t.Grade != "", float64(-check.GradeRank(t.Grade)))
 	case "tags":
 		return txt(strings.Join(t.Tags, " "))
 	case "checked":

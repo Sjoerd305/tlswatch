@@ -1031,3 +1031,72 @@ func TestLegacyProtocolDaily(t *testing.T) {
 		t.Fatalf("switched off: open %v checked %d", e.open(tg.ID), tg.LegacyChecked)
 	}
 }
+
+// The configuration grade is stored with the daily test, its drop is a
+// recorded change, weak suite classes open weak_configuration, and moving
+// the target forgets the grade.
+func TestGradeStoredWithTheDailyTest(t *testing.T) {
+	e := newEnv(t)
+	ca := newCA(t, "Sectigo")
+	now := e.clock.Now()
+	leaf := ca.leaf(t, now, now.Add(days(300)), "portal.example.nl")
+	tested := func(classes ...probe.SuiteClass) probe.Result {
+		a := served("192.0.2.1", leaf, ca.cert)
+		a.TLSVersion = "TLS 1.3"
+		a.LegacyChecked, a.SuitesChecked, a.Suites = true, true, classes
+		for _, c := range classes {
+			a.SuiteNames = append(a.SuiteNames, "TLS_TEST_"+string(c))
+		}
+		return result(a)
+	}
+
+	tg := e.target(nil)
+	tg = e.apply(tg.ID, tested())
+	if tg.Grade != check.GradeA || len(tg.GradeReasons) != 0 || tg.GradeRules != check.GradeRules || len(tg.ConfigTest) != 1 || tg.ConfigTest[0].IP != "192.0.2.1" {
+		t.Fatalf("first grade: %q %v rules %d test %+v", tg.Grade, tg.GradeReasons, tg.GradeRules, tg.ConfigTest)
+	}
+	if _, ok := e.open(tg.ID)[check.WeakConfiguration]; ok {
+		t.Fatal("weak_configuration opened on a clean server")
+	}
+
+	e.clock.Add(24 * time.Hour)
+	tg = e.apply(tg.ID, tested(probe.Class3DES, probe.ClassCBC))
+	if tg.Grade != check.GradeC || strings.Join(tg.GradeReasons, ";") != "accepts 3DES (TLS_TEST_3des);accepts CBC with SHA-1 (TLS_TEST_cbc_sha1)" {
+		t.Fatalf("second grade: %q %v", tg.Grade, tg.GradeReasons)
+	}
+	if f, ok := e.open(tg.ID)[check.WeakConfiguration]; !ok || f.Severity != check.Warning || f.Details != "3DES (TLS_TEST_3des) accepted" {
+		t.Fatalf("weak_configuration: %+v", e.open(tg.ID))
+	}
+	changes, err := e.svc.RecentChanges(e.ctx, 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var drop *Finding
+	for i := range changes {
+		if changes[i].Kind == check.GradeChanged {
+			drop = &changes[i]
+		}
+	}
+	if drop == nil || drop.Severity != check.Info || !strings.HasPrefix(drop.Details, "grade A → C: accepts 3DES") || drop.ResolvedAt == 0 {
+		t.Fatalf("grade drop not recorded: %+v", changes)
+	}
+	if msg, err := e.svc.Digest(e.ctx); err != nil || !strings.Contains(msg.Body, "Configuration grade dropped this week (1)") || !strings.Contains(msg.Body, "grade A → C") {
+		t.Fatalf("digest: %v %q", err, msg.Body)
+	}
+
+	// A check without the test keeps the grade and the finding.
+	tg = e.apply(tg.ID, result(served("192.0.2.1", leaf, ca.cert)))
+	if _, ok := e.open(tg.ID)[check.WeakConfiguration]; !ok || tg.Grade != check.GradeC {
+		t.Fatalf("a check without the test changed the grade: %q open %v", tg.Grade, e.open(tg.ID))
+	}
+
+	moved := tg
+	moved.Port = 8443
+	if _, err := e.svc.SaveTarget(e.ctx, moved, "test"); err != nil {
+		t.Fatal(err)
+	}
+	tg, _ = e.svc.Target(e.ctx, tg.ID)
+	if tg.Grade != "" || tg.GradeReasons != nil || tg.ConfigTest != nil {
+		t.Fatalf("a new port kept the grade: %q %v %v", tg.Grade, tg.GradeReasons, tg.ConfigTest)
+	}
+}

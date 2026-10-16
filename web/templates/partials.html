@@ -30,7 +30,7 @@
 
 {{/* target-row: one row of the targets table. frag{P, Item: targetRow} */}}
 {{define "target-row"}}{{$p := .P}}{{$r := .Item}}{{$t := $r.T}}
-<tr id="target-{{$t.ID}}" data-search="{{$r.Search}}" data-status="{{$r.StatusToken}}" data-tag="{{join $t.Tags " "}}" data-node="{{$r.NodeToken}}"{{$r.SortAttrs}}{{if not $t.Enabled}} class="muted"{{end}}{{if $r.Hidden}} hidden{{end}}>
+<tr id="target-{{$t.ID}}" data-search="{{$r.Search}}" data-status="{{$r.StatusToken}}" data-tag="{{join $t.Tags " "}}" data-node="{{$r.NodeToken}}" data-grade="{{$r.GradeToken}}"{{$r.SortAttrs}}{{if not $t.Enabled}} class="muted"{{end}}{{if $r.Hidden}} hidden{{end}}>
   {{- if $p.Can "targets.edit"}}<td class="chk m-lead" data-label=""><label class="rowcheck"><input type="checkbox" name="id" value="{{$t.ID}}" form="bulk-targets" aria-label="Select {{$t.Name}}"></label></td>{{end}}
   <td data-label="Status" class="m-lead">{{if waiting $t}}<span class="st off" title="The node is offline; last checked {{when $p.Loc $p.Now $t.LastCheck}}">Waiting for node</span>{{else}}{{template "status" $t.Status}}{{end}}</td>
   <td data-label="Name" class="m-lead"><a href="/targets/{{$t.ID}}" class="ink strong" data-row-link>{{$t.Name}}</a></td>
@@ -42,8 +42,9 @@
   <td data-label="Expires" class="mono m-hide hide-1240">{{date $p.Loc $t.NotAfter}}</td>
   <td data-label="Issuer" class="m-hide hide-1140">{{if $t.Cert}}{{$t.Cert.IssuerName}}{{if eq (print $t.Trust) "self-signed"}} <span class="tag">pinned</span>{{else if $t.RenewalManaged}} <span class="tag">auto</span>{{end}}{{end}}</td>
   <td data-label="TLS" class="mono muted m-hide hide-1520">{{$t.TLSVersion}}</td>
+  <td data-label="Grade" class="m-hide hide-1450">{{if $t.Grade}}<a class="grade {{$t.GradeClass}}" href="/targets?grade={{$t.Grade}}" data-chip-for="#targets" data-chip-key="grade" data-chip-value="{{$t.Grade}}" title="{{if $t.GradeReasons}}{{join $t.GradeReasons "; "}}{{else}}Nothing to improve{{end}}">{{$t.Grade}}</a>{{end}}</td>
   {{- else}}
-  <td data-label="Days" class="num mono m-lead m-end">—</td><td data-label="Lifetime" class="m-hide hide-1380"></td><td data-label="Expires" class="mono m-hide hide-1240">—</td><td data-label="Issuer" class="m-full hide-1140">{{if $t.LastError}}<span class="muted ellipsis" title="{{$t.LastError}}">{{$t.LastError}}</span>{{else}}—{{end}}</td><td data-label="TLS" class="m-hide hide-1520"></td>
+  <td data-label="Days" class="num mono m-lead m-end">—</td><td data-label="Lifetime" class="m-hide hide-1380"></td><td data-label="Expires" class="mono m-hide hide-1240">—</td><td data-label="Issuer" class="m-full hide-1140">{{if $t.LastError}}<span class="muted ellipsis" title="{{$t.LastError}}">{{$t.LastError}}</span>{{else}}—{{end}}</td><td data-label="TLS" class="m-hide hide-1520"></td><td data-label="Grade" class="m-hide hide-1450"></td>
   {{- end}}
   <td data-label="Tags" class="hide-890">{{if $t.Tags}}{{$n := len $t.Tags}}{{$shown := $t.Tags}}{{if gt $n 3}}{{$shown = slice $t.Tags 0 2}}{{end}}<span class="tags line">{{range $shown}}<a class="tag" href="/targets?tag={{.}}" data-chip-for="#targets" data-chip-key="tag" data-chip-value="{{.}}" title="Show only {{.}}">{{.}}</a>{{end}}{{if gt $n 3}}<span class="tag" title="{{join (slice $t.Tags 2) ", "}}">+{{sub $n 2}}</span>{{end}}</span>{{end}}</td>
   <td data-label="Checked" class="mono muted m-hide hide-1520">{{when $p.Loc $p.Now $t.LastCheck}}</td>
@@ -68,6 +69,7 @@
   {{- with $r.Cert}}
   {{- range $r.R.Addresses}}{{if .OK}}<dt>Protocol</dt><dd class="mono">{{.TLSVersion}} · {{.Cipher}}</dd>{{break}}{{end}}{{end}}
   {{- if $r.O.LegacyChecked}}<dt>TLS 1.0, 1.1</dt><dd>{{if $r.O.Legacy}}<span class="warn-t">{{join $r.O.Legacy ", "}} accepted</span>{{else}}refused{{end}}</dd>{{end}}
+  {{- if $r.O.GradeChecked}}<dt>Grade</dt><dd><span class="grade {{gradeClass $r.O.Grade}}">{{$r.O.Grade}}</span>{{if $r.O.GradeReasons}} <span class="muted">{{join $r.O.GradeReasons "; "}}</span>{{else}} <span class="muted">nothing to improve</span>{{end}}</dd>{{end}}
   <dt>Subject</dt><dd>{{.SubjectCN}}</dd>
   <dt>Issuer</dt><dd>{{.IssuerCN}}</dd>
   <dt>Not after</dt><dd><span class="mono">{{date $p.Loc .NotAfter.Unix}}</span> · {{$r.Days}} days · {{$r.Used}}% of lifetime used</dd>
@@ -221,8 +223,9 @@
         <div class="field"><label class="label" for="timeout">Timeout, s</label><input id="timeout" name="timeout_s" class="input mono{{if $e.timeout_s}} invalid{{end}}" value="{{$f.Timeout}}" inputmode="numeric" placeholder="{{$d.TimeoutS}}">{{template "err" $e.timeout_s}}</div>
         <div class="field"><label class="label" for="retries">Retries</label><input id="retries" name="retries" class="input mono{{if $e.retries}} invalid{{end}}" value="{{$f.Retries}}" inputmode="numeric" placeholder="{{$d.Retries}}">{{template "err" $e.retries}}</div>
         <div class="field"><label class="label" for="debounce">Debounce, checks</label><input id="debounce" name="debounce" class="input mono{{if $e.debounce}} invalid{{end}}" value="{{$f.Debounce}}" inputmode="numeric" placeholder="{{$d.Debounce}}">{{template "err" $e.debounce}}</div>
-        <div class="field"><label class="label" for="legacy">TLS 1.0 and 1.1</label>
-          <select id="legacy" name="legacy" class="input"><option value="on"{{if not $t.SkipLegacy}} selected{{end}}>Test daily</option><option value="off"{{if $t.SkipLegacy}} selected{{end}}>Do not test</option></select></div>
+        <div class="field"><label class="label" for="legacy">Configuration test</label>
+          <select id="legacy" name="legacy" class="input"><option value="on"{{if not $t.SkipLegacy}} selected{{end}}>Test daily</option><option value="off"{{if $t.SkipLegacy}} selected{{end}}>Do not test</option></select>
+          <span class="help">TLS 1.0 and 1.1, and the weak cipher suite classes, for the grade. Off for an appliance whose old versions cannot change.</span></div>
         <div class="field"><label class="label" for="rw">Remind warning</label>{{template "remind-select" (dict "Name" "remind_warn_s" "ID" "rw" "Value" $f.RemindW "Default" $d.RemindWarnS "Min" 86400)}}{{template "err" $e.remind_warn_s}}</div>
         <div class="field"><label class="label" for="rc">Remind critical</label>{{template "remind-select" (dict "Name" "remind_crit_s" "ID" "rc" "Value" $f.RemindC "Default" $d.RemindCritS "Min" 3600)}}{{template "err" $e.remind_crit_s}}</div>
       </div>

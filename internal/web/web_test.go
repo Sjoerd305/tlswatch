@@ -925,3 +925,52 @@ func TestLegacyProtocolOnTargetPage(t *testing.T) {
 		t.Fatal("form does not show the test switched off")
 	}
 }
+
+func TestGradeOnTargetsListAndPage(t *testing.T) {
+	hs := newHarness(t)
+	now := time.Now().Unix()
+	if _, err := hs.db.W.Exec(`INSERT INTO certificates(fingerprint, subject, subject_cn, issuer, issuer_cn, issuer_org, serial, not_before, not_after,
+		key_type, key_bits, sig_alg, is_ca, self_signed, pem, first_seen, last_seen) VALUES('fp1','CN=x','x','CN=ca','ca','CA','1',?,?,'RSA',2048,'SHA256-RSA',0,0,'',?,?)`,
+		now-86400, now+40*86400, now, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := hs.db.W.Exec(`UPDATE targets SET grade = 'C', grade_reasons = 'accepts 3DES (TLS_RSA_WITH_3DES_EDE_CBC_SHA)', grade_rules = 1,
+		config_test = '[{"IP":"192.0.2.1","Grade":"C","Reasons":["accepts 3DES (TLS_RSA_WITH_3DES_EDE_CBC_SHA)"],"Versions":null,"Classes":["3des"],"SuiteNames":["TLS_RSA_WITH_3DES_EDE_CBC_SHA"]}]',
+		current_fp = 'fp1', not_after = ?, status = 'healthy', legacy_checked = ?, last_check = ?, last_check_id = 'c1' WHERE id = 1`, now+40*86400, now, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := hs.db.W.Exec(`INSERT INTO observations(target_id, check_id, address, checked_at, status, tls_version) VALUES(1, 'c1', '192.0.2.1', ?, 'ok', 'TLS 1.3')`, now); err != nil {
+		t.Fatal(err)
+	}
+	body := hs.do(authz.Viewer, "GET", "/targets", nil, false).Body.String()
+	for _, want := range []string{`data-grade="C"`, `class="grade warn"`, `data-chip-value="C"`, `Grade C`, `data-sort-grade=`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("targets list lacks %q", want)
+		}
+	}
+	if rec := hs.do(authz.Viewer, "GET", "/targets?grade=A", nil, false); !strings.Contains(rec.Body.String(), `id="target-1"`) || !strings.Contains(rec.Body.String(), ` hidden>`) {
+		t.Error("a grade filter did not hide the C target")
+	}
+	body = hs.do(authz.Viewer, "GET", "/targets/1", nil, false).Body.String()
+	for _, want := range []string{`class="grade lg warn"`, `accepts 3DES (TLS_RSA_WITH_3DES_EDE_CBC_SHA)`, `accepted TLS_RSA_WITH_3DES_EDE_CBC_SHA`, `TLS 1.0, 1.1 and ciphers`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("target page lacks %q", want)
+		}
+	}
+
+	st := hs.srv.Core.CurrentSettings(context.Background())
+	g := st.General
+	g.Metrics = true
+	if err := hs.srv.Settings.SaveGeneral(context.Background(), g); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := hs.db.W.Exec(`UPDATE targets SET enabled = 1 WHERE id = 1`); err != nil {
+		t.Fatal(err)
+	}
+	body = hs.do("", "GET", "/metrics", nil, false).Body.String()
+	for _, want := range []string{`tlswatch_targets_by_grade{grade="C"} 1`, `tlswatch_targets_by_grade{grade="A"} 0`, `grade="C",target=`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics lack %q", want)
+		}
+	}
+}

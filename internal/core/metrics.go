@@ -8,6 +8,13 @@ type Metrics struct {
 	OpenBySeverity   map[string]int
 	AlertsByState    map[string]int // pending and failed alerts in the outbox
 	CertificateTimes []TargetExpiry
+	TargetsByGrade   map[string]int // enabled targets by configuration grade
+	TargetGrades     []TargetGrade
+}
+
+// TargetGrade is one enabled target's configuration grade.
+type TargetGrade struct {
+	Name, Endpoint, Grade string
 }
 
 // TargetExpiry is one enabled target's current certificate expiry.
@@ -18,7 +25,7 @@ type TargetExpiry struct {
 
 // Metrics gathers the counts and expiry times for /metrics.
 func (s *Service) Metrics(ctx context.Context) (Metrics, error) {
-	m := Metrics{TargetsByStatus: map[string]int{}, OpenBySeverity: map[string]int{}, AlertsByState: map[string]int{}}
+	m := Metrics{TargetsByStatus: map[string]int{}, OpenBySeverity: map[string]int{}, AlertsByState: map[string]int{}, TargetsByGrade: map[string]int{}}
 	counts := []struct {
 		q    string
 		into map[string]int
@@ -27,6 +34,7 @@ func (s *Service) Metrics(ctx context.Context) (Metrics, error) {
 		{`SELECT f.severity, COUNT(*) FROM findings f LEFT JOIN targets t ON t.id = f.target_id
 			WHERE f.resolved_at = 0 AND (t.enabled = 1 OR f.node_id IS NOT NULL) GROUP BY f.severity`, m.OpenBySeverity},
 		{"SELECT state, COUNT(*) FROM alerts WHERE state IN ('pending', 'failed') GROUP BY state", m.AlertsByState},
+		{"SELECT grade, COUNT(*) FROM targets WHERE enabled = 1 AND grade != '' GROUP BY grade", m.TargetsByGrade},
 	}
 	for _, c := range counts {
 		rows, err := s.DB.R.QueryContext(ctx, c.q)
@@ -61,5 +69,22 @@ func (s *Service) Metrics(ctx context.Context) (Metrics, error) {
 		e.Endpoint = t.HostPort()
 		m.CertificateTimes = append(m.CertificateTimes, e)
 	}
-	return m, rows.Err()
+	if err := rows.Err(); err != nil {
+		return m, err
+	}
+	grades, err := s.DB.R.QueryContext(ctx, "SELECT name, host, port, grade FROM targets WHERE enabled = 1 AND grade != '' ORDER BY name")
+	if err != nil {
+		return m, err
+	}
+	defer grades.Close()
+	for grades.Next() {
+		var t Target
+		var g TargetGrade
+		if err := grades.Scan(&g.Name, &t.Host, &t.Port, &g.Grade); err != nil {
+			return m, err
+		}
+		g.Endpoint = t.HostPort()
+		m.TargetGrades = append(m.TargetGrades, g)
+	}
+	return m, grades.Err()
 }

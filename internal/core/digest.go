@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"time"
 
@@ -10,7 +11,8 @@ import (
 )
 
 // Digest builds the weekly digest: open findings, certificates expiring in
-// the next 30 days and targets whose last check failed.
+// the next 30 days, targets whose last check failed, and targets whose
+// configuration grade dropped during the week.
 func (s *Service) Digest(ctx context.Context) (notify.Message, error) {
 	st := s.CurrentSettings(ctx)
 	loc := st.Location()
@@ -53,6 +55,15 @@ func (s *Service) Digest(ctx context.Context) (notify.Message, error) {
 			d.Failed = append(d.Failed, notify.DigestFailure{Name: t.Name, HostPort: t.HostPort(), Error: t.LastError})
 		}
 	}
+	changes, err := s.RecentChanges(ctx, now.Add(-7*24*time.Hour).Unix(), 1000)
+	if err != nil {
+		return notify.Message{}, err
+	}
+	for _, f := range changes {
+		if f.Kind == check.GradeChanged && gradeDropped(f.Details) {
+			d.Grades = append(d.Grades, notify.DigestGrade{Name: f.TargetName, HostPort: f.HostPort(), Details: f.Details})
+		}
+	}
 	sort.Slice(exp, func(i, j int) bool { return exp[i].NotAfter < exp[j].NotAfter })
 	for _, t := range exp {
 		days := check.DaysLeft(time.Unix(t.NotAfter, 0), now)
@@ -63,4 +74,14 @@ func (s *Service) Digest(ctx context.Context) (notify.Message, error) {
 		d.Expiring = append(d.Expiring, e)
 	}
 	return notify.RenderDigest(d, tag), nil
+}
+
+// gradeDropped reads a grade_changed event's "grade X → Y" and reports
+// whether Y is the lower grade.
+func gradeDropped(details string) bool {
+	var from, to string
+	if _, err := fmt.Sscanf(details, "grade %1s → %1s", &from, &to); err != nil {
+		return false
+	}
+	return check.GradeRank(to) < check.GradeRank(from)
 }

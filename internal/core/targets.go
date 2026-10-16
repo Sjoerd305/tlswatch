@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -20,13 +21,14 @@ const targetCols = `t.id, t.name, t.host, t.port, t.protocol, t.servername, t.tr
 	t.remind_warn_s, t.remind_crit_s, t.all_addresses, t.all_channels, t.tags, t.notes, t.enabled, t.created_at, t.created_by, t.updated_at,
 	t.status, t.pinned_fp, t.current_fp, t.not_after, t.tls_version, t.address_count, t.last_check, t.last_error,
 	t.fail_streak, t.ok_streak, t.dns_fail_streak, t.dns_ok_streak, t.next_check, t.legacy_check, t.legacy_checked, t.legacy_accepted,
+	t.grade, t.grade_reasons, t.grade_rules, t.config_test,
 	COALESCE(t.node_id, 0), COALESCE(n.name, '')`
 
 const targetFrom = ` FROM targets t LEFT JOIN ca_bundles b ON b.id = t.bundle_id LEFT JOIN nodes n ON n.id = t.node_id `
 
 func scanTarget(r interface{ Scan(...any) error }) (Target, error) {
 	var t Target
-	var proto, trust, tags, legacy string
+	var proto, trust, tags, legacy, reasons, configTest string
 	var legacyCheck bool
 	var warn, crit, interval, timeout, retries, debounce, rw, rc sql.NullInt64
 	err := r.Scan(&t.ID, &t.Name, &t.Host, &t.Port, &proto, &t.ServerName, &trust, &t.BundleID, &t.BundleName,
@@ -34,6 +36,7 @@ func scanTarget(r interface{ Scan(...any) error }) (Target, error) {
 		&rw, &rc, &t.AllAddresses, &t.AllChannels, &tags, &t.Notes, &t.Enabled, &t.CreatedAt, &t.CreatedBy, &t.UpdatedAt,
 		&t.Status, &t.PinnedFP, &t.CurrentFP, &t.NotAfter, &t.TLSVersion, &t.AddressCount, &t.LastCheck, &t.LastError,
 		&t.FailStreak, &t.OkStreak, &t.DNSFail, &t.DNSOk, &t.NextCheck, &legacyCheck, &t.LegacyChecked, &legacy,
+		&t.Grade, &reasons, &t.GradeRules, &configTest,
 		&t.NodeID, &t.NodeName)
 	if err != nil {
 		return t, err
@@ -47,6 +50,14 @@ func scanTarget(r interface{ Scan(...any) error }) (Target, error) {
 	t.SkipLegacy = !legacyCheck
 	if legacy != "" {
 		t.LegacyAccepted = strings.Split(legacy, ",")
+	}
+	if reasons != "" {
+		t.GradeReasons = strings.Split(reasons, "\n")
+	}
+	if configTest != "" {
+		if err := json.Unmarshal([]byte(configTest), &t.ConfigTest); err != nil {
+			return t, fmt.Errorf("target %d: config_test: %w", t.ID, err)
+		}
 	}
 	return t, nil
 }
@@ -279,7 +290,7 @@ func (s *Service) SaveTarget(ctx context.Context, t Target, user string) (int64,
 		// A new endpoint, or the test switched on or off, forgets the last
 		// test of the old versions, so the next check runs it.
 		if oldHost != t.Host || oldSNI != t.ServerName || oldPort != t.Port || oldProto != string(t.Protocol) || oldLegacy == t.SkipLegacy {
-			if _, err := tx.ExecContext(ctx, "UPDATE targets SET legacy_checked = 0, legacy_accepted = '' WHERE id = ?", t.ID); err != nil {
+			if _, err := tx.ExecContext(ctx, "UPDATE targets SET legacy_checked = 0, legacy_accepted = '', grade = '', grade_reasons = '', grade_rules = 0, config_test = '' WHERE id = ?", t.ID); err != nil {
 				return 0, err
 			}
 		}
@@ -403,7 +414,7 @@ func (s *Service) Schedule(ctx context.Context) (map[int64]Slotted, error) {
 // the legacy test is forgotten, the debounce streaks start over and the
 // next check is due now.
 func newVantageTx(ctx context.Context, tx *sql.Tx, where string, args ...any) error {
-	_, err := tx.ExecContext(ctx, `UPDATE targets SET legacy_checked = 0, legacy_accepted = '', fail_streak = 0, ok_streak = 0,
+	_, err := tx.ExecContext(ctx, `UPDATE targets SET legacy_checked = 0, legacy_accepted = '', grade = '', grade_reasons = '', grade_rules = 0, config_test = '', fail_streak = 0, ok_streak = 0,
 		dns_fail_streak = 0, dns_ok_streak = 0, next_check = 0 WHERE `+where, args...)
 	return err
 }
