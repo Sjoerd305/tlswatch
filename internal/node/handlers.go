@@ -1,6 +1,7 @@
 package node
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"io"
@@ -68,8 +69,23 @@ func (d *Dispatcher) clientIP(r *http.Request) string {
 // maxBody caps a node's request: a result holds up to eight chains.
 const maxBody = 4 << 20
 
+// readJSON decodes a request body, gzipped or not. The cap applies to the
+// body as sent and again to what it inflates to.
 func readJSON(w http.ResponseWriter, r *http.Request, v any) error {
-	return json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody)).Decode(v)
+	body := http.MaxBytesReader(w, r.Body, maxBody)
+	switch r.Header.Get("Content-Encoding") {
+	case "":
+	case "gzip":
+		gz, err := gzip.NewReader(body)
+		if err != nil {
+			return err
+		}
+		defer gz.Close()
+		body = http.MaxBytesReader(w, gz, maxBody)
+	default:
+		return errors.New("unsupported content encoding")
+	}
+	return json.NewDecoder(body).Decode(v)
 }
 
 // withNode authenticates a node by its bearer credential and records the
@@ -112,6 +128,9 @@ func (d *Dispatcher) withNode(w http.ResponseWriter, r *http.Request, h func(htt
 // poll is the long-poll: it is held until a job exists for the node or
 // the ceiling passes, then answered with zero or more jobs.
 func (d *Dispatcher) poll(w http.ResponseWriter, r *http.Request, n core.Node) {
+	// RFC 7694: the node may gzip what it sends; an older server does not
+	// say so and gets plain bodies.
+	w.Header().Set("Accept-Encoding", "gzip")
 	resp := PollResponse{ServerVersion: d.Version}
 	if d.wantUpdate(r.Context(), n, r.Header.Get(HeaderUpdateError)) {
 		resp.Jobs = []Job{{ID: newID(), Kind: KindUpdate, Update: &UpdateJob{Version: d.Version}}}

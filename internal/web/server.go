@@ -248,7 +248,7 @@ func (s *Server) logRequest(r *http.Request, ri *reqInfo, status int, d time.Dur
 		return
 	}
 	level := slog.LevelDebug
-	// A node's poll is held for up to 30 seconds by design; it is not slow.
+	// A node's poll is held for up to node.PollCeiling by design; it is not slow.
 	held := strings.HasPrefix(r.URL.Path, "/agent/")
 	if status >= 400 || d >= slowRequest && !held {
 		level = slog.LevelInfo

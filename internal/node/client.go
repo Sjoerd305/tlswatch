@@ -2,6 +2,7 @@ package node
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sjoerd305/tlswatch/internal/probe"
@@ -43,6 +45,7 @@ type Client struct {
 	Probe func(context.Context, probe.Request) probe.Result
 
 	cred    string
+	gzip    atomic.Bool // the server accepts gzipped bodies (Accept-Encoding on its last poll answer)
 	running sync.WaitGroup
 	mu      sync.Mutex
 	cancels map[string]context.CancelFunc
@@ -266,6 +269,10 @@ func (c *Client) Run(ctx context.Context) error {
 // do sends one authenticated call.
 func (c *Client) do(ctx context.Context, method, path string, body []byte, hdr map[string]string) (*http.Response, error) {
 	var rd io.Reader
+	zipped := body != nil && c.gzip.Load()
+	if zipped {
+		body = gzipped(body)
+	}
 	if body != nil {
 		rd = bytes.NewReader(body)
 	}
@@ -277,6 +284,9 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, hdr m
 	req.Header.Set(HeaderVersion, c.Version)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	if zipped {
+		req.Header.Set("Content-Encoding", "gzip")
 	}
 	for k, v := range hdr {
 		req.Header.Set(k, v)
@@ -306,8 +316,19 @@ func (c *Client) poll(ctx context.Context, rollback string) (PollResponse, error
 	if resp.StatusCode != http.StatusOK {
 		return out, errors.New(serverError(resp))
 	}
+	c.gzip.Store(strings.Contains(resp.Header.Get("Accept-Encoding"), "gzip"))
 	err = json.NewDecoder(io.LimitReader(resp.Body, maxBody)).Decode(&out)
 	return out, err
+}
+
+// gzipped compresses a request body. Chains are base64 DER and a host's
+// addresses usually present the same one, so results shrink well.
+func gzipped(b []byte) []byte {
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	_, _ = zw.Write(b)
+	_ = zw.Close()
+	return buf.Bytes()
 }
 
 func (c *Client) sendFacts(ctx context.Context) error {

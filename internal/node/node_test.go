@@ -1,6 +1,7 @@
 package node
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -602,5 +603,85 @@ func TestGraceDoesNotResolveOfflineFinding(t *testing.T) {
 	d2.judge(ctx)
 	if open, _ := e.core.Findings(ctx, core.FindingFilter{}); len(open) != 0 {
 		t.Fatalf("a poll did not resolve the finding: %+v", open)
+	}
+}
+
+func TestResultsGzippedOnlyWhenAccepted(t *testing.T) {
+	for _, accept := range []bool{true, false} {
+		e := setup(t)
+		var mu sync.Mutex
+		encodings := map[string]string{} // path → Content-Encoding of the last call
+		e.srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			encodings[r.URL.Path] = r.Header.Get("Content-Encoding")
+			mu.Unlock()
+			if !accept {
+				w = noAcceptEncoding{w}
+			}
+			e.disp.ServeHTTP(w, r)
+		})
+		ctx, cancel := context.WithCancel(context.Background())
+		cert := selfSigned(t, "portal.example.nl")
+		c := e.client(t, "v1.2.0")
+		c.Probe = func(_ context.Context, req probe.Request) probe.Result {
+			return probe.Result{Host: req.Host, Port: req.Port,
+				Addresses: []probe.Address{{IP: "10.0.3.5", OK: true, Chain: []*x509.Certificate{cert}}, {IP: "10.0.3.6", OK: true, Chain: []*x509.Certificate{cert}}}}
+		}
+		n := e.enrolled(t, c)
+		done := make(chan error, 1)
+		go func() { done <- c.Run(ctx) }()
+		req := probe.Request{Host: "portal.example.nl", Port: 443, Protocol: probe.TLS, ServerName: "portal.example.nl", Timeout: 2 * time.Second}
+		pctx, pcancel := context.WithTimeout(ctx, 10*time.Second)
+		r, err := e.disp.Probe(pctx, n.ID, req)
+		pcancel()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(r.Addresses) != 2 || probe.Fingerprint(r.Addresses[1].Chain[0]) != probe.Fingerprint(cert) {
+			t.Fatalf("accept=%v: chain did not survive the wire: %+v", accept, r.Addresses)
+		}
+		var got string
+		mu.Lock()
+		for p, enc := range encodings {
+			if strings.HasSuffix(p, "/result") {
+				got = enc
+			}
+		}
+		mu.Unlock()
+		if want := map[bool]string{true: "gzip", false: ""}[accept]; got != want {
+			t.Errorf("accept=%v: result sent with Content-Encoding %q, want %q", accept, got, want)
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// noAcceptEncoding plays an older server that does not advertise gzip.
+type noAcceptEncoding struct{ http.ResponseWriter }
+
+func (w noAcceptEncoding) WriteHeader(code int) {
+	w.Header().Del("Accept-Encoding")
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w noAcceptEncoding) Write(b []byte) (int, error) {
+	w.Header().Del("Accept-Encoding")
+	return w.ResponseWriter.Write(b)
+}
+
+func TestReadJSONCapsInflatedBody(t *testing.T) {
+	zeros := gzipped(append(append([]byte(`{"x":"`), bytes.Repeat([]byte("0"), maxBody+1)...), `"}`...))
+	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(zeros))
+	r.Header.Set("Content-Encoding", "gzip")
+	var v map[string]string
+	if err := readJSON(httptest.NewRecorder(), r, &v); err == nil {
+		t.Fatal("a body inflating past the cap was accepted")
+	}
+	r = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{}`))
+	r.Header.Set("Content-Encoding", "br")
+	if err := readJSON(httptest.NewRecorder(), r, &v); err == nil {
+		t.Fatal("an unknown encoding was accepted")
 	}
 }

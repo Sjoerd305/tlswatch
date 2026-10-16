@@ -38,10 +38,10 @@ const (
 
 // Timing of the protocol (see the specification's table).
 const (
-	PollCeiling   = 30 * time.Second // the server answers a held poll by then
-	ClientTimeout = 45 * time.Second // the node gives up on a request after this
-	OfflineAfter  = 90 * time.Second // no request for this long: offline
-	FindingAfter  = 10 * time.Minute // offline this long: node_offline opens
+	PollCeiling   = 55 * time.Second  // the server answers a held poll by then
+	ClientTimeout = 70 * time.Second  // the node gives up on a request after this
+	OfflineAfter  = 165 * time.Second // no request for this long: offline
+	FindingAfter  = 10 * time.Minute  // offline this long: node_offline opens
 	FactsEvery    = time.Hour
 	UpdateWindow  = 5 * time.Minute // an updated node must poll again within this
 )
