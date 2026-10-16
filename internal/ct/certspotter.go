@@ -2,11 +2,14 @@ package ct
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -78,8 +81,13 @@ func (c *CertSpotter) Issuances(ctx context.Context, domain string, subdomains b
 }
 
 func (c *CertSpotter) issuance(e certSpotterEntry) (Issuance, error) {
-	i := Issuance{ID: e.ID, Names: e.DNSNames, NotBefore: e.NotBefore.UTC(), NotAfter: e.NotAfter.UTC(), IssuerCN: e.Issuer.Name,
-		LogURL: "https://sslmate.com/caadb/cert/" + url.PathEscape(e.ID)}
+	// Cert Spotter has no page per entry, so the link opens the certificate
+	// on crt.sh by its SHA-256 (which finds a precertificate as well), or the
+	// domain's listing there when no certificate came with the entry.
+	i := Issuance{ID: e.ID, Names: e.DNSNames, NotBefore: e.NotBefore.UTC(), NotAfter: e.NotAfter.UTC(), IssuerCN: e.Issuer.Name}
+	if len(e.DNSNames) > 0 {
+		i.LogURL = "https://crt.sh/?q=" + url.QueryEscape(e.DNSNames[0])
+	}
 	if e.Cert.Data != "" {
 		der, err := base64.StdEncoding.DecodeString(e.Cert.Data)
 		if err != nil {
@@ -90,7 +98,8 @@ func (c *CertSpotter) issuance(e certSpotterEntry) (Issuance, error) {
 			return i, fmt.Errorf("entry %s: %w", e.ID, err)
 		}
 		parsed := fromCertificate(cert)
-		parsed.ID, parsed.LogURL = i.ID, i.LogURL
+		sum := sha256.Sum256(der)
+		parsed.ID, parsed.LogURL = i.ID, "https://crt.sh/?q="+strings.ToUpper(hex.EncodeToString(sum[:]))
 		if len(parsed.Names) == 0 {
 			parsed.Names = i.Names
 		}

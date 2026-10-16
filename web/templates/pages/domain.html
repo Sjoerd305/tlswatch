@@ -34,7 +34,7 @@
         {{- range $d.Issuances}}
           <tr data-state="{{.State}}"{{if and $d.State (ne $d.State .State)}} hidden{{end}}>
             <td data-label="State" class="m-lead"><span class="pill {{.StateClass}}">{{.State}}</span></td>
-            <td data-label="Names" class="mono wrap m-lead">{{join .Names ", "}}{{if .LogURL}} <a class="small" href="{{.LogURL}}" rel="noopener noreferrer">log entry</a>{{end}}</td>
+            <td data-label="Names" class="mono wrap m-lead">{{join .Names ", "}}{{if .LogURL}} <a class="small" href="{{.LogURL}}" rel="noopener noreferrer">log entry</a>{{else if .Names}} <a class="small" href="https://crt.sh/?q={{index .Names 0}}" rel="noopener noreferrer">crt.sh</a>{{end}}</td>
             <td data-label="Issuer" class="wrap">{{.Issuer}}</td>
             <td data-label="Valid" class="mono muted hide-1140">{{if .NotBefore}}{{date $p.Loc .NotBefore}} → {{date $p.Loc .NotAfter}}{{else}}—{{end}}</td>
             <td data-label="Served by">{{if .TargetID}}<a href="/targets/{{.TargetID}}" class="ink">{{.TargetName}}</a>{{else if .MatchedFP}}<a href="/certificates?open={{short .MatchedFP}}&amp;all=1" class="ink">in the inventory</a>{{else if eq .State "acknowledged"}}<span class="muted">{{.AckBy}}{{if .AckComment}} · {{.AckComment}}{{end}}</span>{{else}}<span class="muted">not served</span>{{end}}</td>
