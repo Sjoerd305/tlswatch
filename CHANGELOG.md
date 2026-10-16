@@ -4,6 +4,7 @@ Newest first, one line per change.
 
 ## Unreleased
 
+- The overview's "Expiring next" lists every enabled target that serves a certificate, soonest first; it stopped at eight.
 - One layout across the pages: every page is at most 1680px wide (Targets was, the rest stopped at 1400px), and every form is at most 760px wide, where before Add target was 1352px wide and shrank to 680px when the test result appeared beside it, settings forms were 1152px and Account 680px. Smaller things from the same pass: the filter field is 300px on every list (Targets and Findings had 260px), the lifetime bar on the overview is the same 110px as in the lists, and an empty state with a title is centred on the settings pages as it is on Targets and Certificates.
 - Targets list: a row's tags stay on one line. Up to three are shown; with more, the first two and a "+N" tag that lists the rest on hover. Before, the tags column was squeezed to its widest tag, so several tags stacked into a ragged column, and the table was wider than the page, so its right edge (tags, last check, Check) was cut off. The targets page may now use up to 1680px, and on narrower windows the least needed columns drop out one at a time (TLS and last check first, then lifetime, expiry date, issuer, node and tags), so every row stays on one line without a sideways scrollbar.
 - Filter chips on Targets, Certificates and Findings flow on one wrapping line: before, a chip group that did not fit (tags, once node chips were added) dropped to the next line as a whole, leaving a stray divider and a ragged edge.

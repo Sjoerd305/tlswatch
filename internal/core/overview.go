@@ -123,7 +123,7 @@ func (s *Service) Overview(ctx context.Context) (Overview, error) {
 	if err != nil {
 		return o, err
 	}
-	if o.Targets, err = s.queryTargets(ctx, "t.enabled = 1 AND t.current_fp IN (SELECT fingerprint FROM certificates)", 8); err != nil {
+	if o.Targets, err = s.queryTargets(ctx, "t.enabled = 1 AND t.current_fp IN (SELECT fingerprint FROM certificates)", 0); err != nil {
 		return o, err
 	}
 	if o.Open, err = s.Findings(ctx, FindingFilter{Limit: 8}); err != nil {

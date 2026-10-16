@@ -928,7 +928,8 @@ func TestOverview(t *testing.T) {
 	if o.Total != 12 || o.Critical != 1 || o.Warning != 1 || o.Healthy != 9 || o.Disabled != 1 || o.DueWithin30 != 1 {
 		t.Fatalf("counts: total %d crit %d warn %d healthy %d disabled %d due %d", o.Total, o.Critical, o.Warning, o.Healthy, o.Disabled, o.DueWithin30)
 	}
-	if len(o.Targets) != 8 || o.Targets[0].Port != 1000 || o.Targets[1].Port != 3000 || o.Targets[7].Port != 1006 || o.Targets[0].Cert == nil {
+	// Every enabled target with a certificate is listed, soonest first.
+	if len(o.Targets) != 11 || o.Targets[0].Port != 1000 || o.Targets[1].Port != 3000 || o.Targets[10].Port != 1009 || o.Targets[0].Cert == nil {
 		t.Fatalf("listed: %d, first %d", len(o.Targets), o.Targets[0].Port)
 	}
 	if o.LastCheck == 0 || o.NextCheck == 0 {
