@@ -47,6 +47,12 @@
 //   [data-keep-filter="a b"]           links inside carry the page's current
 //                                      query (the live filter text, chips) except
 //                                      the parameters listed, which the link sets
+//   a[data-show-more="#table"]         unfolds the table's tr[data-more] rows
+//                                      (folded again on a second click; the
+//                                      href is the no-JS page, ?all=1 or not,
+//                                      and the URL follows so a live refresh
+//                                      renders the same state); the link's
+//                                      text swaps with data-label-less
 //   [data-select-all="#table"]         checks the shown rows' input[name=id];
 //                                      [data-bulk-count] shows how many
 //   meta[name=tlswatch-stamp]          a live page: it polls /api/v1/stamp and
@@ -435,6 +441,23 @@ function selectAll(box: HTMLInputElement): void {
   updateBulk(tableSel);
 }
 
+// ---------- Folded lists ----------
+
+function showMore(link: HTMLAnchorElement): void {
+  const table = $(link.dataset["showMore"] ?? "");
+  if (table === null) return;
+  const unfold = new URL(link.href, window.location.href).searchParams.get("all") === "1";
+  for (const row of $$<HTMLTableRowElement>("tr[data-more]", table)) row.hidden = !unfold;
+  const more = link.textContent ?? "";
+  link.textContent = link.dataset["labelLess"] ?? "";
+  link.dataset["labelLess"] = more;
+  const url = new URL(window.location.href);
+  if (unfold) url.searchParams.set("all", "1");
+  else url.searchParams.delete("all");
+  link.href = unfold ? url.pathname : url.pathname + "?all=1";
+  window.history.replaceState(null, "", url.toString());
+}
+
 // ---------- Links that keep the current filter ----------
 
 function keepFilter(link: HTMLAnchorElement): void {
@@ -656,6 +679,13 @@ onReady(() => {
     if (chip !== null && !ev.metaKey && !ev.ctrlKey && !ev.shiftKey) {
       ev.preventDefault();
       handleChip(chip);
+      return;
+    }
+
+    const more = target.closest<HTMLAnchorElement>("a[data-show-more]");
+    if (more !== null && !ev.metaKey && !ev.ctrlKey && !ev.shiftKey) {
+      ev.preventDefault();
+      showMore(more);
       return;
     }
 

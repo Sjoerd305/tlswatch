@@ -4,6 +4,7 @@ Newest first, one line per change.
 
 ## Unreleased
 
+- The overview's "Expiring next" shows ten targets and folds the rest behind "Show all N"; a second click folds them again.
 - Nodes: a failed update download is reported on the node's next poll, so the row shows the real reason within seconds; before, the server waited five minutes and then reported "did not come back". The nodes pages refresh every few seconds while an update runs, instead of once a minute.
 - Targets in bulk. "Add many" on the targets page takes one host per line (a host, `host:port` or a URL, with an optional name after it) and the settings they share, and adds them all at once; a bad line holds the whole list back and is named by line number, a host that already exists is skipped. Every row on the targets list has a checkbox; "Edit settings" on the selection bar opens one form for the selected targets, where tags are added or removed, checks enabled or disabled, and any other setting (node, trust, renewal, thresholds, interval, probe settings, reminders, channels, notes) is written only when its "change" box is ticked. Both are audited per target with `bulk=true`.
 - The overview's "Expiring next" lists every enabled target that serves a certificate, soonest first; it stopped at eight.

@@ -2,12 +2,14 @@ package web
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/sjoerd305/tlswatch/internal/authz"
+	"github.com/sjoerd305/tlswatch/internal/core"
 	"github.com/sjoerd305/tlswatch/internal/probe"
 )
 
@@ -143,5 +145,36 @@ func TestBulkEdit(t *testing.T) {
 	rec = hs.do(authz.Operator, "POST", "/targets/bulk-edit", url.Values{"id": {"2"}, "enabled": {"enable"}}, true)
 	if tg, _ := hs.srv.Core.Target(context.Background(), 2); rec.Code != http.StatusSeeOther || !tg.Enabled {
 		t.Fatalf("enable: %d %+v", rec.Code, tg)
+	}
+}
+
+// The overview's "Expiring next" shows ten targets and folds the rest
+// until ?all=1.
+func TestOverviewFoldsExpiring(t *testing.T) {
+	hs := newHarness(t)
+	ctx := context.Background()
+	now := hs.srv.now().Unix()
+	if _, err := hs.db.W.Exec(`INSERT INTO certificates(fingerprint, subject, subject_cn, issuer, issuer_cn, issuer_org, serial, not_before, not_after,
+		key_type, key_bits, sig_alg, is_ca, self_signed, pem, first_seen, last_seen) VALUES('fp1','CN=x','x','CN=ca','ca','CA','1',?,?,'RSA',2048,'SHA256-RSA',0,0,'',?,?)`,
+		now-86400, now+40*86400, now, now); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 12; i++ {
+		id, err := hs.srv.Core.SaveTarget(ctx, core.Target{Name: fmt.Sprintf("t%d", i), Host: "example.org", Port: 1000 + i, Protocol: probe.TLS, Trust: probe.TrustSystem,
+			AllAddresses: true, AllChannels: true, Enabled: true}, "test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := hs.db.W.Exec("UPDATE targets SET current_fp = 'fp1', not_after = ?, status = 'healthy' WHERE id = ?", now+40*86400, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	page := hs.do(authz.Viewer, "GET", "/", nil, false).Body.String()
+	if n := strings.Count(page, "data-more hidden"); n != 2 || !strings.Contains(page, "Show all 12") || !strings.Contains(page, `href="/?all=1"`) {
+		t.Fatalf("folded: %d hidden rows", n)
+	}
+	page = hs.do(authz.Viewer, "GET", "/?all=1", nil, false).Body.String()
+	if strings.Contains(page, "data-more hidden") || strings.Count(page, "data-more") != 2 || !strings.Contains(page, "Show 10") {
+		t.Fatal("not unfolded with ?all=1")
 	}
 }

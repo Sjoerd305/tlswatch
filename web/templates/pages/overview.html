@@ -33,11 +33,11 @@
   <section class="card clip">
     <div class="sec"><h2>Expiring next</h2><a href="/certificates" class="small">All certificates</a></div>
     {{- if $o.Targets}}
-    <table class="tbl cards compact">
+    <table class="tbl cards compact" id="expiring">
       <thead><tr><th>Target</th><th>Host</th><th class="num">Days</th><th>Lifetime used</th><th>Expires</th><th>Issuer</th></tr></thead>
       <tbody>
-      {{- range $o.Targets}}{{$c := .ExpiryClass $p.Settings.Defaults $p.Now}}
-        <tr>
+      {{- range $i, $t := $o.Targets}}{{$c := .ExpiryClass $p.Settings.Defaults $p.Now}}
+        <tr{{if ge $i $o.Rows}} data-more{{if not $o.All}} hidden{{end}}{{end}}>
           <td data-label="Target" class="m-lead"><a href="/targets/{{.ID}}" class="ink strong" data-row-link>{{.Name}}</a></td>
           <td data-label="Host" class="mono muted m-full">{{.HostPort}}</td>
           <td data-label="Days" class="num mono days m-lead m-end{{if $c}} {{$c}}-t{{end}}">{{template "days-left" (days $p.Now .NotAfter)}}</td>
@@ -48,6 +48,9 @@
       {{- end}}
       </tbody>
     </table>
+    {{- if $o.More}}
+    <div class="card-foot"><a href="{{if $o.All}}/{{else}}/?all=1{{end}}" class="btn btn-xs" data-show-more="#expiring" data-label-less="Show {{$o.Rows}}">{{if $o.All}}Show {{$o.Rows}}{{else}}Show all {{len $o.Targets}}{{end}}</a><span class="muted small">{{len $o.Targets}} targets with a certificate, soonest first</span></div>
+    {{- end}}
     {{- else}}
     <div class="empty">No certificates read yet; the first checks are running.</div>
     {{- end}}

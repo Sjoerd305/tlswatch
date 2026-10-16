@@ -30,13 +30,28 @@ func pathID(r *http.Request) (int64, error) {
 	return id, nil
 }
 
+// overviewRows is how many targets "Expiring next" shows before "Show all".
+const overviewRows = 10
+
+// overviewData is the home screen: the overview plus whether the expiring
+// list is unfolded (?all=1).
+type overviewData struct {
+	core.Overview
+	All  bool
+	Rows int // overviewRows, for the template
+}
+
+// More is how many targets the folded list hides.
+func (d overviewData) More() int { return max(len(d.Targets)-d.Rows, 0) }
+
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	o, err := s.Core.Overview(r.Context())
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
-	s.render(w, r, "overview", &Page{Title: "Overview", Nav: "overview", Data: o, Live: true})
+	d := overviewData{Overview: o, All: r.URL.Query().Get("all") == "1", Rows: overviewRows}
+	s.render(w, r, "overview", &Page{Title: "Overview", Nav: "overview", Data: d, Live: true})
 }
 
 // Chip is a filter chip with its count.

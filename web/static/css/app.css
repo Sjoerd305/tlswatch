@@ -380,6 +380,8 @@ a.tile:hover{text-decoration:none;border-color:var(--input-line)}
 .detail-grid>.k{color:var(--muted)}
 .detail-grid>*{min-width:0}
 .table-foot{color:var(--muted);font-size:12px}
+/* A footer inside a card, under a table: "Show all" and a count. */
+.card-foot{display:flex;align-items:center;gap:10px;padding:8px 12px;border-top:1px solid var(--line)}
 .scroll-x{overflow-x:auto}
 
 /* ---------- Status ---------- */
