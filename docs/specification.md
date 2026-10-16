@@ -1,8 +1,6 @@
 # Specification – tlswatch
 
-Version 0.1 (draft) · 14 October 2026, last updated 15 October 2026 · Sjoerd van Dijk
-
-Working title: tlswatch. This document started as an export of the original design document in Claude Docs. This file is now the maintained specification: it describes how tlswatch behaves and is updated in the same change as the code.
+This is the maintained specification of tlswatch: it describes how the tool behaves and is updated in the same change as the code, so the version of the code is the version of this document.
 
 ## Purpose and scope
 
@@ -232,7 +230,7 @@ Alerts fire on state transitions, not on every check, so a daily check never pro
 3. **Remind**: a repeat at the target's reminder interval while the finding stays open, with the same message plus "still open since". Acknowledged findings are not reminded.
 4. **Recover**: one notice when the finding resolves, so the receiver knows it is done. Recovery is sent to the channels that received the open alert.
 5. **Acknowledge**: an operator acknowledges a finding in the UI, optionally until a date (snooze). Acknowledging suppresses reminders, never the escalation or recovery notice. An acknowledgement on `certificate_changed` resolves it; on other kinds it expires when the finding resolves or the date passes.
-6. **Digest**: an optional weekly e-mail (day and hour configurable) listing open findings, certificates expiring in the next 30 days, and targets that failed their last check. Off by default.
+6. **Digest**: an optional weekly e-mail (day and hour configurable) listing open findings, certificates expiring in the next 30 days, and targets that failed their last check. Off by default. `info` findings (expected ACME renewals) are recorded as already resolved and are not in it: they show under recent changes on the overview and nowhere else.
 
 **Channels** are configured globally by an admin; each target selects which of them apply (default: all). A channel has a minimum severity: a Telegram chat can take only `critical` while the mailbox takes everything.
 
@@ -304,7 +302,7 @@ Three roles, one per user, no organisations or tenants: the tool is single-tenan
 
 **Removing users.** Disabling a user ends their sessions and keeps the account for later; deleting removes the account with its sessions and one-time links for good. The audit log keeps their entries, which record the e-mail address. Nobody can delete their own account, and the last enabled admin can be neither deleted, disabled nor demoted.
 
-**TOTP** as second factor for local accounts is not in version 1 (open point); the tool holds no secrets beyond its own channel credentials.
+**TOTP** as second factor for local accounts is a later version (see Later versions); the tool holds no secrets beyond its own channel credentials.
 
 **Sessions**: server-side session store in SQLite, cookie `HttpOnly; Secure; SameSite=Lax`, 8 hours idle timeout (the live-page polling does not count as activity, so an open tab does not keep a session alive) and a 7-day maximum age after sign-in, CSRF token on every state-changing form and JSON call. While no account exists, every page redirects to a setup screen where the first admin is created with their own e-mail address and password and signed in directly; the screen disappears once an account exists. The setup screen also restores a backup (see Backup and restore), so a new installation takes over from an old one without a throwaway admin; that too is refused once an account exists, checked on the writer connection in the same step as the restore. The check and the insert are one transaction, so concurrent attempts create one admin only. Scripted installs can use the `create-admin` subcommand, which prints a one-time password link.
 
@@ -423,7 +421,7 @@ Settings pages added for this: **General** (base URL, proxy trust, local targets
 
 **Operations**: `/healthz` reports database reachability and scheduler progress (last run, backlog, how long the oldest due check has waited); when enabled under Settings › General, `/metrics` serves Prometheus gauges without sign-in (targets by status, open findings by severity, alerts pending and given up, each target's certificate expiry, scheduler backlog and checks, checks running on nodes and targets held; nodes online and offline, seconds since each node was seen, jobs completed and failed per node); structured logs with request IDs and one line per check; a daily backup is the `backup` subcommand on a cron, and Settings › Backup downloads and restores an encrypted backup of the whole instance. Upgrades are a binary swap; migrations are forward-only and refuse to run a database written by a newer version.
 
-**Development**: `make build`, `make test`, `make frontend`, `make run` with a throw-away database; a seed subcommand that adds a few public targets (expired.badssl.com, self-signed.badssl.com, tls-v1-0.badssl.com:1010, a Let's Encrypt site) so the UI shows every state immediately.
+**Development**: `make build`, `make test`, `make frontend`, `make run` with a throw-away database; a seed subcommand that adds a few public targets (letsencrypt.org, expired.badssl.com, self-signed.badssl.com, wrong.host.badssl.com, tls-v1-0.badssl.com:1010) so the UI shows every state immediately; the README screenshot is taken from the same seed.
 
 ## Security
 
@@ -446,7 +444,7 @@ The tool holds a list of hosts, their certificates (public data) and the credent
 
 The project lives in a public repository under a personal GitHub account; company-specific material (logos, customer names, internal addresses) never enters it.
 
-**Licence**: MIT, recommended. It is the shortest, matches Go and TypeScript community norms, and the tool has no patent surface that would argue for Apache-2.0. The fonts carry their own OFL licence files in `web/static/fonts`.
+**Licence**: MIT. It is the shortest, matches Go and TypeScript community norms, and the tool has no patent surface that would argue for Apache-2.0. The fonts carry their own OFL licence files in `web/static/fonts`.
 
 **Repository layout**
 
@@ -470,7 +468,7 @@ LICENSE, README.md, CONTRIBUTING.md, SECURITY.md, CHANGELOG.md
 
 **Versioning**: semantic versions from `v0.1.0`; `v1.0.0` when the scope in this document is complete and the database schema is considered stable. `CHANGELOG.md` kept by hand, one line per change, newest first.
 
-Nobody chooses a version for a build by hand. `scripts/version.sh` derives it from the checkout, and the Makefile and the Dockerfile both use it, so `make build` and `docker compose up --build` report the same thing: the tag when built exactly on one (`v0.2.0`), the tag with the distance and hash past it (`v0.2.0-5-g5efacf7`), and while no tag exists the commit date and hash (`2026.10.15-5efacf7`); `-dirty` is appended when the working tree had uncommitted changes, and `dev` is the fallback outside a git checkout. The release workflow passes the tag explicitly. The `.git` directory is in the Docker build context for this. A build without a release tag is a development build: its static files are not cached for good, and (with nodes, designed and not built) it does not update nodes automatically.
+Nobody chooses a version for a build by hand. `scripts/version.sh` derives it from the checkout, and the Makefile and the Dockerfile both use it, so `make build` and `docker compose up --build` report the same thing: the tag when built exactly on one (`v0.2.0`), the tag with the distance and hash past it (`v0.2.0-5-g5efacf7`), and while no tag exists the commit date and hash (`2026.10.15-5efacf7`); `-dirty` is appended when the working tree had uncommitted changes, and `dev` is the fallback outside a git checkout. The release workflow passes the tag explicitly. The `.git` directory is in the Docker build context for this. A build without a release tag is a development build: its static files are not cached for good, and it does not update nodes automatically (see Updating nodes).
 
 **Community files**: README with a screenshot, a three-command quick start and the `check` one-liner; CONTRIBUTING with the dependency rule (no new runtime dependency without a written reason in the pull request) and the test expectation; SECURITY with a private reporting address; issue templates for bug and feature; the specification itself in `docs/` so decisions are traceable.
 
@@ -478,7 +476,7 @@ Nobody chooses a version for a build by hand. `scripts/version.sh` derives it fr
 
 ## Decisions taken, assumptions and open points
 
-Where the requirements said "not sure" or "what do you recommend", this document takes a position. Each one is reversible before the first line of code.
+Where the requirements said "not sure" or "what do you recommend", this document takes a position. The table records why, so a later change knows what it reverses.
 
 | Topic | Decision in this document | Why |
 | --- | --- | --- |
@@ -509,12 +507,6 @@ Where the requirements said "not sure" or "what do you recommend", this document
 - E-mail goes through an SMTP relay that already exists; the tool is not a mail server.
 - The fonts are OFL and can be redistributed with an MIT-licensed project.
 
-**Open points**
+**Open points settled.** The questions the first draft left open were decided on 16 October 2026 and are recorded in the sections above: MIT as the licence; all addresses as the default; TOTP as a later version; `info` findings outside the weekly digest; and letsencrypt.org plus the badssl.com hosts as the seed and screenshot data. No open point remains for version 1.
 
-- [ ] Confirm MIT, or prefer Apache-2.0.
-- [ ] Confirm "all addresses" as the default, or "first only".
-- [ ] TOTP for local accounts: v1 or later.
-- [ ] Whether `info` findings (expected ACME renewals) should appear in the weekly digest.
-- [ ] Which public hosts to use in the seed data and README screenshot.
-
-**Later versions**, in rough priority: a public REST API with tokens; bulk import and export of targets as YAML; OCSP and CRL checks; Certificate Transparency monitoring for own domains; TLS configuration grading; Microsoft Teams, PagerDuty and Matrix channels; ticket creation in a service desk on critical findings.
+**Later versions**, in rough priority: a public REST API with tokens; bulk import and export of targets as YAML; TOTP as a second factor for local accounts; OCSP and CRL checks; Certificate Transparency monitoring for own domains; TLS configuration grading; Microsoft Teams, PagerDuty and Matrix channels; ticket creation in a service desk on critical findings.

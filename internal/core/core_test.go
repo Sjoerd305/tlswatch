@@ -378,6 +378,13 @@ func TestACMERenewalIsInfo(t *testing.T) {
 	if m := e.take("mail"); len(m) != 0 {
 		t.Fatalf("info renewal alerted: %+v", m)
 	}
+	// The weekly digest lists open findings; the renewal is recorded as
+	// resolved and stays out of it.
+	if d, err := e.svc.Digest(e.ctx); err != nil {
+		t.Fatal(err)
+	} else if strings.Contains(d.Body, "renewed by") || strings.Contains(d.HTML, "renewed by") {
+		t.Fatalf("info renewal in the digest:\n%s", d.Body)
+	}
 	// A different CA on an ACME target is a warning, plus issuer_changed.
 	other := newCA(t, "Sectigo")
 	c3 := other.leaf(t, now, now.Add(days(365)), "portal.example.nl", "www.portal.example.nl")
