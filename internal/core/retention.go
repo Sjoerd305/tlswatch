@@ -25,6 +25,9 @@ func (s *Service) Prune(ctx context.Context) error {
 		"DELETE FROM findings WHERE id IN (SELECT id FROM findings WHERE resolved_at > 0 AND resolved_at < ?1 LIMIT ?2)",
 		"DELETE FROM audit WHERE id IN (SELECT id FROM audit WHERE at < ?1 LIMIT ?2)",
 		"DELETE FROM tokens WHERE expires_at < ?1",
+		// Issuances age out with the rest, except one with an open finding.
+		`DELETE FROM issuances WHERE id IN (SELECT id FROM issuances WHERE first_seen < ?1
+			AND CAST(id AS TEXT) NOT IN (SELECT fingerprint FROM findings WHERE domain_id IS NOT NULL AND resolved_at = 0) LIMIT ?2)`,
 	}
 	for _, q := range batched {
 		for {

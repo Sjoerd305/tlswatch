@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,20 +16,20 @@ import (
 )
 
 const findingCols = `f.id, COALESCE(f.target_id, 0), f.kind, f.severity, f.opened_at, f.resolved_at, f.details, f.fingerprint, f.days_left,
-	f.ack_by, f.ack_at, f.ack_until, f.ack_comment, f.last_alert_at, COALESCE(f.node_id, 0)`
+	f.ack_by, f.ack_at, f.ack_until, f.ack_comment, f.last_alert_at, COALESCE(f.node_id, 0), COALESCE(f.domain_id, 0)`
 
-// findingSubject joins a finding's target, or its node, and selects the
-// name, host, port and protocol shown with it.
-const findingSubject = `COALESCE(t.name, n.name, ''), COALESCE(t.host, json_extract(n.facts, '$.hostname'), ''), COALESCE(t.port, 0), COALESCE(t.protocol, '')`
+// findingSubject joins a finding's target, its node or its domain watch,
+// and selects the name, host, port and protocol shown with it.
+const findingSubject = `COALESCE(t.name, n.name, d.name, ''), COALESCE(t.host, json_extract(n.facts, '$.hostname'), d.name, ''), COALESCE(t.port, 0), COALESCE(t.protocol, '')`
 
-const findingJoins = ` LEFT JOIN targets t ON t.id = f.target_id LEFT JOIN nodes n ON n.id = f.node_id `
+const findingJoins = ` LEFT JOIN targets t ON t.id = f.target_id LEFT JOIN nodes n ON n.id = f.node_id LEFT JOIN domains d ON d.id = f.domain_id `
 
 func scanFinding(r interface{ Scan(...any) error }, extra ...any) (Finding, error) {
 	var f Finding
 	var kind, sev string
 	var days sql.NullInt64
 	dest := append([]any{&f.ID, &f.TargetID, &kind, &sev, &f.OpenedAt, &f.ResolvedAt, &f.Details, &f.Fingerprint, &days,
-		&f.AckBy, &f.AckAt, &f.AckUntil, &f.AckComment, &f.LastAlertAt, &f.NodeID}, extra...)
+		&f.AckBy, &f.AckAt, &f.AckUntil, &f.AckComment, &f.LastAlertAt, &f.NodeID, &f.DomainID}, extra...)
 	if err := r.Scan(dest...); err != nil {
 		return f, err
 	}
@@ -40,6 +41,7 @@ func scanFinding(r interface{ Scan(...any) error }, extra ...any) (Finding, erro
 type FindingFilter struct {
 	Resolved bool // false: open findings
 	TargetID int64
+	DomainID int64
 	Limit    int
 	Since    int64 // resolved findings: resolved at or after
 }
@@ -64,6 +66,10 @@ func (s *Service) Findings(ctx context.Context, ff FindingFilter) ([]Finding, er
 	if ff.TargetID != 0 {
 		q += " AND f.target_id = ?"
 		args = append(args, ff.TargetID)
+	}
+	if ff.DomainID != 0 {
+		q += " AND f.domain_id = ?"
+		args = append(args, ff.DomainID)
 	}
 	if ff.Resolved {
 		q += " ORDER BY f.resolved_at DESC"
@@ -211,6 +217,13 @@ func (s *Service) Acknowledge(ctx context.Context, id int64, user string, until 
 	if err := tx.Commit(); err != nil {
 		return f, err
 	}
+	if f.DomainID != 0 && f.Kind == check.UnexpectedCertificate {
+		if iid, err := strconv.ParseInt(f.Fingerprint, 10, 64); err == nil {
+			if err := s.ackIssuanceRow(ctx, iid, user, comment); err != nil {
+				return f, err
+			}
+		}
+	}
 	return s.Finding(ctx, id)
 }
 
@@ -244,6 +257,14 @@ func (s *Service) Remind(ctx context.Context) (int, error) {
 		}
 		if f.NodeID != 0 {
 			n, err := s.remindNode(ctx, st, f, now)
+			if err != nil {
+				return queued, err
+			}
+			queued += n
+			continue
+		}
+		if f.DomainID != 0 {
+			n, err := s.remindDomain(ctx, st, f, now)
 			if err != nil {
 				return queued, err
 			}

@@ -193,6 +193,12 @@ func (s *Service) Apply(ctx context.Context, t Target, r probe.Result) (CheckSum
 	if sum.Queued > 0 {
 		s.wake()
 	}
+	if out.Answered && out.LeafFP != t.CurrentFP {
+		// A new certificate may be one a domain watch is waiting for.
+		if err := s.MatchIssuances(ctx, out.LeafFP); err != nil && s.Log != nil {
+			s.Log.Warn("ct match", "err", err)
+		}
+	}
 	return sum, nil
 }
 

@@ -42,6 +42,7 @@
   <nav aria-label="Main navigation">
     <a href="/"{{if eq .Nav "overview"}} class="on" aria-current="page"{{end}}>Overview</a>
     <a href="/targets"{{if eq .Nav "targets"}} class="on" aria-current="page"{{end}}>Targets <span class="cnt">{{.Counts.Targets}}</span></a>
+    <a href="/domains"{{if eq .Nav "domains"}} class="on" aria-current="page"{{end}}>Domains{{if .Counts.Domains}} <span class="cnt">{{.Counts.Domains}}</span>{{end}}</a>
     <a href="/certificates"{{if eq .Nav "certificates"}} class="on" aria-current="page"{{end}}>Certificates <span class="cnt">{{.Counts.Certificates}}</span></a>
     <a href="/findings"{{if eq .Nav "findings"}} class="on" aria-current="page"{{end}}>Findings {{if .Counts.Findings}}<span class="cnt{{if .Counts.Critical}} crit{{end}}">{{.Counts.Findings}}</span>{{end}}</a>
     {{- if .Can "settings.manage"}}

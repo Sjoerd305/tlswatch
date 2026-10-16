@@ -43,7 +43,7 @@ Values are checked against the same ranges as the UI (retention 7 to 3650 days, 
 
 `GET /healthz` answers 200 with JSON (`database`, `scheduler_running`, `last_check`, `backlog`, `overdue_s`) and 503 when the database is unreachable, the scheduler stalled, or the oldest due check has waited more than an hour (`overdue_s` > 3600: workers stuck or too few). `tlswatch healthcheck` calls it on `TLSWATCH_LISTEN` and exits non-zero when it is not 200; the Docker image uses it as its `HEALTHCHECK`.
 
-With *Serve Prometheus metrics* on (Settings › General, or `TLSWATCH_METRICS=true`), `GET /metrics` returns `tlswatch_targets{status}`, `tlswatch_findings_open{severity}`, `tlswatch_alerts{state}`, `tlswatch_certificate_not_after_seconds{target,endpoint}`, `tlswatch_targets_by_grade{grade}`, `tlswatch_target_grade{target,endpoint,grade}`, `tlswatch_checks_total`, `tlswatch_scheduler_backlog`, `tlswatch_scheduler_overdue_seconds`, `tlswatch_scheduler_running`, `tlswatch_last_check_seconds` and `tlswatch_build_info{version}`. Like `/healthz` it needs no sign-in, and it names every target, so let only the monitoring system reach it. Example alert: `tlswatch_alerts{state="failed"} > 0` (a channel gave up).
+With *Serve Prometheus metrics* on (Settings › General, or `TLSWATCH_METRICS=true`), `GET /metrics` returns `tlswatch_targets{status}`, `tlswatch_findings_open{severity}`, `tlswatch_alerts{state}`, `tlswatch_certificate_not_after_seconds{target,endpoint}`, `tlswatch_targets_by_grade{grade}`, `tlswatch_target_grade{target,endpoint,grade}`, `tlswatch_ct_issuances_total{state}`, `tlswatch_ct_last_poll_timestamp_seconds{domain}`, `tlswatch_checks_total`, `tlswatch_scheduler_backlog`, `tlswatch_scheduler_overdue_seconds`, `tlswatch_scheduler_running`, `tlswatch_last_check_seconds` and `tlswatch_build_info{version}`. Like `/healthz` it needs no sign-in, and it names every target, so let only the monitoring system reach it. Example alert: `tlswatch_alerts{state="failed"} > 0` (a channel gave up).
 
 Logs are JSON lines on stdout; set `TLSWATCH_LOG_JSON=false` for text and `TLSWATCH_DEBUG=true` for debug logging. Every response carries an `X-Request-ID`, which the log lines of that request repeat. Requests are logged at info level when they fail (status 400 or higher) or take more than 2 seconds, otherwise at debug level. On shutdown tlswatch waits up to 15 seconds for running checks and alert deliveries.
 
@@ -54,6 +54,10 @@ Every check logs one `checked` line with the target, its `check_id` (also stored
 ## Networks
 
 tlswatch probes from where it runs. Internal addresses must be reachable from that host, through a route or from a node (below). Hosts without an IPv6 route skip AAAA records (noted on the target, not reported as unreachable).
+
+## Certificate Transparency
+
+Domain watches (Domains in the navigation) ask an index of the Certificate Transparency logs what was issued for a name. The source is chosen under Settings › Certificate Transparency: Cert Spotter (api.certspotter.com; works without a key within its public rate limit, an API key raises it) or crt.sh. What leaves the server is the watched domain names, over HTTPS, to that service, and nothing else; the polls go from the server, never from a node. The default interval is an hour: both services are free and shared with everyone. A source that answers nothing for a day opens one `ct_source_failed` finding per watch; the watch's page shows the last error. An unexpected certificate (one no target serves, or a renewal nobody deployed within two days) opens `unexpected_certificate` on the watch; acknowledge it on the Findings page or the domain page, or add the target that serves it, which resolves the finding on its next check.
 
 ## Nodes
 

@@ -116,12 +116,32 @@ type Nodes struct {
 	AutoUpdate bool `json:"auto_update"`
 }
 
+// CT holds the Certificate Transparency settings. The API key is stored
+// encrypted like the Google client secret.
+type CT struct {
+	Source    string `json:"source"` // certspotter or crtsh
+	IntervalS int    `json:"interval_s"`
+	APIKey    string `json:"-"`
+}
+
+// Validate checks the CT settings.
+func (c CT) Validate() error {
+	if c.Source != "certspotter" && c.Source != "crtsh" {
+		return errors.New("the source must be Cert Spotter or crt.sh")
+	}
+	if c.IntervalS < 15*60 || c.IntervalS > 24*3600 {
+		return errors.New("the poll interval must be between 15 minutes and 24 hours")
+	}
+	return nil
+}
+
 // Settings is the full runtime configuration.
 type Settings struct {
 	General  General
 	SignIn   SignIn
 	Defaults Defaults
 	Nodes    Nodes
+	CT       CT
 	// Env lists the setting names that the environment overrides, keyed by
 	// form field name (for example "base_url").
 	Env map[string]string
@@ -155,6 +175,7 @@ func DefaultSettings() Settings {
 	return Settings{
 		General: General{},
 		Nodes:   Nodes{AutoUpdate: true},
+		CT:      CT{Source: "certspotter", IntervalS: 3600},
 		Defaults: Defaults{
 			Manual:        Thresholds{WarnDays: 30, CritDays: 7},
 			Managed:       Thresholds{WarnDays: 10, CritDays: 3},
@@ -254,6 +275,8 @@ const (
 	keySecret   = "signin.google_client_secret"
 	keyDefaults = "defaults"
 	keyNodes    = "nodes"
+	keyCT       = "ct"
+	keyCTKey    = "ct.api_key"
 )
 
 // Get returns the current settings, environment overrides applied.
@@ -276,6 +299,14 @@ func (s *Store) Get(ctx context.Context) (Settings, error) {
 	if err := s.load(ctx, keyNodes, &st.Nodes); err != nil {
 		return st, err
 	}
+	if err := s.load(ctx, keyCT, &st.CT); err != nil {
+		return st, err
+	}
+	if pt, err := s.loadSealed(ctx, keyCTKey); err != nil {
+		return st, err
+	} else if pt != "" {
+		st.CT.APIKey = pt
+	}
 	var sealed string
 	err := s.db.R.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", keySecret).Scan(&sealed)
 	if err == nil && sealed != "" {
@@ -290,6 +321,47 @@ func (s *Store) Get(ctx context.Context) (Settings, error) {
 	cp := st
 	s.cached = &cp
 	return st, nil
+}
+
+// loadSealed reads a value stored encrypted under the secret key; "" when
+// none is stored or it cannot be opened (a changed key).
+func (s *Store) loadSealed(ctx context.Context, key string) (string, error) {
+	var sealed string
+	err := s.db.R.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&sealed)
+	if errors.Is(err, sql.ErrNoRows) || sealed == "" {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	pt, err := s.open(sealed)
+	if err != nil {
+		return "", nil
+	}
+	return string(pt), nil
+}
+
+// SaveCT stores the Certificate Transparency settings; an empty key keeps
+// the stored one unless clearKey is set.
+func (s *Store) SaveCT(ctx context.Context, c CT, clearKey bool) error {
+	if err := c.Validate(); err != nil {
+		return usererr.Wrap(err)
+	}
+	if err := s.save(ctx, keyCT, c); err != nil {
+		return err
+	}
+	switch {
+	case clearKey:
+		_, err := s.db.W.ExecContext(ctx, "DELETE FROM settings WHERE key = ?", keyCTKey)
+		s.invalidate()
+		return err
+	case c.APIKey != "":
+		b, _ := json.Marshal(s.key.Seal([]byte(c.APIKey)))
+		_, err := s.db.W.ExecContext(ctx, "INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", keyCTKey, string(b))
+		s.invalidate()
+		return err
+	}
+	return nil
 }
 
 func (s *Store) load(ctx context.Context, key string, into any) error {

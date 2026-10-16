@@ -127,7 +127,7 @@
     <div class="ev"><span class="when">{{whenTime $p.Loc $p.Now $f.OpenedAt}}</span><span>opened as {{$f.Severity}}</span></div>
   </div>
 </div>
-{{if $f.NodeID}}{{if $p.Can "settings.manage"}}<a href="/settings/nodes/{{$f.NodeID}}">Open node {{$f.TargetName}}</a>{{end}}{{else}}<a href="/targets/{{$f.TargetID}}">Open target {{$f.TargetName}}</a>{{end}}
+{{if $f.NodeID}}{{if $p.Can "settings.manage"}}<a href="/settings/nodes/{{$f.NodeID}}">Open node {{$f.TargetName}}</a>{{end}}{{else if $f.DomainID}}<a href="/domains/{{$f.DomainID}}">Open domain {{$f.TargetName}}</a>{{else}}<a href="/targets/{{$f.TargetID}}">Open target {{$f.TargetName}}</a>{{end}}
 {{end}}
 
 {{define "event-label"}}{{if eq . "open"}}opened{{else if eq . "escalate"}}escalated{{else if eq . "remind"}}reminder{{else if eq . "recover"}}recovery{{else}}{{.}}{{end}}{{end}}
@@ -139,6 +139,7 @@
   <a href="/settings/channels"{{if eq .SettingsNav "channels"}} class="on" aria-current="page"{{end}}>Channels</a>
   <a href="/settings/signin"{{if eq .SettingsNav "signin"}} class="on" aria-current="page"{{end}}>Sign-in</a>
   <a href="/settings/nodes"{{if eq .SettingsNav "nodes"}} class="on" aria-current="page"{{end}}>Nodes</a>
+  <a href="/settings/ct"{{if eq .SettingsNav "ct"}} class="on" aria-current="page"{{end}}>Certificate Transparency</a>
   <a href="/settings/bundles"{{if eq .SettingsNav "bundles"}} class="on" aria-current="page"{{end}}>CA bundles</a>
   <a href="/settings/defaults"{{if eq .SettingsNav "defaults"}} class="on" aria-current="page"{{end}}>Defaults</a>
   {{- end}}
@@ -153,7 +154,7 @@
 {{define "node-status"}}{{if eq .N.State "enrolling"}}<span class="st off">waiting for install</span>{{else if eq .N.State "pending"}}<span class="st warn">confirm</span>{{else if not .N.Enabled}}<span class="st off">disabled</span>{{else if not .N.HasCredential}}<span class="st crit">revoked</span>{{else if .S.Online}}<span class="st ok">online</span>{{else}}<span class="st crit">offline</span>{{end}}{{end}}
 
 {{/* finding-subject: the target a finding is on, or its node. frag{P, Item: core.Finding} */}}
-{{define "finding-subject"}}{{$f := .Item}}{{if $f.NodeID}}{{if .P.Can "settings.manage"}}<a href="/settings/nodes/{{$f.NodeID}}" class="ink strong">node {{$f.TargetName}}</a>{{else}}<span class="strong">node {{$f.TargetName}}</span>{{end}}{{else}}<a href="/targets/{{$f.TargetID}}" class="ink strong">{{$f.TargetName}}</a>{{end}}{{end}}
+{{define "finding-subject"}}{{$f := .Item}}{{if $f.NodeID}}{{if .P.Can "settings.manage"}}<a href="/settings/nodes/{{$f.NodeID}}" class="ink strong">node {{$f.TargetName}}</a>{{else}}<span class="strong">node {{$f.TargetName}}</span>{{end}}{{else if $f.DomainID}}<a href="/domains/{{$f.DomainID}}" class="ink strong">domain {{$f.TargetName}}</a>{{else}}<a href="/targets/{{$f.TargetID}}" class="ink strong">{{$f.TargetName}}</a>{{end}}{{end}}
 
 {{/* cmd: a command with a copy button. */}}
 {{define "cmd"}}<div class="cmd"><pre class="pre">{{.}}</pre><button type="button" class="btn btn-xs" data-copy="{{.}}">copy</button></div>{{end}}

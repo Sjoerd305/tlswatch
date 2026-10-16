@@ -10,6 +10,7 @@ import (
 // NavCounts are the live counts in the navigation.
 type NavCounts struct {
 	Targets      int
+	Domains      int
 	Certificates int
 	Findings     int
 	Critical     bool
@@ -28,7 +29,8 @@ func (s *Service) Nav(ctx context.Context) NavCounts {
 		s.DB.R.QueryRowContext(ctx, `SELECT COUNT(DISTINCT o.leaf_fp) FROM targets t
 			JOIN observations o ON o.check_id = t.last_check_id AND o.target_id = t.id WHERE o.leaf_fp != ''`).Scan(&n.Certificates),
 		s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(severity = 'critical'), 0) FROM findings f LEFT JOIN targets t ON t.id = f.target_id
-			WHERE f.resolved_at = 0 AND (t.enabled = 1 OR f.node_id IS NOT NULL)`).Scan(&n.Findings, &crit),
+			LEFT JOIN domains d ON d.id = f.domain_id WHERE f.resolved_at = 0 AND (t.enabled = 1 OR f.node_id IS NOT NULL OR d.enabled = 1)`).Scan(&n.Findings, &crit),
+		s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*) FROM domains`).Scan(&n.Domains),
 	)
 	if err != nil && ctx.Err() == nil && s.Log != nil {
 		s.Log.Warn("navigation counts", "err", err)
@@ -152,7 +154,7 @@ type RunSummary struct {
 // moment, newest first.
 func (s *Service) RecentChanges(ctx context.Context, since int64, limit int) ([]Finding, error) {
 	rows, err := s.DB.R.QueryContext(ctx, "SELECT "+findingCols+", "+findingSubject+" FROM findings f"+findingJoins+`
-		WHERE (f.kind IN ('certificate_changed', 'grade_changed') AND f.opened_at >= ?) OR (f.resolved_at >= ? AND f.severity != 'info' AND f.resolved_at > f.opened_at)
+		WHERE (f.kind IN ('certificate_changed', 'grade_changed', 'certificate_issued') AND f.opened_at >= ?) OR (f.resolved_at >= ? AND f.severity != 'info' AND f.resolved_at > f.opened_at)
 		ORDER BY MAX(f.opened_at, f.resolved_at) DESC LIMIT ?`, since, since, limit)
 	if err != nil {
 		return nil, err

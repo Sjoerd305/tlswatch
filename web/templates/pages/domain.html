@@ -1,0 +1,80 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}{{$dm := $d.D}}{{$edit := $p.Can "targets.edit"}}
+<div class="crumbs"><a href="/domains">Domains</a><span>/</span><span>{{$dm.Name}}</span></div>
+<div class="page-head top-align">
+  <div>
+    <div class="title-row"><h1 class="mono">{{$dm.Name}}</h1>{{$st := $dm.Status}}{{if eq $st "warning"}}<span class="st warn">Unexpected certificate</span>{{else if eq $st "unreachable"}}<span class="st crit">Source failing</span>{{else if eq $st "pending"}}<span class="st off">Not polled yet</span>{{else if eq $st "disabled"}}<span class="st off">Disabled</span>{{else}}<span class="st ok">Healthy</span>{{end}}</div>
+    <div class="sub-row">{{if $dm.Subdomains}}<span class="tag">+ subdomains</span>{{end}}{{range $dm.Tags}}<a class="tag" href="/domains?tag={{.}}">{{.}}</a>{{end}}</div>
+  </div>
+  {{- if $edit}}
+  <div class="actions row">
+    {{- if $dm.Enabled}}<form method="post" action="/domains/{{$dm.ID}}/poll">{{template "csrf" $p.CSRF}}<button type="submit" class="btn">Poll now</button></form>{{end}}
+    <a href="/domains/{{$dm.ID}}/edit" class="btn">Edit</a>
+    {{- if $dm.Enabled}}<form method="post" action="/domains/{{$dm.ID}}/disable">{{template "csrf" $p.CSRF}}<button type="submit" class="btn">Disable</button></form>
+    {{- else}}<form method="post" action="/domains/{{$dm.ID}}/enable">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-primary">Enable</button></form>{{end}}
+    <a href="/domains/{{$dm.ID}}/delete" class="btn btn-danger">Delete</a>
+  </div>
+  {{- end}}
+</div>
+{{- if not $dm.Enabled}}
+<div class="notice info" role="status">{{template "notice-icon" "info"}}<div>This domain is disabled and not polled. Its issuances are kept.</div></div>
+{{- else if $dm.PollError}}
+<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>The last poll of {{$d.Source}} failed{{if $dm.FailSince}} (since {{when $p.Loc $p.Now $dm.FailSince}}){{end}}: {{$dm.PollError}}</div></div>
+{{- else if not $dm.PolledOK}}
+<div class="notice info" role="status">{{template "notice-icon" "info"}}<div>Not polled yet. The first poll runs within a minute and records the last 90 days of issuances as known.</div></div>
+{{- end}}
+<div class="grid-main-side w360">
+  <div class="stack">
+    <section class="card clip">
+      <div class="sec"><h2>Issuances</h2><span class="meta">newest first · {{$d.Source}}</span></div>
+      {{- if $d.Issuances}}
+      <div class="row filters pad-x"><span class="chips" data-chip-group="#issuances">{{template "chips" $d.States}}</span></div>
+      <table class="tbl cards" id="issuances">
+        <thead><tr><th>State</th><th>Names</th><th>Issuer</th><th class="hide-1140">Valid</th><th>Served by</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody>
+        {{- range $d.Issuances}}
+          <tr data-state="{{.State}}"{{if and $d.State (ne $d.State .State)}} hidden{{end}}>
+            <td data-label="State" class="m-lead"><span class="pill {{.StateClass}}">{{.State}}</span></td>
+            <td data-label="Names" class="mono wrap m-lead">{{join .Names ", "}}{{if .LogURL}} <a class="small" href="{{.LogURL}}" rel="noopener noreferrer">log entry</a>{{end}}</td>
+            <td data-label="Issuer" class="wrap">{{.Issuer}}</td>
+            <td data-label="Valid" class="mono muted hide-1140">{{if .NotBefore}}{{date $p.Loc .NotBefore}} → {{date $p.Loc .NotAfter}}{{else}}—{{end}}</td>
+            <td data-label="Served by">{{if .TargetID}}<a href="/targets/{{.TargetID}}" class="ink">{{.TargetName}}</a>{{else if .MatchedFP}}<a href="/certificates?open={{short .MatchedFP}}&amp;all=1" class="ink">in the inventory</a>{{else if eq .State "acknowledged"}}<span class="muted">{{.AckBy}}{{if .AckComment}} · {{.AckComment}}{{end}}</span>{{else}}<span class="muted">not served</span>{{end}}</td>
+            <td data-label="" class="m-end">{{if $edit}}{{if eq .State "unexpected"}}{{if $p.Can "findings.ack"}}<form method="post" action="/domains/{{$dm.ID}}/issuances/{{.ID}}/ack" class="row"><input type="text" name="comment" class="input w150" placeholder="why it is fine" aria-label="Comment">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-xs">Acknowledge</button></form>{{end}}{{else if or (eq .State "known") (eq .State "acknowledged")}}{{if not .TargetID}}<form method="post" action="/domains/{{$dm.ID}}/issuances/{{.ID}}/unexpected">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-xs">Mark unexpected</button></form>{{end}}{{end}}{{end}}</td>
+          </tr>
+        {{- end}}
+        </tbody>
+      </table>
+      <div class="empty" data-empty-for="#issuances"{{if $d.Shown}} hidden{{end}}>No issuances in this state.</div>
+      {{- else}}
+      <div class="empty"><span class="h3">No issuances recorded</span><span>{{if $dm.PolledOK}}The logs hold no unexpired certificate for this domain.{{else}}They appear after the first poll.{{end}}</span></div>
+      {{- end}}
+    </section>
+    {{- if $d.Findings}}
+    <section class="card clip">
+      <div class="sec"><h2>Findings on this domain</h2><span class="meta">open first, then the last 8 resolved</span></div>
+      {{- range $d.Findings}}
+      <div class="li">{{if .Open}}<span class="pill {{if eq (print .Severity) "critical"}}crit{{else if eq (print .Severity) "warning"}}warn{{else}}info{{end}}">{{.Severity}}</span>{{else}}<span class="pill off">resolved</span>{{end}}
+        <span><a href="/findings?sel={{.ID}}" class="plain">{{.Kind.Label}}</a> · {{.Details}}{{if .AckBy}} · {{.AckBy}}{{end}}</span>
+        <span class="t">{{when $p.Loc $p.Now (or .ResolvedAt .OpenedAt)}}</span></div>
+      {{- end}}
+    </section>
+    {{- end}}
+  </div>
+  <aside class="stack">
+    <section class="card pad">
+      <h2 class="h-sec">Watch</h2>
+      <dl class="kv w110">
+        <dt>Subdomains</dt><dd>{{if $dm.Subdomains}}included{{else}}this name only{{end}}</dd>
+        <dt>Source</dt><dd>{{$d.Source}} · every {{duration $d.Interval}}</dd>
+        <dt>Last poll</dt><dd class="mono">{{if $dm.PolledOK}}{{when $p.Loc $p.Now $dm.PolledOK}}{{else}}—{{end}}</dd>
+        <dt>Channels</dt><dd>{{if $d.Channels}}{{join $d.Channels ", "}}{{else}}<span class="muted">none</span>{{end}}{{if $dm.AllChannels}} <span class="muted">· all</span>{{end}}</dd>
+        <dt>Added</dt><dd>{{date $p.Loc $dm.CreatedAt}}{{if $dm.CreatedBy}} by {{$dm.CreatedBy}}{{end}}</dd>
+        {{- if $dm.Notes}}<dt>Notes</dt><dd class="wrap">{{$dm.Notes}}</dd>{{end}}
+      </dl>
+    </section>
+    <section class="card pad">
+      <h2 class="h-sec">How it is judged</h2>
+      <p class="muted small">An issuance is <b>known</b> when a target serves it. One whose names match an enabled target with the same issuer is <b>pending</b> for 48 hours, the time a renewal needs to be deployed. Anything else is <b>unexpected</b> and opens a finding until a target serves it or you acknowledge it.</p>
+    </section>
+  </aside>
+</div>
+{{end}}

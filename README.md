@@ -11,6 +11,7 @@ tlswatch watches the TLS certificates that are actually served on your hostnames
 - Alerts on transitions, with reminders, recovery notices, acknowledgements (also in bulk) and an optional weekly digest. Mail has a plain-text and an HTML part.
 - Live pages that update as checks land.
 - **Nodes** probe from inside networks the server cannot reach: one install command, one outbound HTTPS rule, the node updates itself; the schedule, inventory and alerts stay in one place.
+- **Certificate Transparency watching**: every certificate publicly issued for your domains, matched against what the targets serve; one that no target serves is a finding, a renewal on its way is not.
 - Roles (viewer, operator, admin), local accounts and Google sign-in, an audit log.
 - **Configured in the browser**: SMTP relays, Telegram bots, Slack and Discord webhooks, ntfy topics, your own webhooks, Google sign-in, thresholds and the public URL all live under Settings.
 - Encrypted backup and restore from the UI, also from the setup screen of a new installation.

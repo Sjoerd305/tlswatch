@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -972,5 +973,142 @@ func TestGradeOnTargetsListAndPage(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("metrics lack %q", want)
 		}
+	}
+}
+
+func TestDomainPagesAndPermissions(t *testing.T) {
+	hs := newHarness(t)
+	ctx := context.Background()
+	// Viewers read, operators write, and the settings page is for admins.
+	if rec := hs.do(authz.Viewer, "GET", "/domains", nil, false); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "No domains watched yet") {
+		t.Fatalf("empty list: %d", rec.Code)
+	}
+	f := url.Values{"name": {"Example.NL"}, "subdomains": {"1"}, "tags": {"customer:example"}, "all_channels": {"1"}, "notes": {"ours"}}
+	if rec := hs.do(authz.Viewer, "POST", "/domains/new", f, true); rec.Code != http.StatusForbidden {
+		t.Fatalf("viewer may add a domain: %d", rec.Code)
+	}
+	rec := hs.do(authz.Operator, "POST", "/domains/new", f, true)
+	if rec.Code != http.StatusSeeOther || !strings.HasPrefix(rec.Header().Get("Location"), "/domains/") {
+		t.Fatalf("add: %d %s %s", rec.Code, rec.Header().Get("Location"), rec.Body.String())
+	}
+	ds, err := hs.srv.Core.Domains(ctx)
+	if err != nil || len(ds) != 1 || ds[0].Name != "example.nl" || !ds[0].Subdomains || ds[0].Tags[0] != "customer:example" {
+		t.Fatalf("stored: %v %+v", err, ds)
+	}
+	id := ds[0].ID
+	if rec := hs.do(authz.Operator, "POST", "/domains/new", url.Values{"name": {"example.nl"}}, true); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "already exists") {
+		t.Fatalf("duplicate: %d", rec.Code)
+	}
+	if rec := hs.do(authz.Operator, "POST", "/domains/new", url.Values{"name": {"*.example.com"}}, true); rec.Code != http.StatusBadRequest {
+		t.Fatalf("wildcard: %d", rec.Code)
+	}
+
+	// An issuance and its finding show on the pages; the viewer sees no
+	// buttons, the operator does.
+	now := time.Now().Unix()
+	if _, err := hs.db.W.Exec(`INSERT INTO issuances(domain_id, source_id, issuer_cn, issuer_org, serial, names, not_before, not_after, log_url, first_seen, state)
+		VALUES(?, '9', 'R11', 'Let''s Encrypt', 'ABCD', '["admin.example.nl"]', ?, ?, 'https://crt.sh/?id=9', ?, 'unexpected')`, id, now-3600, now+86400*80, now); err != nil {
+		t.Fatal(err)
+	}
+	var iid int64
+	_ = hs.db.R.QueryRow("SELECT id FROM issuances").Scan(&iid)
+	if _, err := hs.db.W.Exec(`INSERT INTO findings(domain_id, kind, severity, opened_at, details, fingerprint, last_alert_at) VALUES(?, 'unexpected_certificate', 'warning', ?, 'a certificate for admin.example.nl was issued by Let''s Encrypt on 16 Oct and no target serves it', ?, ?)`,
+		id, now, strconv.FormatInt(iid, 10), now); err != nil {
+		t.Fatal(err)
+	}
+	body := hs.do(authz.Viewer, "GET", "/domains", nil, false).Body.String()
+	for _, want := range []string{`class="st warn">Unexpected</span>`, `example.nl`, `customer:example`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("list lacks %q", want)
+		}
+	}
+	body = hs.do(authz.Viewer, "GET", fmt.Sprintf("/domains/%d", id), nil, false).Body.String()
+	for _, want := range []string{`admin.example.nl`, `Let&#39;s Encrypt`, `pill warn">unexpected`, `Unexpected certificate`, `https://crt.sh/?id=9`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
+	if strings.Contains(body, "Acknowledge</button>") {
+		t.Error("viewer sees the acknowledge button")
+	}
+	body = hs.do(authz.Operator, "GET", fmt.Sprintf("/domains/%d", id), nil, false).Body.String()
+	if !strings.Contains(body, "Acknowledge</button>") {
+		t.Error("operator does not see the acknowledge button")
+	}
+	// The finding is on the findings page with the domain as its subject.
+	body = hs.do(authz.Viewer, "GET", "/findings", nil, false).Body.String()
+	if !strings.Contains(body, fmt.Sprintf(`<a href="/domains/%d" class="ink strong">domain example.nl</a>`, id)) {
+		t.Error("findings page does not link the domain")
+	}
+	// Acknowledging through the issuance resolves the finding and marks it.
+	rec = hs.do(authz.Operator, "POST", fmt.Sprintf("/domains/%d/issuances/%d/ack", id, iid), url.Values{"comment": {"staging"}}, true)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("ack: %d %s", rec.Code, rec.Body.String())
+	}
+	i, err := hs.srv.Core.Issuance(ctx, iid)
+	if err != nil || i.State != core.IssuanceAcknowledged || i.AckComment != "staging" {
+		t.Fatalf("acknowledged: %v %+v", err, i)
+	}
+	if open, _ := hs.srv.Core.Findings(ctx, core.FindingFilter{DomainID: id}); len(open) != 0 {
+		t.Fatalf("finding still open: %+v", open)
+	}
+	// Mark it unexpected again by hand.
+	if rec := hs.do(authz.Operator, "POST", fmt.Sprintf("/domains/%d/issuances/%d/unexpected", id, iid), nil, true); rec.Code != http.StatusSeeOther {
+		t.Fatalf("mark unexpected: %d", rec.Code)
+	}
+	if open, _ := hs.srv.Core.Findings(ctx, core.FindingFilter{DomainID: id}); len(open) != 1 {
+		t.Fatalf("finding not reopened: %+v", open)
+	}
+	// Disable, then delete after the confirmation page.
+	if rec := hs.do(authz.Operator, "POST", fmt.Sprintf("/domains/%d/disable", id), nil, true); rec.Code != http.StatusSeeOther {
+		t.Fatalf("disable: %d", rec.Code)
+	}
+	if open, _ := hs.srv.Core.Findings(ctx, core.FindingFilter{DomainID: id}); len(open) != 0 {
+		t.Fatal("disabling did not close the finding")
+	}
+	if rec := hs.do(authz.Operator, "GET", fmt.Sprintf("/domains/%d/delete", id), nil, false); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Delete permanently") {
+		t.Fatalf("delete page: %d", rec.Code)
+	}
+	if rec := hs.do(authz.Operator, "POST", fmt.Sprintf("/domains/%d/delete", id), url.Values{"confirm": {"yes"}}, true); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/domains" {
+		t.Fatalf("delete: %d", rec.Code)
+	}
+	if _, err := hs.srv.Core.Domain(ctx, id); err != core.ErrNotFound {
+		t.Fatalf("after delete: %v", err)
+	}
+
+	// Settings › Certificate Transparency: admins only; the key is stored
+	// sealed and never shown back.
+	if rec := hs.do(authz.Operator, "GET", "/settings/ct", nil, false); rec.Code != http.StatusForbidden {
+		t.Fatalf("operator reads the CT settings: %d", rec.Code)
+	}
+	rec = hs.do(authz.Admin, "POST", "/settings/ct", url.Values{"source": {"crtsh"}, "interval_min": {"120"}, "api_key": {"secret-key"}}, true)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("save: %d %s", rec.Code, rec.Body.String())
+	}
+	st := hs.srv.Core.CurrentSettings(ctx)
+	if st.CT.Source != "crtsh" || st.CT.IntervalS != 7200 || st.CT.APIKey != "secret-key" {
+		t.Fatalf("stored: %+v", st.CT)
+	}
+	body = hs.do(authz.Admin, "GET", "/settings/ct", nil, false).Body.String()
+	if strings.Contains(body, "secret-key") || !strings.Contains(body, "stored · leave empty to keep") || !strings.Contains(body, `value="120"`) {
+		t.Error("settings page shows the key or not the stored state")
+	}
+	if rec := hs.do(authz.Admin, "POST", "/settings/ct", url.Values{"source": {"crtsh"}, "interval_min": {"5"}}, true); rec.Code != http.StatusBadRequest {
+		t.Fatalf("a 5-minute interval accepted: %d", rec.Code)
+	}
+	// The navigation counts domains, and the metrics name the issuance states.
+	if _, err := hs.srv.Core.SaveDomain(ctx, core.Domain{Name: "other.example", Enabled: true, AllChannels: true}, "test"); err != nil {
+		t.Fatal(err)
+	}
+	body = hs.do(authz.Viewer, "GET", "/", nil, false).Body.String()
+	if !strings.Contains(body, `Domains <span class="cnt">1</span>`) {
+		t.Error("navigation lacks the domain count")
+	}
+	g := st.General
+	g.Metrics = true
+	_ = hs.srv.Settings.SaveGeneral(ctx, g)
+	body = hs.do("", "GET", "/metrics", nil, false).Body.String()
+	if !strings.Contains(body, `tlswatch_ct_issuances_total{state="unexpected"} 0`) || !strings.Contains(body, `tlswatch_ct_last_poll_timestamp_seconds{domain="other.example"} 0`) {
+		t.Errorf("metrics lack the CT series:\n%s", body)
 	}
 }

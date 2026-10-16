@@ -1,0 +1,18 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}{{$dm := $d.D}}
+<div class="crumbs"><a href="/domains">Domains</a><span>/</span><a href="/domains/{{$dm.ID}}">{{$dm.Name}}</a><span>/</span><span>Delete</span></div>
+<div class="page-head"><div><h1>Delete {{$dm.Name}}?</h1></div></div>
+<section class="card pad">
+  <p>This removes the watch with its issuances and findings. It cannot be undone.</p>
+  <dl class="kv">
+    <dt>Issuances</dt><dd class="mono">{{$d.Impact.Observations}}</dd>
+    <dt>Findings</dt><dd class="mono">{{$d.Impact.Findings}}{{if $d.Impact.OpenFindings}} · {{$d.Impact.OpenFindings}} open, closed without a recovery notice{{end}}</dd>
+    <dt>Alert log</dt><dd class="mono">{{$d.Impact.Alerts}} {{plural $d.Impact.Alerts "delivery" "deliveries"}}</dd>
+  </dl>
+  <p class="muted">To stop polling but keep what was recorded, disable the domain instead.</p>
+  <div class="form-foot">
+    <form method="post" action="/domains/{{$dm.ID}}/delete">{{template "csrf" $p.CSRF}}<input type="hidden" name="confirm" value="yes"><button type="submit" class="btn btn-danger">Delete permanently</button></form>
+    {{- if $dm.Enabled}}<form method="post" action="/domains/{{$dm.ID}}/disable">{{template "csrf" $p.CSRF}}<button type="submit" class="btn">Disable instead</button></form>{{end}}
+    <a href="/domains/{{$dm.ID}}" class="cancel">Cancel</a>
+  </div>
+</section>
+{{end}}

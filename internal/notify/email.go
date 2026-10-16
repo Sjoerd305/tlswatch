@@ -204,6 +204,15 @@ var emailTemplates = template.Must(template.New("email").Funcs(emailFuncs).Parse
 {{- end}}
 </table>
 {{- else}}<div class="muted" style="{{st "muted"}}">None.</div>{{end}}
+{{- if .Issued}}
+<div class="section" style="{{st "section"}}">Issued for your domains this week</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+{{- range .Issued}}
+<tr><td class="cell" style="{{st "cell"}}{{st "mono"}}width:1%;white-space:nowrap;">{{.Date}}</td><td class="cell" style="{{st "cell"}}width:1%;white-space:nowrap;"><span class="s-{{if eq .State "unexpected"}}warning{{else}}ok{{end}} b-{{if eq .State "unexpected"}}warning{{else}}ok{{end}}" style="{{pill (print (or (and (eq .State "unexpected") "warning") "ok"))}}">{{.State}}</span></td>
+<td class="cell" style="{{st "cell"}}"><span style="{{st "mono"}}">{{.Names}}</span> <span class="muted" style="{{st "muted"}}">by {{.Issuer}} · {{.Domain}}</span></td></tr>
+{{- end}}
+</table>
+{{- end}}
 {{- if .Grades}}
 <div class="section" style="{{st "section"}}">Configuration grade dropped this week</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">

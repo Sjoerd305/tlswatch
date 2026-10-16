@@ -1,0 +1,24 @@
+{{define "content"}}{{$p := .}}{{$f := .Data}}{{$d := $f.D}}
+<div class="crumbs"><a href="/domains">Domains</a><span>/</span><span>{{if $f.Edit}}Edit {{$d.Name}}{{else}}Add domain{{end}}</span></div>
+<div class="page-head"><div><h1>{{if $f.Edit}}Edit {{$d.Name}}{{else}}Add domain{{end}}</h1><span class="summary">Every certificate the public logs publish for this name is matched against what the targets serve.</span></div></div>
+<form class="card form" method="post" action="{{if $f.Edit}}/domains/{{$d.ID}}/edit{{else}}/domains/new{{end}}">
+  {{template "csrf" $p.CSRF}}
+  {{- if $f.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$f.Error}}</div></div>{{end}}
+  <div class="field"><label class="label" for="name">Domain</label><input id="name" name="name" class="input mono" value="{{$d.Name}}" required placeholder="example.nl" spellcheck="false" autofocus><span class="help">A registrable name you own. {{if $f.Edit}}Changing it starts the watch over.{{end}}</span></div>
+  <div class="field"><label class="check"><input type="checkbox" name="subdomains" value="1"{{if $d.Subdomains}} checked{{end}}> Include subdomains (portal.example.nl, *.example.nl and everything below)</label></div>
+  <div class="field"><label class="label" for="tags">Tags</label><input id="tags" name="tags" class="input mono" value="{{$f.TagsText}}" spellcheck="false" placeholder="customer:example"><span class="help">Comma separated, 40 characters each.</span></div>
+  <div class="field"><span class="label">Channels</span>
+    {{- if $f.Channels}}
+    <div class="checks">
+      <label class="check"><input type="checkbox" name="all_channels" value="1"{{if $d.AllChannels}} checked{{end}}> All channels, including new ones</label>
+      {{- range $f.Channels}}<label class="check"><input type="checkbox" name="channel" value="{{.ID}}"{{if or $d.AllChannels (hasID $d.ChannelIDs .ID)}} checked{{end}}> {{.Name}} <span class="muted">{{sevShort .MinSeverity}}+</span></label>{{end}}
+    </div>
+    {{- else}}
+    <input type="hidden" name="all_channels" value="1">
+    <span class="help">No channels yet; alerts go to every channel an admin adds under Settings › Channels.</span>
+    {{- end}}
+  </div>
+  <div class="field"><label class="label" for="notes">Notes</label><textarea id="notes" name="notes" class="input" rows="3" maxlength="2000" placeholder="Owner, registrar, who may request certificates">{{$d.Notes}}</textarea></div>
+  <div class="form-foot"><button type="submit" class="btn btn-primary">{{if $f.Edit}}Save{{else}}Add domain{{end}}</button><a href="{{if $f.Edit}}/domains/{{$d.ID}}{{else}}/domains{{end}}" class="cancel">Cancel</a></div>
+</form>
+{{end}}

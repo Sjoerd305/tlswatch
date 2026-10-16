@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/sjoerd305/tlswatch/internal/check"
@@ -63,6 +64,14 @@ func (s *Service) Digest(ctx context.Context) (notify.Message, error) {
 		if f.Kind == check.GradeChanged && gradeDropped(f.Details) {
 			d.Grades = append(d.Grades, notify.DigestGrade{Name: f.TargetName, HostPort: f.HostPort(), Details: f.Details})
 		}
+	}
+	issued, err := s.Issuances(ctx, 0, now.Add(-7*24*time.Hour).Unix())
+	if err != nil {
+		return notify.Message{}, err
+	}
+	for _, i := range issued {
+		d.Issued = append(d.Issued, notify.DigestIssuance{Domain: i.DomainName, Names: strings.Join(i.Names, ", "), Issuer: i.Issuer(), State: i.State,
+			Date: time.Unix(i.FirstSeen, 0).In(loc).Format("2006-01-02")})
 	}
 	sort.Slice(exp, func(i, j int) bool { return exp[i].NotAfter < exp[j].NotAfter })
 	for _, t := range exp {

@@ -37,8 +37,9 @@ type AlertData struct {
 	OpenedAt    time.Time
 	Loc         *time.Location
 	// Node marks a finding on a node: TargetName is the node's name and
-	// HostPort reads "node <name>".
-	Node bool
+	// HostPort reads "node <name>". Domain marks one on a domain watch.
+	Node   bool
+	Domain bool
 }
 
 // phrase describes the problem in the subject line.
@@ -76,6 +77,12 @@ func phrase(kind string, days *int) string {
 		return "DNS lookup failed"
 	case "node_offline":
 		return "offline"
+	case "unexpected_certificate":
+		return "unexpected certificate issued"
+	case "ct_source_failed":
+		return "Certificate Transparency source not answering"
+	case "certificate_issued":
+		return "certificate issued"
 	}
 	return kind
 }
@@ -107,6 +114,8 @@ func Render(a AlertData) Message {
 	}
 	if a.Node {
 		add("Node", a.TargetName, false)
+	} else if a.Domain {
+		add("Domain", a.TargetName, false)
 	} else {
 		add("Target", fmt.Sprintf("%s (%s)", a.TargetName, a.HostPort), false)
 	}
@@ -249,7 +258,13 @@ type DigestData struct {
 	Expiring []DigestExpiry
 	Failed   []DigestFailure
 	Grades   []DigestGrade // targets whose configuration grade dropped this week
+	Issued   []DigestIssuance
 	Link     string
+}
+
+// DigestIssuance is a certificate issued for a watched domain this week.
+type DigestIssuance struct {
+	Domain, Names, Issuer, State, Date string
 }
 
 // DigestGrade is a target whose configuration grade dropped.
@@ -308,6 +323,12 @@ func RenderDigest(d DigestData, tag string) Message {
 		fmt.Fprintf(&b, "\nConfiguration grade dropped this week (%d)\n", len(d.Grades))
 		for _, g := range d.Grades {
 			fmt.Fprintf(&b, "  %s (%s): %s\n", g.Name, g.HostPort, g.Details)
+		}
+	}
+	if len(d.Issued) > 0 {
+		fmt.Fprintf(&b, "\nIssued for your domains this week (%d)\n", len(d.Issued))
+		for _, i := range d.Issued {
+			fmt.Fprintf(&b, "  %s  %-10s %s by %s (%s)\n", i.Date, i.State, i.Names, i.Issuer, i.Domain)
 		}
 	}
 	if d.Link != "" {

@@ -39,10 +39,17 @@ const (
 	// NodeOffline is opened on a node, not on a target, by the node
 	// dispatcher; Evaluate never returns it.
 	NodeOffline Kind = "node_offline"
+	// UnexpectedCertificate and CTSourceFailed are opened on a domain watch
+	// by the Certificate Transparency poller; Evaluate never returns them.
+	UnexpectedCertificate Kind = "unexpected_certificate"
+	CTSourceFailed        Kind = "ct_source_failed"
+	// CertificateIssued is an event (info, recorded as resolved) on a
+	// domain watch: an expected issuance is now served by a target.
+	CertificateIssued Kind = "certificate_issued"
 )
 
 // Kinds lists every kind, for filters.
-var Kinds = []Kind{Expiring, Expired, ChainUntrusted, SelfSigned, HostnameMismatch, WeakSignature, LegacyProtocol, WeakConfiguration, CertificateChanged, IssuerChanged, GradeChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed, NodeOffline}
+var Kinds = []Kind{Expiring, Expired, ChainUntrusted, SelfSigned, HostnameMismatch, WeakSignature, LegacyProtocol, WeakConfiguration, CertificateChanged, IssuerChanged, GradeChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed, NodeOffline, UnexpectedCertificate, CTSourceFailed, CertificateIssued}
 
 // Label is the human name of a kind.
 func (k Kind) Label() string {
@@ -71,6 +78,12 @@ func (k Kind) Label() string {
 		return "DNS failed"
 	case NodeOffline:
 		return "Node offline"
+	case UnexpectedCertificate:
+		return "Unexpected certificate"
+	case CTSourceFailed:
+		return "CT source failed"
+	case CertificateIssued:
+		return "Certificate issued"
 	}
 	s := string(k)
 	return strings.ToUpper(s[:1]) + s[1:]
@@ -103,12 +116,20 @@ func (k Kind) Short() string {
 		return "self-signed"
 	case NodeOffline:
 		return "node"
+	case UnexpectedCertificate:
+		return "issued"
+	case CTSourceFailed:
+		return "ct source"
+	case CertificateIssued:
+		return "issued"
 	}
 	return string(k)
 }
 
 // AckResolves reports whether acknowledging a finding of this kind resolves it.
-func (k Kind) AckResolves() bool { return k == CertificateChanged || k == IssuerChanged }
+func (k Kind) AckResolves() bool {
+	return k == CertificateChanged || k == IssuerChanged || k == UnexpectedCertificate
+}
 
 // Network reports whether the kind is network-shaped (debounced).
 func (k Kind) Network() bool { return k == Unreachable || k == DNSFailed }

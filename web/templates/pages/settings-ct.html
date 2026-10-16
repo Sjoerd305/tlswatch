@@ -1,0 +1,33 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}{{$c := $d.C}}
+<div class="page-head"><div><h1>Settings</h1></div></div>
+<div class="grid-settings">
+  {{template "settings-nav" $p}}
+  <div class="stack">
+    <div><h2 class="h2">Certificate Transparency</h2><span class="summary">Where the <a href="/domains">domain watches</a> ask what was issued for their names. What leaves this server: the watched domain names, over HTTPS, to the source below, and nothing else.</span></div>
+    {{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
+    <form class="card form" method="post" action="/settings/ct" autocomplete="off">
+      {{template "csrf" $p.CSRF}}
+      <div class="field"><label class="label" for="source">Source</label>
+        <select id="source" name="source" class="input w-auto">{{range $d.Sources}}<option value="{{.}}"{{if eq . $c.Source}} selected{{end}}>{{ctLabel .}}</option>{{end}}</select>
+        <span class="help">Cert Spotter (api.certspotter.com) works without a key within its public rate limit and continues from where it stopped. crt.sh needs no key, has no cursor and is slower; both are free services shared with everyone, so the interval is an hour by default.</span></div>
+      <div class="field"><label class="label" for="api_key">Cert Spotter API key, optional</label>
+        <input id="api_key" name="api_key" class="input mono" type="password" value="" autocomplete="new-password" placeholder="{{if $d.HasKey}}stored · leave empty to keep{{else}}not set{{end}}">
+        <span class="help">Stored encrypted with the secret key; never shown again. Sent as a bearer token to Cert Spotter only.</span>
+        {{- if $d.HasKey}}<label class="check"><input type="checkbox" name="clear_key" value="1"> Remove the stored key</label>{{end}}</div>
+      <div class="field"><label class="label" for="interval_min">Poll interval, minutes</label><input id="interval_min" name="interval_min" class="input w96 mono" value="{{div $c.IntervalS 60}}" inputmode="numeric"><span class="help">15 to 1440. Every enabled watch is polled this often, spread with a little jitter.</span></div>
+      <div class="form-foot"><button type="submit" class="btn btn-primary">Save</button></div>
+    </form>
+    <form class="card form" method="post" action="/settings/ct/test">
+      {{template "csrf" $p.CSRF}}
+      <h3 class="h3">Test the source</h3>
+      <div class="field"><label class="label" for="tdomain">Domain</label><div class="row"><input id="tdomain" name="domain" class="input mono" value="{{$d.TestFor}}" placeholder="example.nl" spellcheck="false"><button type="submit" class="btn">Test</button></div><span class="help">Asks the source for the domain's issuances and shows the ten newest. Nothing is stored.</span></div>
+      {{- if $d.TestErr}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.TestErr}}</div></div>{{end}}
+      {{- if $d.Test}}
+      <table class="tbl cards"><thead><tr><th>Names</th><th>Issuer</th><th>Not before</th><th>Serial</th></tr></thead><tbody>
+      {{- range $d.Test}}<tr><td data-label="Names" class="mono wrap">{{join .Names ", "}}</td><td data-label="Issuer">{{if .IssuerOrg}}{{.IssuerOrg}}{{else}}{{.IssuerCN}}{{end}}</td><td data-label="Not before" class="mono">{{.NotBefore.Format "2006-01-02"}}</td><td data-label="Serial" class="mono small muted">{{.Serial}}</td></tr>{{end}}
+      </tbody></table>
+      {{- else if and $d.TestFor (not $d.TestErr)}}<div class="li muted">The source knows no unexpired certificate for {{$d.TestFor}}.</div>{{end}}
+    </form>
+  </div>
+</div>
+{{end}}

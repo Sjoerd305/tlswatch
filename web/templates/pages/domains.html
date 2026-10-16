@@ -1,0 +1,41 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}{{$edit := $p.Can "targets.edit"}}
+<div class="page-head">
+  <div><h1>Domains</h1><span class="summary">Certificates issued for these names, as the Certificate Transparency logs publish them, matched against what the targets serve.</span></div>
+  {{- if $edit}}
+  <div class="actions row"><a href="/domains/new" class="btn btn-primary">Add domain</a></div>
+  {{- end}}
+</div>
+{{- if $d.Failing}}
+<div class="notice warn" role="status">{{template "notice-icon" "warn"}}<div>{{$d.Failing}} {{plural $d.Failing "watch is" "watches are"}} not getting answers from the source. {{if $p.Can "settings.manage"}}Check <a href="/settings/ct">Settings › Certificate Transparency</a>.{{end}}</div></div>
+{{- end}}
+{{- if not $d.Domains}}
+<section class="card"><div class="empty"><span class="h3">No domains watched yet</span><span>{{if $edit}}<a href="/domains/new">Add a domain</a>{{else}}Ask an operator to add a domain{{end}} to learn of every certificate publicly issued for it, including the ones no target serves.</span></div></section>
+{{- else}}
+<form class="row filters" method="get" action="/domains" role="search">
+  <div class="filter">{{template "search-icon"}}<input class="input" type="search" name="q" value="{{$d.Query}}" placeholder="Filter: domain, tag" aria-label="Filter domains" aria-keyshortcuts="/" title="Press / to filter" data-filter="#domains">{{template "key-hint"}}</div>
+  <span class="chips" data-chip-group="#domains">{{template "chips" $d.Status}}</span>
+  {{- if $d.Tags}}<span class="divider"></span><span class="chips" data-chip-group="#domains">{{template "chips" $d.Tags}}</span>{{end}}
+  <noscript><button type="submit" class="btn btn-xs">Filter</button></noscript>
+</form>
+<div class="card clip">
+  <table class="tbl cards compact" id="domains">
+    <thead><tr><th>Status</th><th>Domain</th><th class="num">Issued, 30 days</th><th class="num">Open findings</th><th class="hide-890">Tags</th><th class="hide-1140">Last poll</th><th><span class="sr-only">Actions</span></th></tr></thead>
+    <tbody>
+    {{- range $d.Domains}}{{$dm := .D}}
+      <tr id="domain-{{$dm.ID}}" data-search="{{.Search}}" data-status="{{.StatusToken}}" data-tag="{{join $dm.Tags " "}}"{{if not $dm.Enabled}} class="muted"{{end}}{{if .Hidden}} hidden{{end}}>
+        <td data-label="Status" class="m-lead">{{$st := $dm.Status}}{{if eq $st "warning"}}<span class="st warn">Unexpected</span>{{else if eq $st "unreachable"}}<span class="st crit">Source failing</span>{{else if eq $st "pending"}}<span class="st off">Not polled yet</span>{{else if eq $st "disabled"}}<span class="st off">Disabled</span>{{else}}<span class="st ok">Healthy</span>{{end}}</td>
+        <td data-label="Domain" class="m-lead"><a href="/domains/{{$dm.ID}}" class="ink strong mono" data-row-link>{{$dm.Name}}</a>{{if $dm.Subdomains}} <span class="tag">+ subdomains</span>{{end}}</td>
+        <td data-label="Issued" class="num mono m-end">{{$dm.Recent}}</td>
+        <td data-label="Open findings" class="num mono{{if $dm.Unexpected}} warn-t{{end}}">{{if $dm.OpenFindings}}{{$dm.OpenFindings}}{{else}}—{{end}}</td>
+        <td data-label="Tags" class="hide-890">{{if $dm.Tags}}<span class="tags line">{{range $dm.Tags}}<a class="tag" href="/domains?tag={{.}}" data-chip-for="#domains" data-chip-key="tag" data-chip-value="{{.}}">{{.}}</a>{{end}}</span>{{end}}</td>
+        <td data-label="Last poll" class="mono muted hide-1140">{{if $dm.PolledOK}}{{when $p.Loc $p.Now $dm.PolledOK}}{{else if $dm.PollError}}<span class="crit-t" title="{{$dm.PollError}}">failed</span>{{else}}—{{end}}</td>
+        <td data-label="" class="m-end">{{if $edit}}{{if $dm.Enabled}}<form method="post" action="/domains/{{$dm.ID}}/poll">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-xs">Poll</button></form>{{else}}<form method="post" action="/domains/{{$dm.ID}}/enable">{{template "csrf" $p.CSRF}}<input type="hidden" name="next" value="/domains"><button type="submit" class="btn btn-xs">Enable</button></form>{{end}}{{end}}</td>
+      </tr>
+    {{- end}}
+    </tbody>
+  </table>
+  <div class="empty" data-empty-for="#domains"{{if $d.Shown}} hidden{{end}}>No domains match the filter.</div>
+</div>
+<span class="table-foot"><span data-count-for="#domains" data-count-noun="domains">{{$d.Shown}} of {{len $d.Domains}} domains</span></span>
+{{- end}}
+{{end}}

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"log/slog"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -297,6 +298,10 @@ type Finding struct {
 	LastAlertAt int64
 	// NodeID is set, and TargetID 0, for a finding on a node (node_offline).
 	NodeID int64
+	// DomainID is set, and the others 0, for a finding on a domain watch
+	// (unexpected_certificate, ct_source_failed); Fingerprint then holds the
+	// issuance id, if any.
+	DomainID int64
 
 	// Joined for display. For a node finding TargetName is the node's
 	// name and TargetHost its hostname.
@@ -317,7 +322,7 @@ func (f Finding) Acked(now time.Time) bool {
 
 // HostPort of the finding's target, or the hostname of its node.
 func (f Finding) HostPort() string {
-	if f.NodeID != 0 {
+	if f.NodeID != 0 || f.DomainID != 0 {
 		return f.TargetHost
 	}
 	return net.JoinHostPort(f.TargetHost, strconv.Itoa(f.TargetPort))
@@ -334,6 +339,10 @@ type Service struct {
 	Key *secret.Key
 	Now func() time.Time
 	Log *slog.Logger
+	// CTClient and CTBase are the HTTP client and API root the Certificate
+	// Transparency source uses; nil and "" mean the real ones.
+	CTClient *http.Client
+	CTBase   string
 
 	bundles bundleCache
 }

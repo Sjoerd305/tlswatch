@@ -15,6 +15,7 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/check"
 	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/core"
+	"github.com/sjoerd305/tlswatch/internal/ct"
 	"github.com/sjoerd305/tlswatch/internal/probe"
 	assets "github.com/sjoerd305/tlswatch/web"
 )
@@ -234,6 +235,8 @@ func (s *Server) funcs() template.FuncMap {
 			return false
 		},
 		"duration": durationLabel,
+		"div":      func(a, b int) int { return a / b },
+		"ctLabel":  ct.Label,
 		"add":      func(a, b int) int { return a + b },
 		"sub":      func(a, b int) int { return a - b },
 		"dict": func(kv ...any) map[string]any {

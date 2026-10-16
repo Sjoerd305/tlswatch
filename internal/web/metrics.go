@@ -54,6 +54,20 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 			p.sample("tlswatch_target_grade", map[string]string{"target": g.Name, "endpoint": g.Endpoint, "grade": g.Grade}, float64(check.GradeRank(g.Grade)))
 		}
 	}
+	if by, ds, err := s.Core.IssuanceStats(r.Context()); err == nil {
+		p.metric("tlswatch_ct_issuances_total", "gauge", "Certificate Transparency issuances recorded for the watched domains, by state.")
+		for _, state := range core.IssuanceStates {
+			p.sample("tlswatch_ct_issuances_total", map[string]string{"state": state}, float64(by[state]))
+		}
+		if len(ds) > 0 {
+			p.metric("tlswatch_ct_last_poll_timestamp_seconds", "gauge", "When each enabled domain watch was last polled successfully, as a Unix time (0: never).")
+			for _, d := range ds {
+				if d.Enabled {
+					p.sample("tlswatch_ct_last_poll_timestamp_seconds", map[string]string{"domain": d.Name}, float64(d.PolledOK))
+				}
+			}
+		}
+	}
 	p.metric("tlswatch_checks_total", "counter", "Checks stored since the process started.")
 	p.sample("tlswatch_checks_total", nil, float64(st.Checks))
 	p.metric("tlswatch_scheduler_backlog", "gauge", "Checks due and not yet started.")

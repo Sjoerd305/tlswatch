@@ -648,7 +648,9 @@ func (s *Scheduler) CheckAll(ctx context.Context) (int, error) {
 	return len(sched), nil
 }
 
-// housekeeping runs reminders, retention and the digest.
+// housekeeping runs reminders, retention, the digest and the Certificate
+// Transparency polls (each watch on its own interval; PollDomains decides
+// which are due).
 func (s *Scheduler) housekeeping(ctx context.Context) {
 	remind := time.NewTicker(5 * time.Minute)
 	prune := time.NewTicker(time.Hour)
@@ -673,6 +675,11 @@ func (s *Scheduler) housekeeping(ctx context.Context) {
 			s.housework(func() { s.prune(ctx) })
 		case <-minute.C:
 			s.housework(func() { s.digest(ctx) })
+			s.housework(func() {
+				if err := s.Core.PollDomains(ctx); err != nil && ctx.Err() == nil {
+					s.Log.Error("ct polls", "err", err)
+				}
+			})
 		}
 	}
 }
