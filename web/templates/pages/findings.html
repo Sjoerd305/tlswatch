@@ -2,17 +2,17 @@
 <div class="page-head">
   <div><h1>Findings</h1><span class="summary">{{$d.OpenCount}} open{{if $d.AckCount}} · {{$d.AckCount}} acknowledged{{end}} · {{if $d.ResCapped}}latest {{$d.ResCount}}{{else}}{{$d.ResCount}}{{end}} resolved in the last {{$d.Retention}} days</span></div>
 </div>
-<form class="row" method="get" action="/findings" role="search" data-keep-filter="state sev kind target sel group">
+<form class="row filters" method="get" action="/findings" role="search" data-keep-filter="state sev kind target sel group">
   {{- if $d.Resolved}}<input type="hidden" name="state" value="resolved">{{end}}
   {{- with $d.Target}}<input type="hidden" name="target" value="{{.ID}}">{{end}}
   {{- if $d.Group}}<input type="hidden" name="group" value="kind">{{end}}
   <div class="filter">{{template "search-icon"}}<input class="input" type="search" name="q" value="{{$d.Query}}" placeholder="Filter: target, host, finding" aria-label="Filter findings" aria-keyshortcuts="/" title="Press / to filter" data-filter="#findings">{{template "key-hint"}}</div>
   {{- with $d.Target}}<a class="chip on" href="{{$d.ClearTarget}}" title="Show findings of every target">target: {{.Name}} <span class="x" aria-hidden="true">×</span><span class="sr-only">, remove</span></a>{{end}}
   <noscript><button type="submit" class="btn btn-xs">Filter</button></noscript>
-  <span class="row gap-sm">{{template "chips" $d.State}}</span>
+  <span class="chips">{{template "chips" $d.State}}</span>
   {{- if or $d.Sev $d.Kinds}}<span class="divider"></span>{{end}}
-  <span class="row gap-sm">{{template "sevchips" $d.Sev}}</span>
-  <span class="row gap-sm">{{template "chips" $d.Kinds}}</span>
+  <span class="chips">{{template "sevchips" $d.Sev}}</span>
+  <span class="chips">{{template "chips" $d.Kinds}}</span>
   {{- if $d.Items}}<span class="spacer small"><a href="{{$d.GroupHref}}">{{if $d.Group}}ungroup{{else}}group by kind{{end}}</a></span>{{end}}
 </form>
 <div class="grid-main-side">

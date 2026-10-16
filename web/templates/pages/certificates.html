@@ -6,18 +6,18 @@
 {{- if not $d.Items}}
 <section class="card"><div class="empty center"><span class="h3">No certificates seen yet</span><span>Certificates appear here after the first check of a target.</span></div></section>
 {{- else}}
-<form class="row" method="get" action="/certificates" role="search">
+<form class="row filters" method="get" action="/certificates" role="search">
   <div class="filter w300">{{template "search-icon"}}<input class="input" type="search" name="q" value="{{$d.Query}}" placeholder="Filter: subject, SAN, fingerprint, serial" aria-label="Filter certificates" aria-keyshortcuts="/" title="Press / to filter" data-filter="#certs">{{template "key-hint"}}</div>
-  <span class="row gap-sm" data-chip-group="#certs">{{template "chips" $d.Windows}}</span>
+  <span class="chips" data-chip-group="#certs">{{template "chips" $d.Windows}}</span>
   <span class="divider"></span>
   {{- /* Up to eight issuers are chips; more become a select, as the design says. */}}
   {{- if gt (len $d.Issuers) 9}}
   <select class="input w-auto" name="issuer" aria-label="Issuer" data-chip-select="#certs" data-chip-key="issuer">{{range $d.Issuers}}<option value="{{.Value}}"{{if .On}} selected{{end}}>{{if .Value}}{{.Label}} ({{.Count}}){{else}}All issuers{{end}}</option>{{end}}</select>
   {{- else}}
-  <span class="row gap-sm" data-chip-group="#certs">{{template "chips" $d.Issuers}}</span>
+  <span class="chips" data-chip-group="#certs">{{template "chips" $d.Issuers}}</span>
   {{- end}}
   <span class="divider"></span>
-  <span class="row gap-sm" data-chip-group="#certs">{{template "chips" $d.Keys}}</span>
+  <span class="chips" data-chip-group="#certs">{{template "chips" $d.Keys}}</span>
   <noscript><button type="submit" class="btn btn-xs">Filter</button></noscript>
 </form>
 <div class="card clip">

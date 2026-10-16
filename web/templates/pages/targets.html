@@ -11,11 +11,11 @@
 {{- if not $d.Targets}}
 <section class="card"><div class="empty center"><span class="h3">No targets yet</span><span>{{if $p.Can "targets.edit"}}<a href="/targets/new">Add one</a>{{else}}Ask an operator to add one{{end}}, or run <span class="mono">tlswatch check host</span> to try an endpoint.</span></div></section>
 {{- else}}
-<form class="row" method="get" action="/targets" role="search">
+<form class="row filters" method="get" action="/targets" role="search">
   <div class="filter">{{template "search-icon"}}<input class="input" type="search" name="q" value="{{$d.Query}}" placeholder="Filter: name, host, tag, issuer" aria-label="Filter targets" aria-keyshortcuts="/" title="Press / to filter" data-filter="#targets">{{template "key-hint"}}</div>
-  <span class="row gap-sm" data-chip-group="#targets">{{template "chips" $d.Status}}</span>
-  {{- if $d.Tags}}<span class="divider"></span><span class="row gap-sm" data-chip-group="#targets">{{template "chips" $d.Tags}}</span>{{end}}
-  {{- if $d.Nodes}}<span class="divider"></span><span class="row gap-sm" data-chip-group="#targets">{{template "chips" $d.Nodes}}</span>{{end}}
+  <span class="chips" data-chip-group="#targets">{{template "chips" $d.Status}}</span>
+  {{- if $d.Tags}}<span class="divider"></span><span class="chips" data-chip-group="#targets">{{template "chips" $d.Tags}}</span>{{end}}
+  {{- if $d.Nodes}}<span class="divider"></span><span class="chips" data-chip-group="#targets">{{template "chips" $d.Nodes}}</span>{{end}}
   <noscript><button type="submit" class="btn btn-xs">Filter</button></noscript>
   <span class="spacer small"><a href="{{$d.GroupHref}}">{{if $d.Group}}ungroup{{else}}group by tag{{end}}</a></span>
 </form>

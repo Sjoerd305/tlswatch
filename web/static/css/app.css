@@ -52,6 +52,8 @@
  * Filters    .filter (search input with icon; 260px) · .filter.w300
  *            .filter svg · .filter kbd.key (the "/" hint)
  *            select.input.w-auto (a chip group with many values)
+ *            form.row.filters (filter bar) + span.chips (a chip group whose
+ *            chips flow in the bar's line)
  * Notices    .notice + .ok/.warn/.crit/.info (+ svg icon slot)
  *            .empty (empty state block) · .healthy (good-news line)
  * Timeline   .timeline · .timeline .ev (time + text) · .timeline .when
@@ -460,6 +462,13 @@ a.tag:hover{text-decoration:none;color:var(--ink)}
 .filter kbd.key{position:absolute;right:8px;top:7px;height:18px;min-width:18px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:4px;background:var(--surface-2);color:var(--muted);font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11px;pointer-events:none}
 .filter:has(.input:focus) kbd.key,.filter:has(.input:not(:placeholder-shown)) kbd.key{display:none}
 @media (hover:none){.filter kbd.key{display:none}.filter .input{padding-right:10px}}
+/* A filter bar: the chips of every group flow on one wrapping line, so a long
+   group fills the space left on a line instead of dropping whole to the next. */
+.filters{gap:4px}
+.filters>.filter{margin-right:4px}
+.filters>.divider{margin:0 6px}
+.filters>.spacer{padding-left:8px}
+.chips{display:contents}
 .row>select.input.w-auto{width:auto;height:28px;padding:0 24px 0 10px;font-size:12px;border-radius:14px}
 
 /* ---------- Notices and empty states ---------- */
