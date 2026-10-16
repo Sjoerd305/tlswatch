@@ -41,7 +41,9 @@ esac
 case "$(uname -m)" in
 x86_64 | amd64) ARCH=amd64 ;;
 aarch64 | arm64) ARCH=arm64 ;;
-*) die "tlswatch nodes run on amd64 and arm64, not on $(uname -m)" ;;
+armv7l) ARCH=arm ;;
+armv6l) die "tlswatch nodes need ARMv7 or newer; this machine is $(uname -m)" ;;
+*) die "tlswatch nodes run on amd64, arm64 and armv7, not on $(uname -m)" ;;
 esac
 if command -v sha256sum >/dev/null 2>&1; then
 	SHA="sha256sum"

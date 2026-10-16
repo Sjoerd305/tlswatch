@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1
-FROM node:22-alpine AS frontend
+# Both build stages run on the builder's own platform and cross-compile for
+# the target, so a multi-platform build does not run Go under emulation.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS frontend
 WORKDIR /src
 COPY package.json package-lock.json tsconfig.json ./
 COPY scripts ./scripts
@@ -7,11 +9,14 @@ RUN npm ci --no-audit --no-fund && npm run check-deps
 COPY web ./web
 RUN npx tsc -p tsconfig.json
 
-FROM golang:1.27-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 # The release workflow passes the tag; a local `docker compose up --build`
 # passes nothing and gets the version from the checkout (scripts/version.sh),
 # which is why .git is in the build context.
 ARG VERSION=
+# Docker fills these in for the platform being built; TARGETVARIANT is "v7"
+# for linux/arm/v7 and empty elsewhere.
+ARG TARGETOS TARGETARCH TARGETVARIANT
 RUN apk add --no-cache git
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -20,7 +25,8 @@ COPY . .
 RUN if [ -n "$VERSION" ]; then echo "$VERSION"; else sh scripts/version.sh; fi > /version \
  && echo "building tlswatch $(cat /version)"
 COPY --from=frontend /src/web/static/js ./web/static/js
-RUN CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=$(cat /version)" -o /tlswatch ./cmd/tlswatch \
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH GOARM=${TARGETVARIANT#v} \
+    go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=$(cat /version)" -o /tlswatch ./cmd/tlswatch \
  && mkdir -p /data && chown 65532:65532 /data
 
 FROM scratch

@@ -19,8 +19,10 @@ import (
 // DefaultReleases is where the release assets of other platforms live.
 const DefaultReleases = "https://github.com/sjoerd305/tlswatch/releases/download"
 
-// Platforms are the platforms releases are built for.
-var Platforms = []string{"linux/amd64", "linux/arm64", "darwin/arm64"}
+// Platforms are the platforms releases are built for. "linux/arm" is the
+// 32-bit ARMv7 build: a node asks for runtime.GOARCH, which has no variant
+// in it, so the release asset is named linux-arm too.
+var Platforms = []string{"linux/amd64", "linux/arm64", "linux/arm", "darwin/amd64", "darwin/arm64"}
 
 // binaryCache remembers the SHA-256 of the server's own executable and the
 // checksums of its release.
