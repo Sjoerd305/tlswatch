@@ -767,6 +767,57 @@ func TestPruneKeepsCurrentState(t *testing.T) {
 	}
 }
 
+// The audit log outlives the history retention: at least a year.
+func TestPruneKeepsAuditLonger(t *testing.T) {
+	e := newEnv(t)
+	e.svc.Audit(e.ctx, "admin@example.nl", "settings.defaults", "defaults", "retention_days=7")
+	st := e.svc.CurrentSettings(e.ctx)
+	st.Defaults.RetentionDays = 7
+	if err := e.svc.Settings.SaveDefaults(e.ctx, st.Defaults); err != nil {
+		t.Fatal(err)
+	}
+	e.clock.Add(days(100))
+	if err := e.svc.Prune(e.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := e.svc.AuditLog(e.ctx, "", 0); len(n) != 1 {
+		t.Fatalf("audit pruned with the history: %d entries", len(n))
+	}
+	e.clock.Add(days(300))
+	if err := e.svc.Prune(e.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := e.svc.AuditLog(e.ctx, "", 0); len(n) != 0 {
+		t.Fatalf("audit kept past a year: %d entries", len(n))
+	}
+}
+
+// An acknowledgement of a finding that a check resolved meanwhile does not
+// reopen it.
+func TestAcknowledgeResolvedRace(t *testing.T) {
+	e := newEnv(t)
+	ca := newCA(t, "Sectigo")
+	now := e.clock.Now()
+	tg := e.target(nil)
+	c := ca.leaf(t, now.Add(-days(300)), now.Add(days(10)), "portal.example.nl")
+	e.apply(tg.ID, result(served("192.0.2.1", c, ca.cert)))
+	open, _ := e.svc.Findings(e.ctx, FindingFilter{TargetID: tg.ID})
+	if len(open) != 1 {
+		t.Fatalf("open findings: %d", len(open))
+	}
+	// Resolved behind the back of the acknowledgement.
+	if _, err := e.svc.DB.W.Exec("UPDATE findings SET resolved_at = ? WHERE id = ?", e.clock.Now().Unix(), open[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.Acknowledge(e.ctx, open[0].ID, "op@example.nl", time.Time{}, ""); err == nil {
+		t.Fatal("acknowledged a resolved finding")
+	}
+	f, _ := e.svc.Finding(e.ctx, open[0].ID)
+	if f.Open() {
+		t.Fatal("the acknowledgement reopened the finding")
+	}
+}
+
 // The live-page stamp moves with every change the pages show.
 func TestStampChanges(t *testing.T) {
 	e := newEnv(t)

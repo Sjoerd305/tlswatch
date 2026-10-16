@@ -40,6 +40,8 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		d.uninstall(w, r)
 	case r.Method == http.MethodGet && len(parts) == 3 && parts[0] == "download":
 		d.download(w, r, parts[1], parts[2])
+	case r.Method == http.MethodGet && rest == "release/sums":
+		d.releaseSums(w, r)
 	case r.Method == http.MethodPost && rest == "enrol":
 		d.enrol(w, r)
 	case r.Method == http.MethodGet && rest == "jobs":
@@ -92,10 +94,9 @@ func readJSON(w http.ResponseWriter, r *http.Request, v any) error {
 // request: every call updates last seen, the version and the address.
 func (d *Dispatcher) withNode(w http.ResponseWriter, r *http.Request, h func(http.ResponseWriter, *http.Request, core.Node)) {
 	ip := d.clientIP(r)
-	if d.auth.blocked(ip, d.now()) {
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many failed attempts from this address; wait 15 minutes"})
-		return
-	}
+	// The credential is checked first: the per-address block applies to
+	// requests without a valid one, so nobody sharing an address with a
+	// node (a proxy, a NAT) can take the node offline by failing at it.
 	cred, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	n, err := d.Core.NodeByCredential(r.Context(), strings.TrimSpace(cred))
 	if !ok || err != nil {
@@ -104,12 +105,11 @@ func (d *Dispatcher) withNode(w http.ResponseWriter, r *http.Request, h func(htt
 			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "the server cannot check the credential now"})
 			return
 		}
-		d.auth.fail(ip, d.now())
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "credential not accepted; enrol the node again with a new install command"})
+		d.failed(w, ip, http.StatusUnauthorized, "credential not accepted; enrol the node again with a new install command")
 		return
 	}
 	now := d.now()
-	version := r.Header.Get(HeaderVersion)
+	version := core.Clip(r.Header.Get(HeaderVersion), core.ShortMax)
 	if version == "" {
 		version = n.Version
 	}
@@ -132,7 +132,7 @@ func (d *Dispatcher) poll(w http.ResponseWriter, r *http.Request, n core.Node) {
 	// say so and gets plain bodies.
 	w.Header().Set("Accept-Encoding", "gzip")
 	resp := PollResponse{ServerVersion: d.Version}
-	if d.wantUpdate(r.Context(), n, r.Header.Get(HeaderUpdateError)) {
+	if d.wantUpdate(r.Context(), n, core.Clip(r.Header.Get(HeaderUpdateError), core.TextMax)) {
 		resp.Jobs = []Job{{ID: newID(), Kind: KindUpdate, Update: &UpdateJob{Version: d.Version}}}
 		writeJSON(w, http.StatusOK, resp)
 		return
@@ -179,11 +179,28 @@ func (d *Dispatcher) result(w http.ResponseWriter, r *http.Request, n core.Node,
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// factsInterval is the least time between two facts reports of one node
+// the server stores: every changed hostname or address set is audited, and
+// a node must not be able to fill the audit log by reporting in a loop.
+const factsInterval = 5 * time.Minute
+
 // facts stores the system facts a node reports once an hour.
 func (d *Dispatcher) facts(w http.ResponseWriter, r *http.Request, n core.Node) {
 	var f Facts
 	if err := readJSON(w, r, &f); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the facts could not be read"})
+		return
+	}
+	now := d.now()
+	d.mu.Lock()
+	ns := d.state(n.ID)
+	tooSoon := !ns.factsAt.IsZero() && now.Sub(ns.factsAt) < factsInterval
+	if !tooSoon {
+		ns.factsAt = now
+	}
+	d.mu.Unlock()
+	if tooSoon {
+		w.WriteHeader(http.StatusNoContent) // taken, not stored
 		return
 	}
 	if err := d.Core.SaveNodeFacts(r.Context(), n, d.stamp(f)); err != nil {
@@ -207,24 +224,19 @@ func (d *Dispatcher) stamp(f Facts) core.NodeFacts {
 // enrol exchanges a one-time install token for the node's credential.
 func (d *Dispatcher) enrol(w http.ResponseWriter, r *http.Request) {
 	ip := d.clientIP(r)
-	if d.auth.blocked(ip, d.now()) {
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many failed attempts from this address; wait 15 minutes"})
-		return
-	}
 	var req EnrolRequest
 	if err := readJSON(w, r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the enrolment could not be read"})
 		return
 	}
-	version := r.Header.Get(HeaderVersion)
+	version := core.Clip(r.Header.Get(HeaderVersion), core.ShortMax)
 	if version == "" {
 		version = req.Facts.Version
 	}
 	n, cred, err := d.Core.EnrolNode(r.Context(), req.Token, core.Enrolment{Facts: d.stamp(req.Facts), Pool: req.Pool, Version: version, Protocol: Protocol, Address: ip})
 	switch {
 	case errors.Is(err, core.ErrBadToken):
-		d.auth.fail(ip, d.now())
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "the install token is unknown, spent or expired; create a new one under Settings › Nodes"})
+		d.failed(w, ip, http.StatusForbidden, "the install token is unknown, spent or expired; create a new one under Settings › Nodes")
 		return
 	case err != nil:
 		d.Log.Error("node enrol", "err", err)
@@ -262,8 +274,21 @@ func (d *Dispatcher) uninstall(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, UninstallScript(base))
 }
 
+// failed records a request without a valid credential or token from ip and
+// answers it: 429 once the address is blocked, status otherwise. A request
+// with a valid credential never sees the block.
+func (d *Dispatcher) failed(w http.ResponseWriter, ip string, status int, msg string) {
+	now := d.now()
+	d.auth.fail(ip, now)
+	if d.auth.blocked(ip, now) {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many failed attempts from this address; wait 15 minutes"})
+		return
+	}
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
 // limiter counts failed attempts per address: 20 in 15 minutes block it,
-// as for sign-in.
+// as for sign-in. It slows guessing; it never blocks a valid credential.
 type limiter struct {
 	mu    sync.Mutex
 	fails map[string][]time.Time

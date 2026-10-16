@@ -38,6 +38,8 @@ func TestInstallScripts(t *testing.T) {
 printf 'cred-%s\n' "$6" >"$8/credential"
 echo "Enrolled with $4"`)
 	e.disp.Executable = func() (string, error) { return fake, nil }
+	fakeBytes, _ := os.ReadFile(fake)
+	e.release(t, true, map[string][]byte{e.ownAsset(): fakeBytes})
 	log := filepath.Join(tmp, "calls.log")
 	stub(t, bin, "id", `case "$1" in -u) echo 0 ;; -gn) echo tlswatch-node ;; *) [ -e "`+tmp+`/user" ] ;; esac`)
 	stub(t, bin, "uname", `case "$1" in -s) echo Linux ;; -m) echo x86_64 ;; esac`)

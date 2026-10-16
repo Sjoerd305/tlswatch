@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -115,8 +116,21 @@ func (hs *harness) do(role authz.Role, method, path string, form url.Values, wit
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 	if signedIn {
+		// Under both names: a test that sets an https public URL moves
+		// the cookie to its __Host- name.
 		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: s.cookie})
+		req.AddCookie(&http.Cookie{Name: cookieName(sessionCookie, true), Value: s.cookie})
 	}
+	rec := httptest.NewRecorder()
+	hs.h.ServeHTTP(rec, req)
+	return rec
+}
+
+// metrics reads /metrics with the token Settings › General made.
+func (hs *harness) metrics() *httptest.ResponseRecorder {
+	st, _ := hs.srv.Settings.Get(context.Background())
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	req.Header.Set("Authorization", "Bearer "+st.General.MetricsToken)
 	rec := httptest.NewRecorder()
 	hs.h.ServeHTTP(rec, req)
 	return rec
@@ -362,7 +376,7 @@ func TestRequestLogging(t *testing.T) {
 }
 
 // /metrics is off until enabled under Settings › General, then serves the
-// Prometheus text format without sign-in.
+// Prometheus text format to the bearer token made when it was enabled.
 func TestMetrics(t *testing.T) {
 	hs := newHarness(t)
 	if rec := hs.do("", "GET", "/metrics", nil, false); rec.Code != http.StatusNotFound {
@@ -374,7 +388,21 @@ func TestMetrics(t *testing.T) {
 	if err := hs.srv.Settings.SaveGeneral(context.Background(), g); err != nil {
 		t.Fatal(err)
 	}
-	rec := hs.do("", "GET", "/metrics", nil, false)
+	if rec := hs.do("", "GET", "/metrics", nil, false); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("metrics without the token: %d", rec.Code)
+	}
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	req.Header.Set("Authorization", "Bearer "+strings.Repeat("0", 64))
+	wrong := httptest.NewRecorder()
+	hs.h.ServeHTTP(wrong, req)
+	if wrong.Code != http.StatusUnauthorized {
+		t.Fatalf("metrics with a wrong token: %d", wrong.Code)
+	}
+	st, _ = hs.srv.Settings.Get(context.Background())
+	if len(st.General.MetricsToken) < 32 {
+		t.Fatalf("no token made: %q", st.General.MetricsToken)
+	}
+	rec := hs.metrics()
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/plain; version=0.0.4") {
 		t.Fatalf("%d %s", rec.Code, rec.Header().Get("Content-Type"))
@@ -968,7 +996,7 @@ func TestGradeOnTargetsListAndPage(t *testing.T) {
 	if _, err := hs.db.W.Exec(`UPDATE targets SET enabled = 1 WHERE id = 1`); err != nil {
 		t.Fatal(err)
 	}
-	body = hs.do("", "GET", "/metrics", nil, false).Body.String()
+	body = hs.metrics().Body.String()
 	for _, want := range []string{`tlswatch_targets_by_grade{grade="C"} 1`, `tlswatch_targets_by_grade{grade="A"} 0`, `grade="C",target=`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("metrics lack %q", want)
@@ -1107,8 +1135,85 @@ func TestDomainPagesAndPermissions(t *testing.T) {
 	g := st.General
 	g.Metrics = true
 	_ = hs.srv.Settings.SaveGeneral(ctx, g)
-	body = hs.do("", "GET", "/metrics", nil, false).Body.String()
+	body = hs.metrics().Body.String()
 	if !strings.Contains(body, `tlswatch_ct_issuances_total{state="unexpected"} 0`) || !strings.Contains(body, `tlswatch_ct_last_poll_timestamp_seconds{domain="other.example"} 0`) {
 		t.Errorf("metrics lack the CT series:\n%s", body)
+	}
+}
+
+// safeNext keeps every redirect on this site, also when a control
+// character or backslash would make the browser read it as another host.
+func TestSafeNext(t *testing.T) {
+	cases := map[string]string{
+		"":                    "/",
+		"/targets?x=1":        "/targets?x=1",
+		"/targets#f":          "/targets",
+		"//evil.com":          "/",
+		"/\\evil.com":         "/",
+		"/\t/evil.com":        "/",
+		"/\n/evil.com":        "/",
+		"/%09/evil.com":       "/",
+		"http://evil.com/":    "/",
+		"javascript:alert(1)": "/",
+		"/ok/%2F%2Fevil.com":  "/ok/%2F%2Fevil.com",
+	}
+	for in, want := range cases {
+		if got := safeNext(in); got != want {
+			t.Errorf("safeNext(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// The value arrives form-decoded, which is how a tab gets in.
+	hs := newHarness(t)
+	rec := hs.do(authz.Admin, "GET", "/login?next=/%09/evil.com", nil, false)
+	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || loc != "/" {
+		t.Fatalf("signed-in /login?next=tab: %d %q", rec.Code, loc)
+	}
+}
+
+// A browser's cross-site request is refused before its form is read.
+func TestCrossSiteRefused(t *testing.T) {
+	hs := newHarness(t)
+	s := hs.sess[authz.Admin]
+	form := url.Values{"csrf": {s.csrf}}
+	req := httptest.NewRequest("POST", "/targets/check-all", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: s.cookie})
+	rec := httptest.NewRecorder()
+	hs.h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("cross-site post: %d", rec.Code)
+	}
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Body = io.NopCloser(strings.NewReader(form.Encode()))
+	rec = httptest.NewRecorder()
+	hs.h.ServeHTTP(rec, req)
+	if rec.Code == http.StatusForbidden {
+		t.Fatalf("same-origin post: %d", rec.Code)
+	}
+}
+
+// Over HTTPS the session and CSRF cookies carry the __Host- prefix and the
+// directory of the static files is not listed.
+func TestHostCookiesAndStaticListing(t *testing.T) {
+	hs := newHarness(t)
+	if err := hs.srv.Settings.SaveGeneral(context.Background(), config.General{BaseURL: "https://tlswatch.example.nl"}); err != nil {
+		t.Fatal(err)
+	}
+	rec := hs.do("", "GET", "/login", nil, false)
+	var names []string
+	for _, c := range rec.Result().Cookies() {
+		names = append(names, c.Name)
+		if !c.Secure {
+			t.Errorf("cookie %s not Secure", c.Name)
+		}
+	}
+	if !slices.Contains(names, "__Host-"+csrfCookie) {
+		t.Fatalf("cookies: %v", names)
+	}
+	for _, p := range []string{"/static/", "/static/js/", "/static/test/", "/static/test/js/"} {
+		if rec := hs.do("", "GET", p, nil, false); rec.Code != http.StatusNotFound {
+			t.Errorf("%s: %d, want 404", p, rec.Code)
+		}
 	}
 }

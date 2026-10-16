@@ -5,15 +5,16 @@
   <div class="stack">
     <div><h2 class="h2">Certificate Transparency</h2><span class="summary">Where the <a href="/domains">domain watches</a> ask what was issued for their names. What leaves this server: the watched domain names, over HTTPS, to the source below, and nothing else.</span></div>
     {{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
+    {{- if $c.KeyUnreadable}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>The stored API key was encrypted under another secret key and cannot be read; Cert Spotter is polled without it. Enter the key again, or remove it.</div></div>{{end}}
     <form class="card form" method="post" action="/settings/ct" autocomplete="off">
       {{template "csrf" $p.CSRF}}
       <div class="field"><label class="label" for="source">Source</label>
         <select id="source" name="source" class="input w-auto">{{range $d.Sources}}<option value="{{.}}"{{if eq . $c.Source}} selected{{end}}>{{ctLabel .}}</option>{{end}}</select>
         <span class="help">Cert Spotter (api.certspotter.com) works without a key within its public rate limit and continues from where it stopped. crt.sh needs no key, has no cursor and is slower; both are free services shared with everyone, so the interval is an hour by default.</span></div>
       <div class="field"><label class="label" for="api_key">Cert Spotter API key, optional</label>
-        <input id="api_key" name="api_key" class="input mono" type="password" value="" autocomplete="new-password" placeholder="{{if $d.HasKey}}stored · leave empty to keep{{else}}not set{{end}}">
+        <input id="api_key" name="api_key" class="input mono" type="password" value="" autocomplete="new-password" placeholder="{{if $d.HasKey}}stored · leave empty to keep{{else if $c.KeyUnreadable}}stored but unreadable · enter it again{{else}}not set{{end}}">
         <span class="help">Stored encrypted with the secret key; never shown again. Sent as a bearer token to Cert Spotter only.</span>
-        {{- if $d.HasKey}}<label class="check"><input type="checkbox" name="clear_key" value="1"> Remove the stored key</label>{{end}}</div>
+        {{- if or $d.HasKey $c.KeyUnreadable}}<label class="check"><input type="checkbox" name="clear_key" value="1"> Remove the stored key</label>{{end}}</div>
       <div class="field"><label class="label" for="interval_min">Poll interval, minutes</label><input id="interval_min" name="interval_min" class="input w96 mono" value="{{div $c.IntervalS 60}}" inputmode="numeric"><span class="help">15 to 1440. Every enabled watch is polled this often, spread with a little jitter.</span></div>
       <div class="form-foot"><button type="submit" class="btn btn-primary">Save</button></div>
     </form>

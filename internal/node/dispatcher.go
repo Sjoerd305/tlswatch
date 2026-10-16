@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
 	"log/slog"
@@ -35,6 +36,9 @@ type Dispatcher struct {
 	Executable func() (string, error)
 	// Releases is the base URL of the release assets for other platforms.
 	Releases string
+	// ReleaseKey verifies the release's SHA256SUMS; nil means
+	// ReleasePublicKey. Tests sign with a key of their own.
+	ReleaseKey ed25519.PublicKey
 	// HTTP fetches the release checksums; nil uses a default client.
 	HTTP *http.Client
 
@@ -62,6 +66,8 @@ type nodeState struct {
 	online   bool // as last judged; changes bump the epoch
 	judged   bool
 	heard    bool // polled within the offline window, in this process
+
+	factsAt time.Time // when the node's facts were last stored
 
 	completed, failed int64
 }
@@ -312,17 +318,26 @@ func (d *Dispatcher) lease(id int64, pool int) []Job {
 // or foreign job id is discarded.
 func (d *Dispatcher) complete(nodeID int64, id string, res Result) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	j, ok := d.jobs[id]
 	if !ok || j.node != nodeID || j.leasedAt.IsZero() {
+		d.mu.Unlock()
 		return
 	}
+	req, leasedAt := j.req, j.leasedAt
+	d.mu.Unlock()
+	// The certificates are parsed outside the lock: a result is up to a
+	// few megabytes of DER, and every poll waits on the lock.
 	o := outcome{err: core.ErrNodeNoResult}
 	switch {
 	case res.Error != "":
-		o.err = &nodeError{msg: res.Error}
+		o.err = &nodeError{msg: core.Clip(res.Error, core.TextMax)}
 	case res.Probe != nil:
-		o.res, o.err = res.Probe.Decode(j.req, j.leasedAt)
+		o.res, o.err = res.Probe.Decode(req, leasedAt)
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if cur, ok := d.jobs[id]; !ok || cur != j || j.leasedAt != leasedAt {
+		return // expired or re-leased meanwhile
 	}
 	if o.err == nil {
 		d.state(nodeID).completed++

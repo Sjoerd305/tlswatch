@@ -27,6 +27,14 @@ func httpPost(ctx context.Context, client *http.Client, rawURL, contentType stri
 	if client == nil {
 		client = &http.Client{Timeout: httpTimeout}
 	}
+	// A webhook endpoint does not redirect; one that does would have the
+	// alert posted wherever it points. The copy leaves the caller's client
+	// as it is.
+	c := *client
+	c.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return errors.New("the endpoint redirected; alerts are posted only to the configured URL")
+	}
+	client = &c
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, strings.NewReader(string(body)))
 	if err != nil {
 		return 0, nil, err

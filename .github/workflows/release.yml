@@ -2,9 +2,9 @@ name: release
 on:
   push:
     tags: ["v*"]
+# Each job gets the one scope it needs, below; nothing here by default.
 permissions:
-  contents: write
-  packages: write
+  contents: read
 jobs:
   ci:
     # The same checks as on every push to main; nothing is published
@@ -15,9 +15,11 @@ jobs:
   binaries:
     needs: ci
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # to upload the release assets
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: Build
@@ -25,14 +27,25 @@ jobs:
           mkdir dist
           # linux/arm is the 32-bit ARMv7 build; the asset is named after
           # GOARCH alone because that is what a node asks the server for.
+          # The flags match the Dockerfile's, so an image built from the
+          # same tag holds the same bytes and can serve them to its nodes.
           for p in linux/amd64 linux/arm64 linux/arm darwin/amd64 darwin/arm64; do
             os=${p%/*}; arch=${p#*/}
-            CGO_ENABLED=0 GOOS=$os GOARCH=$arch GOARM=7 go build -trimpath \
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch GOARM=7 go build -trimpath -buildvcs=false \
               -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
               -o dist/tlswatch-${GITHUB_REF_NAME}-${os}-${arch} ./cmd/tlswatch
           done
           cd dist && sha256sum tlswatch-* > SHA256SUMS
-      - uses: softprops/action-gh-release@v2
+      - name: Sign the checksums
+        # Nodes replace their binary only with one listed in a SHA256SUMS
+        # signed by the release key (internal/node/release.go has its
+        # public half). The private half is the RELEASE_SIGNING_KEY secret.
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          go run ./scripts/releasesign -sign dist/SHA256SUMS > dist/SHA256SUMS.sig
+          go run ./scripts/releasesign -verify dist/SHA256SUMS dist/SHA256SUMS.sig
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: dist/*
           generate_release_notes: true
@@ -42,16 +55,19 @@ jobs:
   image:
     needs: ci
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # to push the image
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           platforms: linux/amd64,linux/arm64,linux/arm/v7

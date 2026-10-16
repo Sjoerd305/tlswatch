@@ -8,9 +8,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math"
 	"math/rand/v2"
+	"runtime/debug"
 	"strconv"
 	"sync"
 	"time"
@@ -534,7 +536,20 @@ func (s *Scheduler) setLocked(id, next, stored int64) {
 
 // check probes and stores one target; legacy tests TLS 1.0 and 1.1 even
 // when the daily test is not due.
-func (s *Scheduler) check(ctx context.Context, id int64, legacy bool) (core.Target, error) {
+// check runs one check and never panics: a fault in the probe, the
+// evaluation or the store becomes an error for this target, logged with
+// its stack, and the process goes on.
+func (s *Scheduler) check(ctx context.Context, id int64, legacy bool) (t core.Target, err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			s.Log.Error("check panicked", "target_id", id, "err", v, "stack", string(debug.Stack()))
+			err = fmt.Errorf("check failed: %v", v)
+		}
+	}()
+	return s.checkTarget(ctx, id, legacy)
+}
+
+func (s *Scheduler) checkTarget(ctx context.Context, id int64, legacy bool) (core.Target, error) {
 	t, err := s.Core.Target(ctx, id)
 	if err != nil {
 		return t, err

@@ -205,9 +205,15 @@ func (s *Service) Acknowledge(ctx context.Context, id int64, user string, until 
 			}
 		}
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE findings SET ack_by=?, ack_at=?, ack_until=?, ack_comment=?, resolved_at=? WHERE id=?",
-		user, now, untilU, strings.TrimSpace(comment), resolved, id); err != nil {
+	// Only while still open: a check may have resolved it since it was
+	// read, and an acknowledgement must not reopen it.
+	res, err := tx.ExecContext(ctx, "UPDATE findings SET ack_by=?, ack_at=?, ack_until=?, ack_comment=?, resolved_at=? WHERE id=? AND resolved_at = 0",
+		user, now, untilU, strings.TrimSpace(comment), resolved, id)
+	if err != nil {
 		return f, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return f, usererr.New("The finding is already resolved")
 	}
 	if f.TargetID != 0 {
 		if _, err := s.refreshStatusTx(ctx, tx, f.TargetID); err != nil {

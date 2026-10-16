@@ -20,6 +20,18 @@ import (
 	"time"
 )
 
+// MaxNames is the most names kept per issuance: a certificate rarely has
+// more than a hundred, and the names go into findings and alerts.
+const MaxNames = 100
+
+// capNames returns at most MaxNames names.
+func capNames(names []string) []string {
+	if len(names) > MaxNames {
+		return names[:MaxNames]
+	}
+	return names
+}
+
 // Issuance is one certificate for a watched domain as a log published it.
 // A precertificate and the certificate it became share issuer and serial.
 type Issuance struct {

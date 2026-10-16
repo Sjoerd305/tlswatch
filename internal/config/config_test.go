@@ -1,9 +1,13 @@
 package config
 
 import (
+	"context"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/sjoerd305/tlswatch/internal/db"
+	"github.com/sjoerd305/tlswatch/internal/secret"
 )
 
 func TestEnvOverrides(t *testing.T) {
@@ -50,5 +54,50 @@ func TestInvalidEnvIsReportedAndIgnored(t *testing.T) {
 	applyEnv(&st)
 	if !reflect.DeepEqual(st.Defaults, want.Defaults) || st.General != want.General || len(st.Env) != 0 {
 		t.Fatalf("invalid override applied: %+v %+v %v", st.Defaults, st.General, st.Env)
+	}
+}
+
+// A key rotation re-seals every sealed setting, and one sealed under a key
+// the instance does not have is reported as unreadable, not silently empty.
+func TestReencryptSealedSettings(t *testing.T) {
+	d, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	ctx := context.Background()
+	k1, _, _ := secret.Generate()
+	k2, _, _ := secret.Generate()
+	st := NewStore(d, k1)
+	if err := st.SaveSignIn(ctx, SignIn{GoogleClientID: "id", GoogleClientSecret: "gsecret"}, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveCT(ctx, CT{Source: "certspotter", IntervalS: 3600, APIKey: "ctkey"}, false); err != nil {
+		t.Fatal(err)
+	}
+	tx, _ := d.W.BeginTx(ctx, nil)
+	n, unreadable, err := Reencrypt(ctx, tx, k1, k2)
+	if err != nil || n != 2 || len(unreadable) != 0 {
+		t.Fatalf("reencrypt: n=%d unreadable=%v err=%v", n, unreadable, err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := NewStore(d, k2).Get(ctx)
+	if err != nil || got.CT.APIKey != "ctkey" || got.SignIn.GoogleClientSecret != "gsecret" || got.CT.KeyUnreadable || got.SignIn.SecretUnreadable {
+		t.Fatalf("after rotation: ct=%q unreadable=%v google=%q unreadable=%v err=%v", got.CT.APIKey, got.CT.KeyUnreadable, got.SignIn.GoogleClientSecret, got.SignIn.SecretUnreadable, err)
+	}
+	// Read with the old key, both are stored but unreadable.
+	got, err = NewStore(d, k1).Get(ctx)
+	if err != nil || got.CT.APIKey != "" || !got.CT.KeyUnreadable || got.SignIn.GoogleClientSecret != "" || !got.SignIn.SecretUnreadable || got.GoogleEnabled() {
+		t.Fatalf("with the old key: ct=%q unreadable=%v google=%q unreadable=%v enabled=%v err=%v", got.CT.APIKey, got.CT.KeyUnreadable, got.SignIn.GoogleClientSecret, got.SignIn.SecretUnreadable, got.GoogleEnabled(), err)
+	}
+	tx, _ = d.W.BeginTx(ctx, nil)
+	if n, unreadable, err := Reencrypt(ctx, tx, k1, k2); err != nil || n != 0 || len(unreadable) != 2 {
+		t.Fatalf("reencrypt with the wrong old key: n=%d unreadable=%v err=%v", n, unreadable, err)
+	}
+	tx.Rollback()
+	if ok, err := HasSealed(ctx, d); err != nil || !ok {
+		t.Fatalf("HasSealed: %v %v", ok, err)
 	}
 }

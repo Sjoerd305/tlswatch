@@ -35,6 +35,7 @@ import (
 	"golang.org/x/crypto/argon2"
 
 	"github.com/sjoerd305/tlswatch/internal/config"
+	"github.com/sjoerd305/tlswatch/internal/core"
 	"github.com/sjoerd305/tlswatch/internal/db"
 	"github.com/sjoerd305/tlswatch/internal/notify"
 	"github.com/sjoerd305/tlswatch/internal/secret"
@@ -197,8 +198,14 @@ func reseal(ctx context.Context, path string, from, to *secret.Key) error {
 	if _, _, err := notify.Reencrypt(ctx, tx, from, to); err != nil {
 		return err
 	}
-	// An unreadable Google client secret is left as it is, like a channel.
-	_, _ = config.Reencrypt(ctx, tx, from, to)
+	// An unreadable setting is left as it is, like a channel, and shown
+	// as such; an unreadable install token is dropped.
+	if _, _, err := config.Reencrypt(ctx, tx, from, to); err != nil {
+		return err
+	}
+	if _, err := core.ReencryptNodeTokens(ctx, tx, from, to); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -453,8 +460,12 @@ func prepare(ctx context.Context, path string, sealed, instance *secret.Key) err
 	if admins == 0 {
 		return usererr.New("The backup has no enabled admin; restoring it would lock everyone out of the settings")
 	}
-	if _, err := m.W.ExecContext(ctx, "DELETE FROM sessions"); err != nil {
-		return err
+	// Nobody stays signed in, and no invite or password link from before
+	// the backup comes back to life.
+	for _, q := range []string{"DELETE FROM sessions", "DELETE FROM tokens"} {
+		if _, err := m.W.ExecContext(ctx, q); err != nil {
+			return err
+		}
 	}
 	if sealed != nil {
 		if err := reseal(ctx, path, sealed, instance); err != nil {

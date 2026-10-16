@@ -79,6 +79,14 @@ func (c *Client) update(ctx context.Context, version string) error {
 		c.Log.Warn("the server runs another version; update this container by pulling the image", "server_version", version, "image", Image+":"+version)
 		return nil
 	}
+	switch {
+	case c.NoUpdate:
+		c.updateFailed("this node does not update itself (-no-self-update); update it by hand")
+		return nil
+	case c.Insecure:
+		c.updateFailed("this node reaches the server over plain http (-insecure) and does not replace its binary over it")
+		return nil
+	}
 	c.Log.Info("updating to the server's version", "from", c.Version, "to", version)
 	c.running.Wait()
 	exe, err := c.executable()
@@ -86,7 +94,7 @@ func (c *Client) update(ctx context.Context, version string) error {
 		c.updateFailed("cannot find the running binary: " + err.Error())
 		return nil
 	}
-	if err := c.replace(ctx, exe); err != nil {
+	if err := c.replace(ctx, exe, version); err != nil {
 		c.updateFailed(err.Error())
 		return nil
 	}
@@ -98,7 +106,78 @@ func (c *Client) update(ctx context.Context, version string) error {
 	return ErrRestart
 }
 
-func (c *Client) replace(ctx context.Context, exe string) error {
+// expectedSum is the checksum the downloaded binary must have. For a
+// release it comes from the release's SHA256SUMS, served by the server with
+// a signature the node checks against the release key built into it: the
+// server cannot make the node run anything the release key did not sign.
+// For a development build there is no signature; the server's own checksum
+// header is taken only when the node was started to allow that.
+func (c *Client) expectedSum(ctx context.Context, version string) (string, error) {
+	if !IsRelease(version) {
+		return "", nil // decided after the download, from its headers
+	}
+	sums, err := c.signedSums(ctx)
+	if err != nil {
+		return "", err
+	}
+	asset := fmt.Sprintf("tlswatch-%s-%s-%s", version, runtime.GOOS, runtime.GOARCH)
+	want, ok := sums[asset]
+	if !ok {
+		return "", fmt.Errorf("%s is not in the signed checksums of release %s", asset, version)
+	}
+	return want, nil
+}
+
+// unsignedSum takes the checksum of a development build from the download
+// itself, which only a node started to allow that does.
+func (c *Client) unsignedSum(version string, resp *http.Response) (string, error) {
+	if !c.AllowUnsigned {
+		return "", fmt.Errorf("%s is a development build without signed checksums; this node takes only signed releases (start it with -allow-unsigned-update to follow development builds)", version)
+	}
+	want := strings.ToLower(resp.Header.Get(HeaderSHA256))
+	if resp.Request != nil && resp.Request.Response != nil {
+		// Redirected to a release asset: the checksum came with the
+		// server's answer.
+		for r := resp.Request.Response; r != nil && want == ""; r = r.Request.Response {
+			want = strings.ToLower(r.Header.Get(HeaderSHA256))
+		}
+	}
+	if want == "" {
+		return "", errors.New("the server sent no checksum")
+	}
+	return want, nil
+}
+
+// signedSums fetches the release's SHA256SUMS from the server and verifies
+// its signature.
+func (c *Client) signedSums(ctx context.Context) (map[string]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Server+Prefix+"/release/sums", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set(HeaderVersion, c.Version)
+	resp, err := c.client().Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("signed checksums: %s", serverError(resp))
+	}
+	text, err := io.ReadAll(io.LimitReader(resp.Body, maxSums+1))
+	if err != nil {
+		return nil, err
+	}
+	return VerifySums(text, []byte(resp.Header.Get(HeaderSumsSignature)), c.ReleaseKey)
+}
+
+func (c *Client) replace(ctx context.Context, exe, version string) error {
+	// For a release the expected checksum is known, and signed, before a
+	// byte is downloaded.
+	want, err := c.expectedSum(ctx, version)
+	if err != nil {
+		return err
+	}
 	url := c.Server + Prefix + "/download/" + runtime.GOOS + "/" + runtime.GOARCH
 	dctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
@@ -117,16 +196,10 @@ func (c *Client) replace(ctx context.Context, exe string) error {
 	if resp.StatusCode != http.StatusOK {
 		return errors.New(serverError(resp))
 	}
-	want := strings.ToLower(resp.Header.Get(HeaderSHA256))
-	if resp.Request != nil && resp.Request.Response != nil {
-		// Redirected to a release asset: the checksum came with the
-		// server's answer.
-		for r := resp.Request.Response; r != nil && want == ""; r = r.Request.Response {
-			want = strings.ToLower(r.Header.Get(HeaderSHA256))
-		}
-	}
 	if want == "" {
-		return errors.New("the server sent no checksum")
+		if want, err = c.unsignedSum(version, resp); err != nil {
+			return err
+		}
 	}
 	next := exe + ".new"
 	f, err := os.OpenFile(next, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755) // #nosec G302 G304 -- the node's own binary

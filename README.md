@@ -15,7 +15,7 @@ tlswatch watches the TLS certificates that are actually served on your hostnames
 - Roles (viewer, operator, admin), local accounts and Google sign-in, an audit log.
 - **Configured in the browser**: SMTP relays, Telegram bots, Slack and Discord webhooks, ntfy topics, your own webhooks, Google sign-in, thresholds and the public URL all live under Settings.
 - Encrypted backup and restore from the UI, also from the setup screen of a new installation.
-- Optional Prometheus metrics at `/metrics`.
+- Optional Prometheus metrics at `/metrics`, behind a bearer token.
 
 ## Quick start
 
@@ -50,6 +50,7 @@ Everything an operator changes is in the UI. The process itself needs at most th
 | `TLSWATCH_SECRET_KEY_FILE` | `secret.key` next to the database, generated on first start |
 | `TLSWATCH_LOG_JSON` | `true` |
 | `TLSWATCH_DEBUG` | `false` (debug logging) |
+| `TLSWATCH_ACCEPT_NEW_KEY` | unset: a missing key file next to a database with sealed credentials stops the start |
 
 Settings that can also be pinned by environment (for containers and GitOps) are shown read-only in the UI; an invalid value stops tlswatch at start with a message naming the variable. See [docs/operations.md](docs/operations.md) and the [specification](docs/specification.md).
 

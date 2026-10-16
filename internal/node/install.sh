@@ -97,6 +97,9 @@ cat >"$ROOT$ENVFILE" <<EOF
 # tlswatch node, written by the install script from $SERVER
 TLSWATCH_NODE_SERVER=$SERVER
 TLSWATCH_NODE_DATA=$DATA
+# The node replaces its binary only with a release signed by the tlswatch
+# release key. TLSWATCH_NODE_NO_UPDATE=true keeps it on this binary;
+# TLSWATCH_NODE_ALLOW_UNSIGNED_UPDATE=true also follows development builds.
 EOF
 echo "$DATA/bin/tlswatch, linked from /usr/local/bin/tlswatch; settings in $ENVFILE"
 

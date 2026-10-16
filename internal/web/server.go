@@ -138,6 +138,11 @@ func staticHandler(files http.Handler, version string, dev bool) http.Handler {
 		default:
 			w.Header().Set("Cache-Control", "public, max-age=300")
 		}
+		// The assets are files; the file server would list a directory.
+		if rest == "" || strings.HasSuffix(rest, "/") {
+			http.NotFound(w, r)
+			return
+		}
 		r2 := r.Clone(r.Context())
 		r2.URL.Path = "/" + rest
 		r2.URL.RawPath = ""
@@ -176,7 +181,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		if ri.https {
-			h.Set("Strict-Transport-Security", "max-age=31536000")
+			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
 
 		if strings.HasPrefix(r.URL.Path, "/static/") {
@@ -190,7 +195,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
+		if c, err := readCookie(r, sessionCookie, ri.https); err == nil && c.Value != "" {
 			lookup := s.Auth.Session
 			if passiveRequest(r) {
 				lookup = s.Auth.SessionPassive
@@ -212,6 +217,13 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		h.Set("Cache-Control", "no-store")
 
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			// A browser says where a request came from; one from another
+			// site is refused before anything is read, whatever token it
+			// carries.
+			if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+				s.fail(w, r, http.StatusForbidden, "Cross-site requests are not accepted.")
+				return
+			}
 			// Cap the body before anything reads it, signed in or not.
 			limit := bodyLimit(r.URL.Path)
 			r.Body = http.MaxBytesReader(w, r.Body, limit)
@@ -351,7 +363,7 @@ func csrfMatch(r *http.Request, ri *reqInfo, got string) bool {
 	}
 	// Signed-out forms (sign in, setup, set password) use a double-submit
 	// cookie.
-	c, err := r.Cookie(csrfCookie)
+	c, err := readCookie(r, csrfCookie, ri.https)
 	return err == nil && c.Value != "" && constEq(got, c.Value)
 }
 
@@ -372,22 +384,40 @@ func randomString(n int) string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
+// cookieName is the name a cookie is set and read under: over HTTPS it
+// carries the __Host- prefix, so the browser accepts it only from this host,
+// over TLS, for the whole site, and a cookie planted from a sibling
+// subdomain or over plain HTTP is never read.
+func cookieName(base string, https bool) string {
+	if https {
+		return "__Host-" + base
+	}
+	return base
+}
+
+// readCookie reads a cookie under the name cookieName gives it.
+func readCookie(r *http.Request, base string, https bool) (*http.Cookie, error) {
+	return r.Cookie(cookieName(base, https))
+}
+
 // preCSRF returns (and sets) the double-submit token for signed-out forms.
 func (s *Server) preCSRF(w http.ResponseWriter, r *http.Request) string {
-	if c, err := r.Cookie(csrfCookie); err == nil && len(c.Value) >= 20 {
+	https := info(r).https
+	if c, err := readCookie(r, csrfCookie, https); err == nil && len(c.Value) >= 20 {
 		return c.Value
 	}
 	v := randomString(24)
-	http.SetCookie(w, &http.Cookie{Name: csrfCookie, Value: v, Path: "/", HttpOnly: true, Secure: info(r).https, SameSite: http.SameSiteLaxMode, MaxAge: 86400})
+	http.SetCookie(w, &http.Cookie{Name: cookieName(csrfCookie, https), Value: v, Path: "/", HttpOnly: true, Secure: https, SameSite: http.SameSiteLaxMode, MaxAge: 86400})
 	return v
 }
 
 func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request, raw string) {
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: raw, Path: "/", HttpOnly: true, Secure: info(r).https, SameSite: http.SameSiteLaxMode})
+	https := info(r).https
+	http.SetCookie(w, &http.Cookie{Name: cookieName(sessionCookie, https), Value: raw, Path: "/", HttpOnly: true, Secure: https, SameSite: http.SameSiteLaxMode})
 }
 
 func (s *Server) clearCookie(w http.ResponseWriter, name string, ri *reqInfo) {
-	http.SetCookie(w, &http.Cookie{Name: name, Value: "", Path: "/", HttpOnly: true, Secure: ri.https, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: cookieName(name, ri.https), Value: "", Path: "/", HttpOnly: true, Secure: ri.https, SameSite: http.SameSiteLaxMode, MaxAge: -1})
 }
 
 // baseURL is the configured public URL, or one derived from the request.
@@ -527,12 +557,29 @@ func (s *Server) flash(w http.ResponseWriter, r *http.Request) *Notice {
 	return &Notice{Kind: kind, Text: msg}
 }
 
-// safeNext keeps redirects on this site.
+// safeNext keeps redirects on this site: a path on this origin, parsed and
+// normalised, so a control character or a backslash cannot turn it into a
+// scheme-relative URL for the browser.
 func safeNext(v string) string {
-	if v == "" || !strings.HasPrefix(v, "/") || strings.HasPrefix(v, "//") || strings.HasPrefix(v, "/\\") {
+	if v == "" || !strings.HasPrefix(v, "/") {
 		return "/"
 	}
-	return v
+	for i := 0; i < len(v); i++ {
+		if v[i] < 0x20 || v[i] == 0x7f || v[i] == '\\' {
+			return "/"
+		}
+	}
+	u, err := url.Parse(v)
+	if err != nil || u.Scheme != "" || u.Host != "" || u.User != nil || u.Opaque != "" || !strings.HasPrefix(u.Path, "/") || strings.HasPrefix(u.Path, "//") {
+		return "/"
+	}
+	for i := 0; i < len(u.Path); i++ {
+		if u.Path[i] < 0x20 || u.Path[i] == 0x7f || u.Path[i] == '\\' {
+			return "/" // an encoded control character; a path has none
+		}
+	}
+	u.Fragment = ""
+	return u.RequestURI()
 }
 
 var errBadID = errors.New("bad id")

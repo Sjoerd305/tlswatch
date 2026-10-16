@@ -10,7 +10,9 @@ package config
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -77,9 +79,10 @@ type General struct {
 	BehindProxy bool   `json:"behind_proxy"`
 	AllowLocal  bool   `json:"allow_local"`
 	TimeZone    string `json:"time_zone"`
-	// Metrics serves /metrics in the Prometheus text format, without
-	// sign-in; it names every target.
-	Metrics bool `json:"metrics"`
+	// Metrics serves /metrics in the Prometheus text format; it names
+	// every target, so a request must carry MetricsToken as a bearer token.
+	Metrics      bool   `json:"metrics"`
+	MetricsToken string `json:"metrics_token"`
 }
 
 // SignIn holds the Google sign-in settings. The secret is stored encrypted.
@@ -87,6 +90,9 @@ type SignIn struct {
 	GoogleClientID     string `json:"google_client_id"`
 	GoogleClientSecret string `json:"-"`
 	GoogleDomain       string `json:"google_domain"`
+	// SecretUnreadable is set when a client secret is stored but the
+	// instance key cannot open it (another key): it must be entered again.
+	SecretUnreadable bool `json:"-"`
 }
 
 // Defaults are the global defaults targets follow while their own field is
@@ -122,6 +128,9 @@ type CT struct {
 	Source    string `json:"source"` // certspotter or crtsh
 	IntervalS int    `json:"interval_s"`
 	APIKey    string `json:"-"`
+	// KeyUnreadable is set when a key is stored but the instance key
+	// cannot open it (another key): it must be entered again.
+	KeyUnreadable bool `json:"-"`
 }
 
 // Validate checks the CT settings.
@@ -302,18 +311,11 @@ func (s *Store) Get(ctx context.Context) (Settings, error) {
 	if err := s.load(ctx, keyCT, &st.CT); err != nil {
 		return st, err
 	}
-	if pt, err := s.loadSealed(ctx, keyCTKey); err != nil {
+	var err error
+	if st.CT.APIKey, st.CT.KeyUnreadable, err = s.loadSealed(ctx, keyCTKey); err != nil {
 		return st, err
-	} else if pt != "" {
-		st.CT.APIKey = pt
 	}
-	var sealed string
-	err := s.db.R.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", keySecret).Scan(&sealed)
-	if err == nil && sealed != "" {
-		if pt, err := s.open(sealed); err == nil {
-			st.SignIn.GoogleClientSecret = string(pt)
-		}
-	} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if st.SignIn.GoogleClientSecret, st.SignIn.SecretUnreadable, err = s.loadSealed(ctx, keySecret); err != nil {
 		return st, err
 	}
 	applyEnv(&st)
@@ -323,22 +325,45 @@ func (s *Store) Get(ctx context.Context) (Settings, error) {
 	return st, nil
 }
 
-// loadSealed reads a value stored encrypted under the secret key; "" when
-// none is stored or it cannot be opened (a changed key).
-func (s *Store) loadSealed(ctx context.Context, key string) (string, error) {
+// loadSealed reads a value stored encrypted under the secret key: "" when
+// none is stored, and "" with unreadable set when one is stored that the
+// key cannot open (it was sealed under another key).
+func (s *Store) loadSealed(ctx context.Context, key string) (value string, unreadable bool, err error) {
 	var sealed string
-	err := s.db.R.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&sealed)
-	if errors.Is(err, sql.ErrNoRows) || sealed == "" {
-		return "", nil
+	err = s.db.R.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&sealed)
+	if errors.Is(err, sql.ErrNoRows) || err == nil && sealed == "" {
+		return "", false, nil
 	}
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	pt, err := s.open(sealed)
 	if err != nil {
-		return "", nil
+		return "", true, nil
 	}
-	return string(pt), nil
+	return string(pt), false, nil
+}
+
+// sealedKeys are the settings stored encrypted under the instance key.
+var sealedKeys = []string{keySecret, keyCTKey}
+
+// sealedNames names the sealed settings for people.
+var sealedNames = map[string]string{keySecret: "Google client secret", keyCTKey: "CT API key"}
+
+// HasSealed reports whether any setting is stored sealed: a database that
+// needs its key.
+func HasSealed(ctx context.Context, d *db.DB) (bool, error) {
+	for _, k := range sealedKeys {
+		var v string
+		err := d.R.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", k).Scan(&v)
+		if err == nil && v != "" {
+			return true, nil
+		}
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return false, err
+		}
+	}
+	return false, nil
 }
 
 // SaveCT stores the Certificate Transparency settings; an empty key keeps
@@ -395,28 +420,37 @@ func (s *Store) invalidate() {
 	s.mu.Unlock()
 }
 
-// Reencrypt re-seals the stored secrets (the Google client secret) from old
-// to new within tx, for a key rotation. It reports whether there was one.
-func Reencrypt(ctx context.Context, tx *sql.Tx, old, new *secret.Key) (bool, error) {
-	var v string
-	err := tx.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", keySecret).Scan(&v)
-	if errors.Is(err, sql.ErrNoRows) || err == nil && v == "" {
-		return false, nil
+// Reencrypt re-seals every sealed setting from old to new within tx, for a
+// key rotation or a restore. It returns how many it re-sealed and the names
+// of those old could not open; those are left as they are.
+func Reencrypt(ctx context.Context, tx *sql.Tx, old, new *secret.Key) (n int, unreadable []string, err error) {
+	for _, k := range sealedKeys {
+		var v string
+		err := tx.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", k).Scan(&v)
+		if errors.Is(err, sql.ErrNoRows) || err == nil && v == "" {
+			continue
+		}
+		if err != nil {
+			return n, unreadable, err
+		}
+		var raw []byte
+		if err := json.Unmarshal([]byte(v), &raw); err != nil {
+			return n, unreadable, err
+		}
+		pt, err := old.Open(raw)
+		if err != nil {
+			// Sealed under yet another key: left as it is, and reported
+			// as unreadable by Get.
+			unreadable = append(unreadable, sealedNames[k])
+			continue
+		}
+		b, _ := json.Marshal(new.Seal(pt))
+		if _, err := tx.ExecContext(ctx, "UPDATE settings SET value = ? WHERE key = ?", string(b), k); err != nil {
+			return n, unreadable, err
+		}
+		n++
 	}
-	if err != nil {
-		return false, err
-	}
-	var raw []byte
-	if err := json.Unmarshal([]byte(v), &raw); err != nil {
-		return false, err
-	}
-	pt, err := old.Open(raw)
-	if err != nil {
-		return false, fmt.Errorf("the stored Google client secret cannot be decrypted with the current key: %w", err)
-	}
-	b, _ := json.Marshal(new.Seal(pt))
-	_, err = tx.ExecContext(ctx, "UPDATE settings SET value = ? WHERE key = ?", string(b), keySecret)
-	return err == nil, err
+	return n, unreadable, nil
 }
 
 func (s *Store) open(v string) ([]byte, error) {
@@ -433,7 +467,19 @@ func (s *Store) SaveGeneral(ctx context.Context, g General) error {
 		return usererr.Wrap(err)
 	}
 	g.BaseURL = strings.TrimRight(g.BaseURL, "/")
+	if g.Metrics && g.MetricsToken == "" {
+		g.MetricsToken = NewToken()
+	}
 	return s.save(ctx, keyGeneral, g)
+}
+
+// NewToken is a fresh bearer token for /metrics: 32 random bytes, hex.
+func NewToken() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
 }
 
 // SaveSignIn stores the Google settings; an empty secret keeps the stored
@@ -512,6 +558,13 @@ var envVars = []envVar{
 	{"behind_proxy", "TLSWATCH_BEHIND_PROXY", boolVar(func(st *Settings) *bool { return &st.General.BehindProxy })},
 	{"allow_local", "TLSWATCH_ALLOW_LOCAL", boolVar(func(st *Settings) *bool { return &st.General.AllowLocal })},
 	{"metrics", "TLSWATCH_METRICS", boolVar(func(st *Settings) *bool { return &st.General.Metrics })},
+	{"metrics_token", "TLSWATCH_METRICS_TOKEN", func(st *Settings, v string) error {
+		if len(v) < 16 {
+			return errors.New("the metrics token must be at least 16 characters")
+		}
+		st.General.MetricsToken = v
+		return nil
+	}},
 	{"time_zone", "TZ", func(st *Settings, v string) error {
 		if _, err := time.LoadLocation(v); err != nil {
 			return fmt.Errorf("unknown time zone %q", v)

@@ -152,6 +152,53 @@ type app struct {
 	nodes    *node.Dispatcher
 }
 
+// keyGuard refuses to make a new secret key for a database that holds
+// credentials sealed under one: a missing key file next to such a database
+// is a mis-mounted volume, not a first start, and a new key would leave
+// every stored credential unreadable while new ones are sealed under it.
+// TLSWATCH_ACCEPT_NEW_KEY=true starts anyway, for when the key is really
+// lost. It also warns when the key file is readable by others.
+func keyGuard(d *db.DB, path string, log *slog.Logger) error {
+	fi, err := os.Stat(path)
+	if err == nil {
+		if m := fi.Mode().Perm(); m&0o077 != 0 {
+			log.Warn("the secret key file is readable by other users; make it mode 0600", "file", path, "mode", fmt.Sprintf("%04o", m))
+		}
+		return nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("secret key: %w", err)
+	}
+	sealed, err := hasSealed(context.Background(), d)
+	if err != nil {
+		return err
+	}
+	if !sealed {
+		return nil
+	}
+	if os.Getenv("TLSWATCH_ACCEPT_NEW_KEY") == "true" {
+		log.Error("the secret key file is missing while the database holds credentials sealed under it; starting with a new key as TLSWATCH_ACCEPT_NEW_KEY says, every stored credential must be entered again", "file", path)
+		return nil
+	}
+	return fmt.Errorf("the secret key file %s is missing, but the database holds credentials sealed under it: restore the key file (is the volume mounted?), or set TLSWATCH_ACCEPT_NEW_KEY=true to start with a new key and enter every stored credential again", path)
+}
+
+// hasSealed reports whether the database holds anything sealed under the
+// secret key: a channel, a sealed setting or a node install token.
+func hasSealed(ctx context.Context, d *db.DB) (bool, error) {
+	var channels, tokens int
+	if err := d.R.QueryRowContext(ctx, "SELECT COUNT(*) FROM channels").Scan(&channels); err != nil {
+		return false, err
+	}
+	if err := d.R.QueryRowContext(ctx, "SELECT COUNT(*) FROM nodes WHERE token_sealed IS NOT NULL").Scan(&tokens); err != nil {
+		return false, err
+	}
+	if channels > 0 || tokens > 0 {
+		return true, nil
+	}
+	return config.HasSealed(ctx, d)
+}
+
 func open() (*app, error) {
 	if err := config.CheckEnv(); err != nil {
 		return nil, fmt.Errorf("invalid environment: %w", err)
@@ -160,6 +207,10 @@ func open() (*app, error) {
 	a := &app{boot: b, log: logger(b)}
 	d, err := db.Open(b.DBPath)
 	if err != nil {
+		return nil, err
+	}
+	if err := keyGuard(d, b.SecretKeyFile, a.log); err != nil {
+		d.Close()
 		return nil, err
 	}
 	key, created, err := secret.LoadOrCreate(b.SecretKeyFile)
@@ -364,7 +415,12 @@ func rotateKey() error {
 	if err != nil {
 		return err
 	}
-	google, err := config.Reencrypt(ctx, tx, old, next)
+	settings, unreadableSettings, err := config.Reencrypt(ctx, tx, old, next)
+	if err != nil {
+		return err
+	}
+	unreadable = append(unreadable, unreadableSettings...)
+	tokens, err := core.ReencryptNodeTokens(ctx, tx, old, next)
 	if err != nil {
 		return err
 	}
@@ -384,10 +440,7 @@ func rotateKey() error {
 	if err := os.Rename(pending, b.SecretKeyFile); err != nil {
 		return fmt.Errorf("the database now uses the key in %s; move it to %s by hand: %w", pending, b.SecretKeyFile, err)
 	}
-	fmt.Printf("secret key rotated: %d channel(s) re-encrypted", n)
-	if google {
-		fmt.Print(", Google client secret re-encrypted")
-	}
+	fmt.Printf("secret key rotated: %d channel(s), %d sealed setting(s) and %d node install token(s) re-encrypted", n, settings, tokens)
 	fmt.Printf(".\nThe old key is kept in %s; delete it once backups made with it have expired.\n", kept)
 	if len(unreadable) > 0 {
 		fmt.Printf("Not re-encrypted, the old key could not read them either: %s. Enter their credentials again.\n", strings.Join(unreadable, ", "))

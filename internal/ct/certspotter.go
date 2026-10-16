@@ -84,7 +84,7 @@ func (c *CertSpotter) issuance(e certSpotterEntry) (Issuance, error) {
 	// Cert Spotter has no page per entry, so the link opens the certificate
 	// on crt.sh by its SHA-256 (which finds a precertificate as well), or the
 	// domain's listing there when no certificate came with the entry.
-	i := Issuance{ID: e.ID, Names: e.DNSNames, NotBefore: e.NotBefore.UTC(), NotAfter: e.NotAfter.UTC(), IssuerCN: e.Issuer.Name}
+	i := Issuance{ID: e.ID, Names: capNames(e.DNSNames), NotBefore: e.NotBefore.UTC(), NotAfter: e.NotAfter.UTC(), IssuerCN: e.Issuer.Name}
 	if len(e.DNSNames) > 0 {
 		i.LogURL = "https://crt.sh/?q=" + url.QueryEscape(e.DNSNames[0])
 	}

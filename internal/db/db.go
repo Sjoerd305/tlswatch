@@ -48,7 +48,9 @@ func OpenExisting(path string) (*DB, error) {
 
 func open(path string, migrate bool) (*DB, error) {
 	var dsnW, dsnR string
-	pragmas := "_pragma=foreign_keys(1)&_pragma=busy_timeout(10000)"
+	// temp_store(MEMORY): sorts and VACUUM need no temporary files, which
+	// the scratch image has nowhere to put.
+	pragmas := "_pragma=foreign_keys(1)&_pragma=busy_timeout(10000)&_pragma=temp_store(MEMORY)"
 	if path == ":memory:" {
 		name := "mem" + strconv.FormatUint(uint64(randUint()), 36)
 		dsnW = "file:" + name + "?mode=memory&cache=shared&" + pragmas
@@ -61,6 +63,8 @@ func open(path string, migrate bool) (*DB, error) {
 		dsnW = u + pragmas + "&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_txlock=immediate"
 		dsnR = u + pragmas + "&_pragma=journal_mode(WAL)&mode=ro"
 	}
+	_, statErr := os.Stat(path)
+	fresh := path != ":memory:" && errors.Is(statErr, os.ErrNotExist)
 	w, err := sql.Open("sqlite", dsnW)
 	if err != nil {
 		return nil, err
@@ -69,6 +73,15 @@ func open(path string, migrate bool) (*DB, error) {
 	if err := w.Ping(); err != nil {
 		w.Close()
 		return nil, fmt.Errorf("open database: %w", err)
+	}
+	if fresh {
+		// The driver creates the file under the umask; it holds password
+		// hashes and sealed credentials, so only the owner reads it. The
+		// WAL and shm files take the main file's mode.
+		if err := os.Chmod(path, 0o600); err != nil {
+			w.Close()
+			return nil, fmt.Errorf("open database: %w", err)
+		}
 	}
 	d := &DB{W: w, Path: path}
 	if migrate {
@@ -201,8 +214,11 @@ func (d *DB) Backup(ctx context.Context, path string) error {
 	if _, err := os.Stat(path); err == nil {
 		return fmt.Errorf("%s already exists", path)
 	}
-	_, err := d.W.ExecContext(ctx, "VACUUM INTO ?", path)
-	return err
+	if _, err := d.W.ExecContext(ctx, "VACUUM INTO ?", path); err != nil {
+		return err
+	}
+	// The copy holds what the database holds: owner-only, like it.
+	return os.Chmod(path, 0o600)
 }
 
 // TempDir creates a private temporary directory next to the database, on

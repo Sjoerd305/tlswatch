@@ -44,7 +44,9 @@ func (d *DiscordSender) Send(ctx context.Context, m Message) error {
 // SendRef posts m and returns Discord's message ID.
 func (d *DiscordSender) SendRef(ctx context.Context, m Message) (string, error) {
 	text := truncateRunes(m.Subject+"\n\n"+strings.TrimRight(m.Body, "\n"), maxDiscordChars)
-	body, err := json.Marshal(map[string]string{"content": text})
+	// No mentions: a target name or a certificate field must not be able
+	// to page the whole server with @everyone.
+	body, err := json.Marshal(map[string]any{"content": text, "allowed_mentions": map[string]any{"parse": []string{}}})
 	if err != nil {
 		return "", err
 	}

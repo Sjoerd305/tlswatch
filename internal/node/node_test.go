@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"math/big"
@@ -52,6 +56,8 @@ type env struct {
 	srv   *httptest.Server
 	clock *clock
 	log   *slog.Logger
+	pub   ed25519.PublicKey // the test release key
+	priv  ed25519.PrivateKey
 }
 
 func setup(t *testing.T) *env {
@@ -67,17 +73,55 @@ func setup(t *testing.T) *env {
 	st := config.NewStore(d, key)
 	c := &core.Service{DB: d, Settings: st, Channels: chans, Dispatcher: &notify.Dispatcher{DB: d, Channels: chans, Log: log}, Key: key, Log: log}
 	ck := &clock{t: time.Now()}
-	disp := &Dispatcher{Core: c, Version: "v1.2.0", Log: log, Now: ck.now}
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	disp := &Dispatcher{Core: c, Version: "v1.2.0", Log: log, Now: ck.now, ReleaseKey: pub}
 	srv := httptest.NewServer(disp)
 	t.Cleanup(srv.Close)
 	if err := st.SaveGeneral(context.Background(), config.General{BaseURL: srv.URL}); err != nil {
 		t.Fatal(err)
 	}
-	return &env{core: c, disp: disp, srv: srv, clock: ck, log: log}
+	return &env{core: c, disp: disp, srv: srv, clock: ck, log: log, pub: pub, priv: priv}
 }
 
 func (e *env) client(t *testing.T, version string) *Client {
-	return &Client{Server: e.srv.URL, Data: t.TempDir(), Workers: 2, Version: version, Log: e.log, HTTP: &http.Client{Timeout: 5 * time.Second}}
+	return &Client{Server: e.srv.URL, Data: t.TempDir(), Workers: 2, Version: version, Log: e.log, HTTP: &http.Client{Timeout: 5 * time.Second}, ReleaseKey: e.pub}
+}
+
+// release stands in for GitHub: it serves the SHA256SUMS of the server's
+// version listing files by content (asset name → bytes), signed with the
+// test release key (or, with sign false, by a key nobody knows), and the
+// files themselves.
+func (e *env) release(t *testing.T, sign bool, assets map[string][]byte) {
+	t.Helper()
+	var b strings.Builder
+	for name, content := range assets {
+		sum := sha256.Sum256(content)
+		fmt.Fprintf(&b, "%s  %s\n", hex.EncodeToString(sum[:]), name)
+	}
+	text := b.String()
+	priv := e.priv
+	if !sign {
+		_, priv, _ = ed25519.GenerateKey(rand.Reader)
+	}
+	sig := hex.EncodeToString(ed25519.Sign(priv, []byte(text)))
+	mux := http.NewServeMux()
+	mux.HandleFunc("/"+e.disp.Version+"/SHA256SUMS", func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, text) })
+	mux.HandleFunc("/"+e.disp.Version+"/SHA256SUMS.sig", func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, sig+"\n") })
+	for name, content := range assets {
+		mux.HandleFunc("/"+e.disp.Version+"/"+name, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(content) })
+	}
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	e.disp.Releases = srv.URL
+	e.disp.binary = binaryCache{} // forget what was fetched before
+}
+
+// ownAsset is the release asset name of the test server's own platform.
+func (e *env) ownAsset() string {
+	return "tlswatch-" + e.disp.Version + "-" + strings.ReplaceAll(OwnPlatform(), "/", "-")
 }
 
 // enrolled creates, enrols and confirms a node.
@@ -387,7 +431,25 @@ func TestDownloadOwnBinary(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.disp.Executable = func() (string, error) { return bin, nil }
+	// Without signed release checksums, a release server serves nothing.
 	resp, err := http.Get(e.srv.URL + "/agent/v1/download/" + OwnPlatform())
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("download without checksums: %s", resp.Status)
+	}
+	// Signed by the wrong key: the same.
+	e.release(t, false, map[string][]byte{e.ownAsset(): []byte("binary")})
+	resp, _ = http.Get(e.srv.URL + "/agent/v1/download/" + OwnPlatform())
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("download with a bad signature: %s", resp.Status)
+	}
+	// Its own binary is the released one: served from here, checksum along.
+	e.release(t, true, map[string][]byte{e.ownAsset(): []byte("binary")})
+	resp, err = http.Get(e.srv.URL + "/agent/v1/download/" + OwnPlatform())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,6 +458,75 @@ func TestDownloadOwnBinary(t *testing.T) {
 	want, _ := fileSHA256(bin)
 	if string(body) != "binary" || resp.Header.Get(HeaderSHA256) != want {
 		t.Fatalf("download: %q %s", body, resp.Header.Get(HeaderSHA256))
+	}
+	// The signed checksums are served for the node to check itself.
+	resp, _ = http.Get(e.srv.URL + "/agent/v1/release/sums")
+	sums, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if got, err := VerifySums(sums, []byte(resp.Header.Get(HeaderSumsSignature)), e.pub); err != nil || got[e.ownAsset()] != want {
+		t.Fatalf("release sums: %v %v", got, err)
+	}
+	// Its own binary is not the released bytes (a container image): the
+	// node is sent to the release asset instead.
+	e.release(t, true, map[string][]byte{e.ownAsset(): []byte("released")})
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, _ = noFollow.Get(e.srv.URL + "/agent/v1/download/" + OwnPlatform())
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusFound || !strings.HasSuffix(resp.Header.Get("Location"), "/v1.2.0/"+e.ownAsset()) {
+		t.Fatalf("download of other bytes: %s %s", resp.Status, resp.Header.Get("Location"))
+	}
+}
+
+// A node replaces its binary only with one in a SHA256SUMS the release key
+// signed; a development build, a plain-http server and -no-self-update are
+// refused with a reason the server shows.
+func TestUpdateRefusals(t *testing.T) {
+	e := setup(t)
+	dir := t.TempDir()
+	newBin := filepath.Join(dir, "server-tlswatch")
+	_ = os.WriteFile(newBin, []byte("new"), 0o755)
+	e.disp.Executable = func() (string, error) { return newBin, nil }
+	ctx := context.Background()
+	try := func(name string, c *Client, version, wantReason string) {
+		t.Helper()
+		exe := filepath.Join(t.TempDir(), "tlswatch")
+		_ = os.WriteFile(exe, []byte("old"), 0o755)
+		c.Executable = func() (string, error) { return exe, nil }
+		if err := c.update(ctx, version); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if b, _ := os.ReadFile(exe); string(b) != "old" {
+			t.Fatalf("%s: the binary was replaced", name)
+		}
+		if reason := readRollback(c.Data); !strings.Contains(reason, wantReason) {
+			t.Fatalf("%s: reason %q, want %q", name, reason, wantReason)
+		}
+	}
+	c := e.client(t, "v1.1.0")
+	try("no checksums", c, "v1.2.0", "signed checksums")
+	e.release(t, false, map[string][]byte{e.ownAsset(): []byte("new")})
+	try("bad signature", c, "v1.2.0", "signed checksums")
+	e.release(t, true, map[string][]byte{"tlswatch-v1.2.0-plan9-mips": []byte("new")})
+	try("not listed", c, "v1.2.0", "not in the signed checksums")
+	// The server is right, but the node was told not to.
+	e.release(t, true, map[string][]byte{e.ownAsset(): []byte("new")})
+	c.NoUpdate = true
+	try("no-self-update", c, "v1.2.0", "does not update itself")
+	c.NoUpdate, c.Insecure = false, true
+	try("insecure", c, "v1.2.0", "plain http")
+	c.Insecure = false
+	// A development build has no signature: refused unless allowed.
+	e.disp.Version = "2026.10.16-abc1234"
+	try("development build", c, e.disp.Version, "development build")
+	c.AllowUnsigned = true
+	exe := filepath.Join(t.TempDir(), "tlswatch")
+	_ = os.WriteFile(exe, []byte("old"), 0o755)
+	c.Executable = func() (string, error) { return exe, nil }
+	if err := c.update(ctx, e.disp.Version); !errors.Is(err, ErrRestart) {
+		t.Fatalf("development build when allowed: %v", err)
+	}
+	if b, _ := os.ReadFile(exe); string(b) != "new" {
+		t.Fatalf("binary not replaced: %q", b)
 	}
 }
 
@@ -407,6 +538,7 @@ func TestSelfUpdateAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.disp.Executable = func() (string, error) { return newBin, nil }
+	e.release(t, true, map[string][]byte{e.ownAsset(): []byte("new")})
 	c := e.client(t, "v1.1.0")
 	exe := filepath.Join(dir, "tlswatch")
 	if err := os.WriteFile(exe, []byte("old"), 0o755); err != nil {

@@ -651,7 +651,25 @@ func unexpectedFinding(i Issuance, why string, loc *time.Location) check.Finding
 		when = "on " + time.Unix(i.NotBefore, 0).In(loc).Format("2 Jan")
 	}
 	return check.Finding{Kind: check.UnexpectedCertificate, Severity: check.Warning,
-		Details: fmt.Sprintf("a certificate for %s was issued by %s %s and %s", strings.Join(i.Names, ", "), i.Issuer(), when, why)}
+		Details: fmt.Sprintf("a certificate for %s was issued by %s %s and %s", someNames(i.Names), i.Issuer(), when, why)}
+}
+
+// someNames lists names for a finding: the first few, and how many more,
+// so a certificate with hundreds of names does not make an alert of pages.
+func someNames(names []string) string {
+	const show, maxLen = 12, 600
+	var b strings.Builder
+	n := 0
+	for ; n < len(names) && n < show && b.Len()+len(names[n]) < maxLen; n++ {
+		if n > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(names[n])
+	}
+	if rest := len(names) - n; rest > 0 {
+		fmt.Fprintf(&b, " and %d more", rest)
+	}
+	return b.String()
 }
 
 // SweepIssuances moves pending issuances past their hold to unexpected,

@@ -13,10 +13,12 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/sjoerd305/tlswatch/internal/check"
 	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/notify"
+	"github.com/sjoerd305/tlswatch/internal/secret"
 	"github.com/sjoerd305/tlswatch/internal/usererr"
 )
 
@@ -64,6 +66,57 @@ type NodeFacts struct {
 type NodeInterface struct {
 	Name  string   `json:"name"`
 	Addrs []string `json:"addrs"`
+}
+
+// Limits on what a node may report: facts and headers come from a machine
+// the server does not control, and they are stored, audited and shown.
+const (
+	ShortMax      = 128 // hostname, OS, kernel, arch, version, interface name
+	TextMax       = 300 // an error message
+	addrMax       = 64  // addresses per interface
+	interfacesMax = 64
+)
+
+// Clip cuts s to at most n bytes, on a rune boundary, and drops control
+// characters other than the tab.
+func Clip(s string, n int) string {
+	s = strings.Map(func(r rune) rune {
+		if r < 0x20 && r != '\t' || r == 0x7f {
+			return -1
+		}
+		return r
+	}, s)
+	if len(s) <= n {
+		return s
+	}
+	cut := n
+	for cut > 0 && cut < len(s) && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
+}
+
+// Clipped returns the facts within the limits.
+func (f NodeFacts) Clipped() NodeFacts {
+	f.Hostname, f.OS, f.Kernel, f.Arch, f.Version = Clip(f.Hostname, ShortMax), Clip(f.OS, ShortMax), Clip(f.Kernel, ShortMax), Clip(f.Arch, ShortMax), Clip(f.Version, ShortMax)
+	if len(f.Interfaces) > interfacesMax {
+		f.Interfaces = f.Interfaces[:interfacesMax]
+	}
+	out := make([]NodeInterface, 0, len(f.Interfaces))
+	for _, i := range f.Interfaces {
+		i.Name = Clip(i.Name, ShortMax)
+		if len(i.Addrs) > addrMax {
+			i.Addrs = i.Addrs[:addrMax]
+		}
+		addrs := make([]string, 0, len(i.Addrs))
+		for _, a := range i.Addrs {
+			addrs = append(addrs, Clip(a, ShortMax))
+		}
+		i.Addrs = addrs
+		out = append(out, i)
+	}
+	f.Interfaces = out
+	return f
 }
 
 // addrSet is every address of the interfaces, sorted, for change detection.
@@ -250,6 +303,47 @@ func (s *Service) sealToken(tok string) []byte {
 	return s.Key.Seal([]byte(tok))
 }
 
+// ReencryptNodeTokens re-seals the unspent install tokens from old to new
+// within tx, for a key rotation or a restore. A token old cannot open is
+// dropped: its node shows no install command until a new token is made.
+func ReencryptNodeTokens(ctx context.Context, tx *sql.Tx, old, new *secret.Key) (n int, err error) {
+	rows, err := tx.QueryContext(ctx, "SELECT id, token_sealed FROM nodes WHERE token_sealed IS NOT NULL")
+	if err != nil {
+		return 0, err
+	}
+	type row struct {
+		id   int64
+		blob []byte
+	}
+	var all []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.blob); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		all = append(all, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	for _, r := range all {
+		pt, err := old.Open(r.blob)
+		if err != nil {
+			if _, err := tx.ExecContext(ctx, "UPDATE nodes SET token_sealed = NULL WHERE id = ?", r.id); err != nil {
+				return n, err
+			}
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE nodes SET token_sealed = ? WHERE id = ?", new.Seal(pt), r.id); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
+}
+
 // NodeToken returns a node's unspent install token, or "" when it has none,
 // it expired, or it cannot be read back.
 func (s *Service) NodeToken(ctx context.Context, id int64) (string, error) {
@@ -309,6 +403,8 @@ var ErrBadToken = errors.New("the install token is unknown, spent or expired")
 func (s *Service) EnrolNode(ctx context.Context, token string, e Enrolment) (Node, string, error) {
 	now := s.now().Unix()
 	cred := newSecret()
+	e.Facts = e.Facts.Clipped()
+	e.Version = Clip(e.Version, ShortMax)
 	facts, _ := json.Marshal(e.Facts)
 	pool := e.Pool
 	if pool < 1 || pool > 64 {
@@ -467,6 +563,7 @@ func (s *Service) TouchNode(ctx context.Context, id int64, seen time.Time, versi
 // set of addresses goes to the audit log with the old and new values, so a
 // node that moved or was cloned shows.
 func (s *Service) SaveNodeFacts(ctx context.Context, n Node, f NodeFacts) error {
+	f = f.Clipped()
 	b, _ := json.Marshal(f)
 	if _, err := s.DB.W.ExecContext(ctx, "UPDATE nodes SET facts = ?, facts_at = ? WHERE id = ?", string(b), s.now().Unix(), n.ID); err != nil {
 		return err
@@ -539,6 +636,7 @@ func (s *Service) StartNodeUpdate(ctx context.Context, n Node, to string) error 
 // EndNodeUpdate records the outcome of a node's update: failure is empty
 // when it came back on the new version.
 func (s *Service) EndNodeUpdate(ctx context.Context, n Node, failure string) error {
+	failure = Clip(failure, TextMax)
 	_, err := s.DB.W.ExecContext(ctx, "UPDATE nodes SET update_started = 0, update_failed = ? WHERE id = ?", failure, n.ID)
 	if err != nil {
 		return err

@@ -51,13 +51,18 @@ func (s *Server) settingsGeneralSave(w http.ResponseWriter, r *http.Request) {
 		TimeZone:    strings.TrimSpace(r.PostFormValue("time_zone")),
 		Metrics:     r.PostFormValue("metrics") == "1",
 	}
+	// The token stays unless the admin asks for a new one; SaveGeneral
+	// makes the first.
+	if cur := info(r).settings.General; r.PostFormValue("metrics_rotate") != "1" {
+		g.MetricsToken = cur.MetricsToken
+	}
 	if err := s.Settings.SaveGeneral(r.Context(), g); err != nil {
 		if msg, ok := s.formError(w, r, err); ok {
 			s.settingsPage(w, r, http.StatusBadRequest, "settings-general", "general", "Settings", generalData{G: g, Derived: s.baseURL(r), Error: msg, Zones: commonZones})
 		}
 		return
 	}
-	s.Core.Audit(r.Context(), user(r).Email, "settings.general", "general", fmt.Sprintf("base_url=%s behind_proxy=%v allow_local=%v time_zone=%s metrics=%v", g.BaseURL, g.BehindProxy, g.AllowLocal, g.TimeZone, g.Metrics))
+	s.Core.Audit(r.Context(), user(r).Email, "settings.general", "general", fmt.Sprintf("base_url=%s behind_proxy=%v allow_local=%v time_zone=%s metrics=%v metrics_token=%s", g.BaseURL, g.BehindProxy, g.AllowLocal, g.TimeZone, g.Metrics, map[bool]string{true: "rotated", false: "kept"}[r.PostFormValue("metrics_rotate") == "1"]))
 	s.back(w, r, "/settings/general", "General settings saved.", "ok")
 }
 

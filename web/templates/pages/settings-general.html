@@ -20,7 +20,13 @@
       <label class="check"><input type="checkbox" name="allow_local" value="1"{{if $d.G.AllowLocal}} checked{{end}}{{if $s.Locked "allow_local"}} disabled{{end}}> Allow loopback and link-local addresses as targets</label>
       {{if $s.Locked "allow_local"}}{{template "env-note" (index $s.Env "allow_local")}}{{if $d.G.AllowLocal}}<input type="hidden" name="allow_local" value="1">{{end}}{{else}}<span class="help lift">Private ranges are always allowed. Loopback and link-local are refused by default so the probe cannot be pointed at the host itself.</span>{{end}}
       <label class="check"><input type="checkbox" name="metrics" value="1"{{if $d.G.Metrics}} checked{{end}}{{if $s.Locked "metrics"}} disabled{{end}}> Serve Prometheus metrics at /metrics</label>
-      {{if $s.Locked "metrics"}}{{template "env-note" (index $s.Env "metrics")}}{{if $d.G.Metrics}}<input type="hidden" name="metrics" value="1">{{end}}{{else}}<span class="help lift">Without sign-in, like /healthz. The metrics name every target and its expiry date; allow only your monitoring system to reach them.</span>{{end}}
+      {{if $s.Locked "metrics"}}{{template "env-note" (index $s.Env "metrics")}}{{if $d.G.Metrics}}<input type="hidden" name="metrics" value="1">{{end}}{{else}}<span class="help lift">The metrics name every target and its expiry date, so they are read with a bearer token, not a sign-in.</span>{{end}}
+      {{- if and $d.G.Metrics $d.G.MetricsToken}}
+      <div class="field"><label class="label" for="metrics_token">Metrics token</label>
+        <input id="metrics_token" class="input mono" value="{{$d.G.MetricsToken}}" readonly spellcheck="false">
+        {{if $s.Locked "metrics_token"}}{{template "env-note" (index $s.Env "metrics_token")}}{{else}}<span class="help">Send it as <span class="mono">Authorization: Bearer …</span> (Prometheus: <span class="mono">authorization: credentials:</span>).</span>
+        <label class="check"><input type="checkbox" name="metrics_rotate" value="1"> Replace the token when saving</label>{{end}}</div>
+      {{- end}}
       <div class="form-foot"><button type="submit" class="btn btn-primary">Save</button></div>
     </form>
   </div>

@@ -97,6 +97,13 @@ func (s *Service) CreateFirstAdmin(ctx context.Context, email, name, pw string) 
 	if err := s.CheckPasswordPolicy(pw, email); err != nil {
 		return User{}, err
 	}
+	// Looked at before the hash is computed, so a post at a finished
+	// setup costs nothing; the transaction below checks again.
+	if n, err := s.CountUsers(ctx); err != nil {
+		return User{}, err
+	} else if n > 0 {
+		return User{}, ErrSetupDone
+	}
 	hash, err := HashPassword(pw)
 	if err != nil {
 		return User{}, err

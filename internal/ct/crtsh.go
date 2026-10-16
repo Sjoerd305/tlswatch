@@ -83,6 +83,7 @@ func (c *CrtSh) issuance(e crtShEntry) Issuance {
 	if cn := strings.ToLower(strings.TrimSpace(e.CommonName)); cn != "" && strings.Contains(cn, ".") && !contains(i.Names, cn) {
 		i.Names = append(i.Names, cn)
 	}
+	i.Names = capNames(i.Names)
 	i.NotBefore, _ = parseCrtShTime(e.NotBefore)
 	i.NotAfter, _ = parseCrtShTime(e.NotAfter)
 	return i

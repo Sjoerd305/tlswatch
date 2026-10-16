@@ -12,10 +12,18 @@ import (
 )
 
 // metrics serves the Prometheus text format when Settings › General enables
-// it; otherwise it is not found.
+// it, to a request carrying the metrics token as a bearer token; otherwise
+// it is not found. The metrics name every target, so they are not public.
 func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
-	if !info(r).settings.General.Metrics {
+	g := info(r).settings.General
+	if !g.Metrics {
 		http.NotFound(w, r)
+		return
+	}
+	got, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if g.MetricsToken == "" || !constEq(strings.TrimSpace(got), g.MetricsToken) {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="tlswatch metrics"`)
+		http.Error(w, "The metrics need the bearer token shown under Settings › General.", http.StatusUnauthorized)
 		return
 	}
 	m, err := s.Core.Metrics(r.Context())

@@ -516,3 +516,35 @@ func TestOIDCFinish(t *testing.T) {
 		t.Errorf("aud array: %v", err)
 	}
 }
+
+// The last good address is spared a lock only so far: from hardMaxFailures
+// failures in a row it is locked out like any other, and the count is kept
+// in the database in one statement.
+func TestLockoutHardCap(t *testing.T) {
+	s, c := newService(t)
+	ctx := context.Background()
+	u, _ := s.CreateUser(ctx, "cap@example.nl", "Cap", authz.Operator, MethodLocal)
+	if err := s.SetPassword(ctx, u.ID, goodPW); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Login(ctx, "Cap@Example.nl", goodPW, "10.0.0.1"); err != nil {
+		t.Fatalf("sign-in with a capitalised address: %v", err)
+	}
+	for i := 1; i < hardMaxFailures; i++ {
+		_, err := s.Login(ctx, "cap@example.nl", "wrong", "10.0.0.1")
+		if !errors.Is(err, ErrInvalidCredentials) {
+			t.Fatalf("failure %d from the last good address: %v", i, err)
+		}
+		c.add(time.Minute) // under the per-address rate, which is separate
+	}
+	if _, err := s.Login(ctx, "cap@example.nl", "wrong", "10.0.0.1"); !errors.Is(err, ErrLocked) {
+		t.Fatalf("failure %d from the last good address: %v, want the lock", hardMaxFailures, err)
+	}
+	if _, err := s.Login(ctx, "cap@example.nl", goodPW, "10.0.0.1"); !errors.Is(err, ErrLocked) {
+		t.Fatalf("good password while hard-locked: %v", err)
+	}
+	c.add(lockDuration + time.Second)
+	if _, err := s.Login(ctx, "cap@example.nl", goodPW, "10.0.0.1"); err != nil {
+		t.Fatalf("after the lock: %v", err)
+	}
+}

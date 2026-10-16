@@ -126,7 +126,12 @@ func (s *Server) restoreUpload(w http.ResponseWriter, r *http.Request, setup boo
 		return usererr.New("The form could not be read")
 	}
 	fields := map[string]string{}
-	for {
+	for parts := 0; ; parts++ {
+		// The form has a handful of fields before the file; more is not
+		// a form.
+		if parts >= 8 {
+			return usererr.New("The form could not be read")
+		}
 		part, err := mr.NextPart()
 		if errors.Is(err, io.EOF) {
 			return usererr.New("Choose a backup file")
@@ -141,6 +146,11 @@ func (s *Server) restoreUpload(w http.ResponseWriter, r *http.Request, setup boo
 				return err
 			}
 			fields[name] = string(b)
+			// The token is checked the moment it arrives, so nothing
+			// else is held for a request that has no business here.
+			if name == "csrf" && !csrfMatch(r, info(r), fields["csrf"]) {
+				return errCSRF
+			}
 			continue
 		}
 		if !csrfMatch(r, info(r), fields["csrf"]) {

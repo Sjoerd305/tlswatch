@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,6 +37,17 @@ type Client struct {
 	AllowLocal bool
 	Version    string
 	Container  bool
+	// Insecure is a plain http:// server (a lab): nothing it sends is
+	// authenticated, so the node never replaces its binary from it.
+	Insecure bool
+	// NoUpdate keeps the node on its binary whatever the server says.
+	NoUpdate bool
+	// AllowUnsigned lets the node take a binary without a signed checksum,
+	// which is what a development build of the server offers. Off, a node
+	// updates only to a release whose SHA256SUMS the release key signed.
+	AllowUnsigned bool
+	// ReleaseKey verifies the signed checksums; nil means ReleasePublicKey.
+	ReleaseKey ed25519.PublicKey
 	Log        *slog.Logger
 	HTTP       *http.Client
 	// Executable is the running binary that a self-update replaces; nil

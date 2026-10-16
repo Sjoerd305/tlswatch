@@ -32,6 +32,7 @@ type nodeFlags struct {
 	server, data, allow, token *string
 	workers                    *int
 	allowLocal, insecure       *bool
+	noUpdate, allowUnsigned    *bool
 }
 
 func nodeFlagSet(name string, enrol bool) (*flag.FlagSet, nodeFlags) {
@@ -54,7 +55,11 @@ func nodeFlagSet(name string, enrol bool) (*flag.FlagSet, nodeFlags) {
 		f.allow = fs.String("allow", os.Getenv("TLSWATCH_NODE_ALLOW"), "CIDRs this node may probe, comma separated; empty means any (TLSWATCH_NODE_ALLOW)")
 		f.allowLocal = fs.Bool("allow-local", os.Getenv("TLSWATCH_NODE_ALLOW_LOCAL") == "true", "allow loopback and link-local addresses (TLSWATCH_NODE_ALLOW_LOCAL)")
 	}
-	f.insecure = fs.Bool("insecure", false, "accept a plain http:// server, for a lab")
+	f.insecure = fs.Bool("insecure", false, "accept a plain http:// server, for a lab; the node then never replaces its binary from it")
+	if !enrol {
+		f.noUpdate = fs.Bool("no-self-update", os.Getenv("TLSWATCH_NODE_NO_UPDATE") == "true", "never replace the binary, whatever the server says (TLSWATCH_NODE_NO_UPDATE)")
+		f.allowUnsigned = fs.Bool("allow-unsigned-update", os.Getenv("TLSWATCH_NODE_ALLOW_UNSIGNED_UPDATE") == "true", "also follow a development build of the server, which has no signed checksums (TLSWATCH_NODE_ALLOW_UNSIGNED_UPDATE)")
+	}
 	return fs, f
 }
 
@@ -80,13 +85,14 @@ func nodeClient(f nodeFlags) (*node.Client, error) {
 	if *f.workers < 1 || *f.workers > 64 {
 		return nil, errors.New("-workers must be 1 to 64")
 	}
-	c := &node.Client{Server: server, Data: *f.data, Workers: *f.workers, Version: version, Container: node.InContainer(),
+	c := &node.Client{Server: server, Data: *f.data, Workers: *f.workers, Version: version, Container: node.InContainer(), Insecure: *f.insecure,
 		Log: logger(config.Bootstrap{LogJSON: envOr("TLSWATCH_LOG_JSON", "true") == "true"})}
 	if f.allow != nil {
 		if c.Allow, err = node.ParseAllow(*f.allow); err != nil {
 			return nil, fmt.Errorf("-allow: %w", err)
 		}
 		c.AllowLocal = *f.allowLocal
+		c.NoUpdate, c.AllowUnsigned = *f.noUpdate, *f.allowUnsigned
 	}
 	return c, nil
 }

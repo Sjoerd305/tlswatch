@@ -1,5 +1,9 @@
+.git/hooks
+.claude
 node_modules
 data
 tmp
 dist
 tlswatch
+design
+docs

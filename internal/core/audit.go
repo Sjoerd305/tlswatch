@@ -16,14 +16,17 @@ type AuditEntry struct {
 	Details string
 }
 
+// likeEscaper makes a search string literal inside a LIKE pattern.
+var likeEscaper = strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`)
+
 // AuditLog lists audit entries, newest first, optionally filtered by a
 // substring over user, action and object.
 func (s *Service) AuditLog(ctx context.Context, filter string, limit int) ([]AuditEntry, error) {
 	q := "SELECT id, at, user_email, action, object, details FROM audit"
 	var args []any
 	if f := strings.TrimSpace(filter); f != "" {
-		q += " WHERE user_email LIKE ? OR action LIKE ? OR object LIKE ? OR details LIKE ?"
-		like := "%" + strings.ReplaceAll(strings.ReplaceAll(f, "%", ""), "_", "") + "%"
+		q += " WHERE user_email LIKE ? ESCAPE '\\' OR action LIKE ? ESCAPE '\\' OR object LIKE ? ESCAPE '\\' OR details LIKE ? ESCAPE '\\'"
+		like := "%" + likeEscaper.Replace(f) + "%"
 		args = append(args, like, like, like, like)
 	}
 	q += " ORDER BY id DESC"

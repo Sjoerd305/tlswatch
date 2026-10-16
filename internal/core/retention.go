@@ -12,18 +12,27 @@ import (
 // sign-ins get the writer between batches.
 const pruneBatch = 5000
 
+// auditRetentionMin is the least time audit entries are kept: lowering the
+// history retention does not shorten the record of who changed what.
+const auditRetentionMin = 365 * 24 * time.Hour
+
 // Prune removes history older than the retention period. The current state
-// of every target is kept regardless of age.
+// of every target is kept regardless of age, and the audit log for at least
+// auditRetentionMin.
 func (s *Service) Prune(ctx context.Context) error {
 	st := s.CurrentSettings(ctx)
-	cut := s.now().Add(-time.Duration(st.Defaults.RetentionDays) * 24 * time.Hour).Unix()
+	retention := time.Duration(st.Defaults.RetentionDays) * 24 * time.Hour
+	cut := s.now().Add(-retention).Unix()
+	auditCut := s.now().Add(-max(retention, auditRetentionMin)).Unix()
+	if _, err := s.DB.W.ExecContext(ctx, "DELETE FROM audit WHERE id IN (SELECT id FROM audit WHERE at < ?1 LIMIT ?2)", auditCut, pruneBatch); err != nil {
+		return fmt.Errorf("prune: %w", err)
+	}
 	batched := []string{
 		// Keep each target's latest check.
 		`DELETE FROM observations WHERE id IN (SELECT id FROM observations WHERE checked_at < ?1
 			AND check_id NOT IN (SELECT last_check_id FROM targets) LIMIT ?2)`,
 		"DELETE FROM alerts WHERE id IN (SELECT id FROM alerts WHERE created_at < ?1 AND state != 'pending' LIMIT ?2)",
 		"DELETE FROM findings WHERE id IN (SELECT id FROM findings WHERE resolved_at > 0 AND resolved_at < ?1 LIMIT ?2)",
-		"DELETE FROM audit WHERE id IN (SELECT id FROM audit WHERE at < ?1 LIMIT ?2)",
 		"DELETE FROM tokens WHERE expires_at < ?1",
 		// Issuances age out with the rest, except one with an open finding.
 		`DELETE FROM issuances WHERE id IN (SELECT id FROM issuances WHERE first_seen < ?1

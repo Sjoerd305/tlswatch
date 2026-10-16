@@ -4,6 +4,20 @@ Newest first, one line per change.
 
 ## Unreleased
 
+- Security review of the whole codebase; everything it found is fixed in this release:
+  - Nodes replace their binary only with a release whose `SHA256SUMS` is signed by the tlswatch release key (built into every binary; releases now publish `SHA256SUMS.sig`). A server, or anyone who could edit a GitHub release, can no longer hand a node a binary of its own. The server serves its own executable only when it is the released one and otherwise sends the node to the release asset. New node switches `-no-self-update` and `-allow-unsigned-update` (for development builds); a node on `-insecure` never updates. The manual install command verifies the checksum too.
+  - `/metrics` requires a bearer token, generated when metrics are enabled and shown under Settings › General (or `TLSWATCH_METRICS_TOKEN`): the metrics name every target and its weak configurations.
+  - Fix: `?next=` on the sign-in page could redirect to another site through an embedded tab character. Redirects now go only to a parsed path on this origin.
+  - Fix: twenty failed requests from an address blocked valid nodes behind the same address (a reverse proxy, a NAT) for 15 minutes. The credential is checked first; the block applies to requests without a valid one.
+  - Fix: `tlswatch rotate-key` and a restore left the Cert Spotter API key (and unspent node install tokens) under the old key, silently losing it. Every sealed value is re-sealed, and a Google secret or CT key that cannot be read is shown as such on its settings page.
+  - A server that finds its database but not its key file refuses to start instead of generating a new key (`TLSWATCH_ACCEPT_NEW_KEY=true` overrides); a key file readable by others is reported.
+  - Session and CSRF cookies carry the `__Host-` prefix over HTTPS; requests a browser marks cross-site are refused outright; HSTS covers subdomains; the embedded static files no longer list their directories.
+  - The lock after failed sign-ins holds for the last good address too from 25 failures in a row, and the count is kept in one statement; the sign-in address is matched case-insensitively.
+  - The setup form answers "already set up" before hashing a password; the restore form checks its token as soon as it arrives and reads a bounded number of parts.
+  - The audit log is kept for at least a year whatever the history retention; acknowledging a finding a check resolved meanwhile no longer reopens it; a restore drops one-time invite links as well as sessions; the database, its copies and `tlswatch backup` files are created owner-only.
+  - What a node reports (hostname, system, interfaces, version, error) is bounded and stored at most once per five minutes; a node's result is parsed outside the dispatcher's lock.
+  - Discord messages are posted with mentions off; channel posts follow no redirect; an issuance keeps at most 100 names and a finding lists a dozen; a panic in a check is logged and the process goes on; failed checksum fetches are not retried per request; the audit log search escapes `%` and `_`.
+  - CI: actions and base images pinned by digest, the release jobs hold only the scope each needs, scan tools pinned; SQLite keeps temporary data in memory, since the image has no `/tmp`; the Dockerfile and the release build use the same flags.
 - Certificate Transparency polls are gentler on the free sources: watches are polled one at a time, two seconds apart, and spread over the interval instead of coming due together; a failed poll (crt.sh answers 502 when it is busy) is retried after 15 minutes, or after what a 429 asked for, instead of at the next interval.
 - Fix: after the upgrade, Check all and the scheduled checks left targets without a grade until their next daily configuration test. A target without a grade, or graded under older rules, now runs the test on its next check.
 - Fix: the "log entry" link of an issuance found through Cert Spotter opened a page that does not exist. It now opens the certificate on crt.sh by its SHA-256; links stored by the previous build are replaced by the domain's crt.sh listing.

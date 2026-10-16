@@ -79,7 +79,7 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, u auth.Use
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
-	if c, err := r.Cookie(sessionCookie); err == nil {
+	if c, err := readCookie(r, sessionCookie, info(r).https); err == nil {
 		_ = s.Auth.DeleteSession(r.Context(), c.Value)
 	}
 	s.clearCookie(w, sessionCookie, info(r))
@@ -153,6 +153,12 @@ func (s *Server) setupPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
+	if !s.needsSetup(r) {
+		// Answered before the password is hashed: once set up, this form
+		// costs nothing to post at.
+		s.back(w, r, "/login", "tlswatch is already set up. Sign in.", "info")
+		return
+	}
 	d := setupData{Email: strings.TrimSpace(r.PostFormValue("email")), Name: strings.TrimSpace(r.PostFormValue("name"))}
 	pw := r.PostFormValue("password")
 	if pw != r.PostFormValue("password2") {

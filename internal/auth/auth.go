@@ -38,8 +38,11 @@ const (
 )
 
 const (
-	maxFailures     = 5
-	lockDuration    = 15 * time.Minute
+	maxFailures  = 5
+	lockDuration = 15 * time.Minute
+	// hardMaxFailures is the number of failures in a row from which the
+	// lock holds even for the address of the last good sign-in.
+	hardMaxFailures = 25
 	ipMaxFailures   = 20
 	ipWindow        = 15 * time.Minute
 	defaultIdle     = 8 * time.Hour
@@ -360,7 +363,9 @@ func (s *Service) Login(ctx context.Context, email, pw, ip string) (User, error)
 	if s.ipBlocked(ip, now) {
 		return User{}, ErrLocked
 	}
-	row := s.DB.R.QueryRowContext(ctx, "SELECT "+userCols+", failed_count, locked_until FROM users WHERE email = ?", strings.TrimSpace(email))
+	// Addresses are stored lower-cased; the sign-in form may not be.
+	email = strings.ToLower(strings.TrimSpace(email))
+	row := s.DB.R.QueryRowContext(ctx, "SELECT "+userCols+", failed_count, locked_until FROM users WHERE email = ?", email)
 	var failed int
 	var lockedUntil int64
 	u, hash, err := scanUser(row, &failed, &lockedUntil)
@@ -372,22 +377,27 @@ func (s *Service) Login(ctx context.Context, email, pw, ip string) (User, error)
 	if err != nil {
 		return User{}, err
 	}
-	if lockedUntil > now && !s.trustedIP(u.ID, ip) {
+	if lockedUntil > now && !s.spared(u.ID, ip, failed) {
 		VerifyPassword(dummyHash(), pw)
 		return User{}, ErrLocked
 	}
 	if !VerifyPassword(hash, pw) {
 		s.ipFail(ip, now)
-		failed++
-		lock := int64(0)
-		if failed >= maxFailures {
-			lock = now + int64(lockDuration/time.Second)
-			failed = 0
-		}
-		if _, err := s.DB.W.ExecContext(ctx, "UPDATE users SET failed_count = ?, locked_until = ? WHERE id = ?", failed, lock, u.ID); err != nil {
+		// Counted in one statement, so attempts in parallel all count.
+		if err := s.DB.W.QueryRowContext(ctx, "UPDATE users SET failed_count = failed_count + 1 WHERE id = ? RETURNING failed_count", u.ID).Scan(&failed); err != nil {
 			return User{}, err
 		}
-		if lock > 0 && !s.trustedIP(u.ID, ip) {
+		locked := false
+		if failed%maxFailures == 0 {
+			// The count keeps running through the lock: every further
+			// maxFailures locks again, and from hardMaxFailures on nothing
+			// is spared.
+			if _, err := s.DB.W.ExecContext(ctx, "UPDATE users SET locked_until = ? WHERE id = ?", now+int64(lockDuration/time.Second), u.ID); err != nil {
+				return User{}, err
+			}
+			locked = !s.spared(u.ID, ip, failed)
+		}
+		if locked {
 			return User{}, ErrLocked
 		}
 		return User{}, ErrInvalidCredentials
@@ -407,6 +417,13 @@ func (s *Service) Login(ctx context.Context, email, pw, ip string) (User, error)
 	}
 	s.mu.Unlock()
 	return u, nil
+}
+
+// spared reports whether a lock does not apply to ip: the address of the
+// last good sign-in is spared, so failures from elsewhere cannot lock the
+// owner out, until the failures in a row reach hardMaxFailures.
+func (s *Service) spared(userID int64, ip string, failed int) bool {
+	return failed < hardMaxFailures && s.trustedIP(userID, ip)
 }
 
 // trustedIP reports whether ip is where the account last signed in.
