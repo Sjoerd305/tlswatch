@@ -728,6 +728,16 @@ func addressFacts(t Target, a probe.Address, th Thresholds, now time.Time) ([]Fi
 			weak = append(weak, nameOf(c))
 		}
 	}
+	// The root a verified chain ends in, when it came from the store or
+	// bundle rather than the server, is judged for expiry too.
+	if n := len(a.VerifiedChain); n > 0 {
+		if r := a.VerifiedChain[n-1]; !slices.ContainsFunc(a.Chain, r.Equal) && now.After(r.NotAfter) {
+			expired = append(expired, nameOf(r)+" (root in the trust store)")
+			if r.NotAfter.Before(earliest) {
+				earliest = r.NotAfter
+			}
+		}
+	}
 	days := DaysLeft(earliest, now)
 	if len(expired) > 0 {
 		d := days

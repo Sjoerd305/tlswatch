@@ -538,3 +538,42 @@ func TestIPv6OnlyWithoutRoute(t *testing.T) {
 		t.Fatalf("open %+v, error %q", o.Open, o.Error)
 	}
 }
+
+// An old chain that ends in a root from the store which expired before the
+// intermediate did (the AddTrust case): trust is judged at the root's last
+// second, so the verdict is "expired", naming the root, not an untrusted
+// chain with a confusing date.
+func TestExpiredStoreRootIsExpiredNotUntrusted(t *testing.T) {
+	root := sign(t, &x509.Certificate{
+		Subject: pkix.Name{CommonName: "Old Store Root", Organization: []string{"Old CA"}},
+		IsCA:    true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
+		NotBefore: now.Add(-3000 * 24 * time.Hour), NotAfter: now.Add(-400 * 24 * time.Hour),
+	}, nil)
+	inter := sign(t, &x509.Certificate{
+		Subject: pkix.Name{CommonName: "Old Intermediate", Organization: []string{"Old CA"}},
+		IsCA:    true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
+		NotBefore: now.Add(-2000 * 24 * time.Hour), NotAfter: now.Add(-300 * 24 * time.Hour),
+	}, root)
+	leaf := sign(t, &x509.Certificate{
+		Subject: pkix.Name{CommonName: "a.example"}, DNSNames: []string{"a.example"},
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		NotBefore:   now.Add(-1000 * 24 * time.Hour), NotAfter: now.Add(-350 * 24 * time.Hour),
+	}, inter).cert
+	pool := x509.NewCertPool()
+	pool.AddCert(root.cert)
+	a := probe.Address{IP: "192.0.2.1", OK: true, Chain: []*x509.Certificate{leaf, inter.cert}}
+	probe.Verify(&a, probe.Request{ServerName: "a.example", Trust: probe.TrustBundle, Roots: pool, Now: func() time.Time { return now }})
+	if !a.Verified {
+		t.Fatalf("trust apart from expiry: %s", a.VerifyError)
+	}
+	tg := manual
+	tg.Trust, tg.ServerName = probe.TrustBundle, "a.example"
+	o := Evaluate(tg, Previous{Open: open()}, result(a), now)
+	f, ok := find(o.Open, Expired)
+	if !ok || !strings.Contains(f.Details, "Old Store Root (root in the trust store)") {
+		t.Fatalf("open %v: %+v", kindsOf(o.Open), f)
+	}
+	if _, ok := find(o.Open, ChainUntrusted); ok {
+		t.Fatal("chain_untrusted for a chain that only expired")
+	}
+}

@@ -484,10 +484,20 @@ func verify(a *Address, req Request) {
 	var inv x509.CertificateInvalidError
 	if err != nil && errors.As(err, &inv) && inv.Reason == x509.Expired {
 		// Judge trust apart from expiry: verify at a moment inside the
-		// validity window of every presented certificate.
+		// validity window of every presented certificate. A root from the
+		// store may have expired before that moment: then try its last
+		// second too, so the verdict is about trust, and check reports the
+		// expiry.
 		for _, t := range validMoments(a.Chain) {
 			opts.CurrentTime = t
-			if chains, err = leaf.Verify(opts); err == nil {
+			for range 3 {
+				if chains, err = leaf.Verify(opts); err == nil || !errors.As(err, &inv) || inv.Reason != x509.Expired ||
+					inv.Cert == nil || !inv.Cert.NotAfter.Before(opts.CurrentTime) || inv.Cert.NotAfter.Before(leaf.NotBefore) {
+					break
+				}
+				opts.CurrentTime = inv.Cert.NotAfter.Add(-time.Second)
+			}
+			if err == nil {
 				break
 			}
 		}
