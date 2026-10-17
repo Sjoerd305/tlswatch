@@ -2,6 +2,11 @@
 
 tlswatch watches the TLS certificates that are actually served on your hostnames and IP addresses. It checks expiry, the chain of trust, the hostname and signature strength, notices when a certificate changes or a server still accepts TLS 1.0, and alerts by e-mail, Telegram, Slack (or Mattermost and Rocket.Chat), Discord, ntfy or a webhook before something expires. It is one self-hosted Go binary with a web UI and a SQLite file; nothing else to run.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/overview-dark.jpg">
+  <img alt="The tlswatch overview: targets by state, the certificates expiring next and the open findings" src="docs/img/overview-light.jpg">
+</picture>
+
 - Any port, implicit TLS or STARTTLS (SMTP, IMAP, POP3, FTP, PostgreSQL).
 - Every address behind a name is probed, so the one stale node behind a load balancer is caught.
 - System store, private CA bundles, or pinned self-signed certificates.
@@ -17,15 +22,53 @@ tlswatch watches the TLS certificates that are actually served on your hostnames
 - Encrypted backup and restore from the UI, also from the setup screen of a new installation.
 - Optional Prometheus metrics at `/metrics`, behind a bearer token.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/target-dark.jpg">
+  <img alt="A target in tlswatch: days until expiry, the configuration grade with its reasons, the certificate and the chain as served" src="docs/img/target-light.jpg">
+</picture>
+
+## How it compares
+
+- **Uptime monitors** such as Uptime Kuma check the certificate of an HTTPS monitor as a side effect: one port, one address, expiry only. tlswatch probes every address behind a name on any port, including STARTTLS, and also checks the chain, the hostname and the server's TLS configuration.
+- **Certificate Transparency monitors** such as certspotter tell you what was issued for your domains, not what your servers serve. tlswatch does both and matches the two, so a certificate nobody serves stands out and a renewal on its way does not.
+- **Hosted certificate monitors** probe from the internet, so internal hosts are out of reach and your inventory lives with them. tlswatch runs on your own machine, and nodes reach the networks it cannot.
+
 ## Quick start
+
+With Docker:
+
+```sh
+docker run -d --name tlswatch --restart unless-stopped \
+  -p 127.0.0.1:8080:8080 -v tlswatch-data:/data \
+  ghcr.io/sjoerd305/tlswatch:latest
+open http://127.0.0.1:8080/    # create your admin account, then add targets and channels
+```
+
+Or with Compose:
+
+```yaml
+services:
+  tlswatch:
+    image: ghcr.io/sjoerd305/tlswatch:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - tlswatch-data:/data
+
+volumes:
+  tlswatch-data:
+```
+
+Without Docker, from a release binary or this checkout:
 
 ```sh
 make build                     # or download a release binary
 ./tlswatch serve               # creates ./data/ and a secret key on first start
-open http://127.0.0.1:8080/    # create your admin account, then add targets and channels
+open http://127.0.0.1:8080/
 ```
 
-With Docker, from this checkout: `docker compose up --build -d` and open http://127.0.0.1:8081/. To run a released image instead, replace `build: .` and the image name in `compose.yaml` with `image: ghcr.io/sjoerd305/tlswatch:latest`.
+The `compose.yaml` in this checkout builds the image from source: `docker compose up --build -d` and open http://127.0.0.1:8081/.
 
 On first start, before any account exists, tlswatch shows a setup screen where you create the first admin with your own e-mail and password, or restore a backup from another installation. Do that right away, before exposing the port beyond localhost.
 
