@@ -296,7 +296,7 @@ Alerts fire on state transitions, not on every check, so a daily check never pro
 1. **Open**: one alert when a finding opens, to every channel attached to the target whose minimum severity is met.
 2. **Escalate**: one alert when a finding's severity rises (warning to critical).
 3. **Remind**: a repeat at the target's reminder interval while the finding stays open, with the same message plus "still open since". Acknowledged findings are not reminded.
-4. **Recover**: one notice when the finding resolves, so the receiver knows it is done. Recovery is sent to the channels that received the open alert.
+4. **Recover**: one notice when the finding resolves, so the receiver knows it is done. Recovery is sent to every channel that was told about the finding: the open alert, an escalation or a reminder, so a channel added while the finding was open hears that it is done. The alert log of a finding that is still open is kept past the history retention for this.
 5. **Acknowledge**: an operator acknowledges a finding in the UI, optionally until a date (snooze). Acknowledging suppresses reminders, never the escalation or recovery notice. An acknowledgement on `certificate_changed` resolves it; on other kinds it expires when the finding resolves or the date passes.
 6. **Digest**: an optional weekly e-mail (day and hour configurable) listing open findings, certificates expiring in the next 30 days, targets that failed their last check, targets whose grade dropped, and the certificates issued for watched domains that week. Off by default. `info` findings (expected ACME renewals) are recorded as already resolved and are not in it: they show under recent changes on the overview and nowhere else.
 

@@ -1193,3 +1193,34 @@ func TestCanonicalHost(t *testing.T) {
 		t.Fatalf("unicode host: %v, %+v", errs, tg)
 	}
 }
+
+// A channel added while a finding is open gets its reminders, and so its
+// recovery too: recovery goes to every channel that was told.
+func TestRecoveryReachesChannelsThatGotAReminder(t *testing.T) {
+	e := newEnv(t)
+	ca := newCA(t, "Sectigo")
+	now := e.clock.Now()
+	tg := e.target(func(t *Target) { t.RemindCritS = intp(3600) })
+	c := ca.leaf(t, now.Add(-days(10)), now.Add(days(300)), "portal.example.nl")
+	e.apply(tg.ID, result(untrusted("192.0.2.1", c)))
+	e.flush()
+	e.take("mail")
+	e.take("telegram")
+	if _, err := e.svc.Channels.Save(e.ctx, notify.Channel{Name: "pager", Kind: notify.KindTelegram, MinSeverity: "critical", Enabled: true,
+		Telegram: notify.TelegramSettings{Token: "123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ", ChatIDs: []string{"-1002"}}}); err != nil {
+		t.Fatal(err)
+	}
+	e.clock.Add(2 * time.Hour)
+	if n, err := e.svc.Remind(e.ctx); err != nil || n == 0 {
+		t.Fatalf("remind: %d, %v", n, err)
+	}
+	e.flush()
+	if m := e.take("pager"); len(m) != 1 {
+		t.Fatalf("reminder to the new channel: %+v", m)
+	}
+	e.apply(tg.ID, result(served("192.0.2.1", c, ca.cert)))
+	e.flush()
+	if m := e.take("pager"); len(m) != 1 || !strings.HasPrefix(m[0].Subject, "[resolved]") {
+		t.Errorf("recovery to the channel that had the reminder: %+v", m)
+	}
+}

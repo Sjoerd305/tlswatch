@@ -82,10 +82,11 @@ func (a *alerter) send(ctx context.Context, f Finding, event string) error {
 	return nil
 }
 
-// recover queues recovery notices to the channels that received the
-// finding's open or escalation alert, whatever their floor is now.
+// recover queues recovery notices to the channels that were told about
+// the finding (its open, escalation or reminder alerts), whatever their
+// floor is now.
 func (a *alerter) recover(ctx context.Context, f Finding) error {
-	rows, err := a.tx.QueryContext(ctx, `SELECT DISTINCT channel_id FROM alerts WHERE finding_id = ? AND event IN ('open','escalate') AND state != 'failed'`, f.ID)
+	rows, err := a.tx.QueryContext(ctx, `SELECT DISTINCT channel_id FROM alerts WHERE finding_id = ? AND event IN ('open','escalate','remind') AND state != 'failed'`, f.ID)
 	if err != nil {
 		return err
 	}
