@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestNtfySend(t *testing.T) {
@@ -36,8 +37,8 @@ func TestNtfySend(t *testing.T) {
 	if tags, _ := got["tags"].([]any); len(tags) != 1 || tags[0] != "warning" {
 		t.Fatalf("tags %v", got["tags"])
 	}
-	if n := len([]rune(got["message"].(string))); n != maxNtfyChars {
-		t.Fatalf("message truncated to %d", n)
+	if msg := got["message"].(string); len(msg) > maxNtfyBytes || len(msg) < maxNtfyBytes-3 || !strings.HasSuffix(msg, "…") {
+		t.Fatalf("message truncated to %d bytes", len(msg))
 	}
 	if d := s.S.Destination(); d != srv.URL+"/ops" {
 		t.Fatalf("destination %q", d)
@@ -68,5 +69,19 @@ func TestNtfyValidate(t *testing.T) {
 		if err := bad.Validate(); err == nil {
 			t.Fatalf("accepted %+v", bad)
 		}
+	}
+}
+
+// The limit is in bytes: multi-byte text is cut sooner, never inside a
+// character.
+func TestTruncateBytes(t *testing.T) {
+	for _, s := range []string{strings.Repeat("😀", 2000), strings.Repeat("é", 3000), strings.Repeat("x", 3999) + "é"} {
+		got := truncateBytes(s, maxNtfyBytes)
+		if len(got) > maxNtfyBytes || !utf8.ValidString(got) || !strings.HasSuffix(got, "…") {
+			t.Errorf("%d bytes in: %d bytes out, valid %v", len(s), len(got), utf8.ValidString(got))
+		}
+	}
+	if got := truncateBytes("short", maxNtfyBytes); got != "short" {
+		t.Errorf("short text changed: %q", got)
 	}
 }

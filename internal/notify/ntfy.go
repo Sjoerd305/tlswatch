@@ -58,8 +58,9 @@ var ntfyPriority = map[string]int{"critical": 5, "warning": 4, "info": 3, "resol
 
 var ntfyTags = map[string]string{"critical": "rotating_light", "warning": "warning", "info": "information_source", "resolved": "white_check_mark"}
 
-// maxNtfyChars keeps a message under ntfy's default 4096-byte limit.
-const maxNtfyChars = 4000
+// maxNtfyBytes keeps a message under ntfy's default limit of 4096 bytes,
+// past which ntfy turns the message into an attachment.
+const maxNtfyBytes = 4000
 
 // Send publishes m to the topic.
 func (n *NtfySender) Send(ctx context.Context, m Message) error {
@@ -73,7 +74,7 @@ func (n *NtfySender) SendRef(ctx context.Context, m Message) (string, error) {
 	body, err := json.Marshal(map[string]any{
 		"topic":    n.S.Topic,
 		"title":    untagged(m.Subject),
-		"message":  truncateRunes(m.Body, maxNtfyChars),
+		"message":  truncateBytes(m.Body, maxNtfyBytes),
 		"priority": ntfyPriority[sev],
 		"tags":     []string{ntfyTags[sev]},
 	})
@@ -103,6 +104,21 @@ func (n *NtfySender) SendRef(ctx context.Context, m Message) (string, error) {
 	}
 	_ = json.Unmarshal(resp, &r)
 	return r.ID, nil
+}
+
+// truncateBytes cuts s to at most n bytes on a character boundary, ending
+// in an ellipsis when it was cut: a limit in bytes, with text that is not
+// all ASCII.
+func truncateBytes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	const ell = "…"
+	cut := n - len(ell)
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + ell
 }
 
 // truncateRunes cuts s to at most n runes, ending in an ellipsis when it

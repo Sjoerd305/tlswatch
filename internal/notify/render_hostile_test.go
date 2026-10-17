@@ -218,7 +218,7 @@ func TestNtfyHostileAndLong(t *testing.T) {
 	if strings.HasPrefix(p.Title, "[") || p.Priority != 5 || len(p.Tags) != 1 || p.Tags[0] != "rotating_light" {
 		t.Fatalf("payload %+v", p)
 	}
-	if !utf8.ValidString(p.Message) || utf8.RuneCountInString(p.Message) > maxNtfyChars {
+	if !utf8.ValidString(p.Message) || len(p.Message) > maxNtfyBytes {
 		t.Fatalf("message of %d runes", utf8.RuneCountInString(p.Message))
 	}
 	// A recovery is priority 3 with the check mark.
