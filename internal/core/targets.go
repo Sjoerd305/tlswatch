@@ -243,9 +243,19 @@ func (s *Service) SaveTarget(ctx context.Context, t Target, user string) (int64,
 		return 0, err
 	}
 	defer tx.Rollback()
+	// Only a new assignment needs a confirmed node: a target stays editable
+	// while its node re-enrols.
 	if t.NodeID != 0 {
-		if err := assignableNodeTx(ctx, tx, t.NodeID); err != nil {
-			return 0, err
+		var cur sql.NullInt64
+		if t.ID != 0 {
+			if err := tx.QueryRowContext(ctx, "SELECT node_id FROM targets WHERE id = ?", t.ID).Scan(&cur); err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return 0, err
+			}
+		}
+		if cur.Int64 != t.NodeID {
+			if err := assignableNodeTx(ctx, tx, t.NodeID); err != nil {
+				return 0, err
+			}
 		}
 	}
 	args := []any{t.Name, t.Host, t.Port, string(t.Protocol), t.ServerName, string(t.Trust), nullID(t.BundleID),

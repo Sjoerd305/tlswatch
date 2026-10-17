@@ -487,8 +487,10 @@ func (s *Server) formData(ctx context.Context, f *targetForm) error {
 	if err != nil {
 		return err
 	}
+	// The target's own node stays in the list while it re-enrols, so an
+	// edit does not move the target off it; saving checks the rest.
 	for _, n := range nodes {
-		if n.Assignable() {
+		if n.Assignable() || !f.New && n.ID == f.T.NodeID {
 			f.Nodes = append(f.Nodes, n)
 		}
 	}
