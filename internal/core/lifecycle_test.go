@@ -62,6 +62,10 @@ func TestAckDoesNotSuppressEscalationOrRecovery(t *testing.T) {
 	if m := e.take("telegram"); len(m) != 1 || !strings.HasPrefix(m[0].Subject, "[critical]") {
 		t.Fatalf("escalation on telegram: %+v", m)
 	}
+	// The acknowledgement was for the warning: the critical is reminded.
+	if got, _ := e.svc.Finding(e.ctx, f.ID); got.Acked(e.clock.Now()) {
+		t.Fatalf("still acknowledged after escalating: %+v", got)
+	}
 
 	// Renewed: the recovery notice reaches both channels.
 	c2 := ca.leaf(t, e.clock.Now(), e.clock.Now().Add(days(365)), "portal.example.nl")

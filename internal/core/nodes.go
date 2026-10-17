@@ -727,7 +727,8 @@ func (s *Service) NodeOffline(ctx context.Context, n Node, lastSeen time.Time) e
 			if err := al.send(ctx, old, notify.EventEscalate); err != nil {
 				return err
 			}
-			if _, err := tx.ExecContext(ctx, "UPDATE findings SET last_alert_at = ? WHERE id = ?", now.Unix(), old.ID); err != nil {
+			// An acknowledgement covers the severity it was given for.
+			if _, err := tx.ExecContext(ctx, "UPDATE findings SET last_alert_at = ?, ack_by = '', ack_at = 0, ack_until = 0, ack_comment = '' WHERE id = ?", now.Unix(), old.ID); err != nil {
 				return err
 			}
 		}

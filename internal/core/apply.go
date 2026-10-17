@@ -318,7 +318,8 @@ func applyFindingsTx(ctx context.Context, tx *sql.Tx, targetID int64, out check.
 				if err := al.send(ctx, old, notify.EventEscalate); err != nil {
 					return err
 				}
-				if _, err := tx.ExecContext(ctx, "UPDATE findings SET last_alert_at=? WHERE id=?", now, old.ID); err != nil {
+				// An acknowledgement covers the severity it was given for.
+				if _, err := tx.ExecContext(ctx, "UPDATE findings SET last_alert_at=?, ack_by='', ack_at=0, ack_until=0, ack_comment='' WHERE id=?", now, old.ID); err != nil {
 					return err
 				}
 				sum.Escalated = append(sum.Escalated, cf.Kind)
