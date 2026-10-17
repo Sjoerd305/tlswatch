@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sjoerd305/tlswatch/internal/config"
 )
@@ -151,5 +152,26 @@ func TestTrailingBytesRefused(t *testing.T) {
 	}
 	if _, err := Open(ctx, bytes.NewReader(append(append([]byte(nil), file...), "extra"...)), dst, k, pass); !isUser(err) {
 		t.Fatalf("trailing bytes: %v", err)
+	}
+}
+
+// A header asking for more memory, passes or threads than the cap is
+// refused before any key is derived.
+func TestKeyCostCapped(t *testing.T) {
+	ctx := context.Background()
+	k := key(t, 'a')
+	file := write(t, source(t, k, "admin"), k)
+	dst := fileDB(t)
+	for name, set := range map[string]func(p []byte){
+		"512 MiB":    func(p []byte) { binary.BigEndian.PutUint32(p[4:], 512*1024) },
+		"9 passes":   func(p []byte) { binary.BigEndian.PutUint32(p, 9) },
+		"16 threads": func(p []byte) { p[8] = 16 },
+	} {
+		f := append([]byte(nil), file...)
+		set(f[len(magic):])
+		start := time.Now()
+		if _, err := Open(ctx, bytes.NewReader(f), dst, k, pass); err == nil || !strings.Contains(err.Error(), "settings this version") || time.Since(start) > time.Second {
+			t.Errorf("%s: %v after %v", name, err, time.Since(start))
+		}
 	}
 }

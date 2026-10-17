@@ -65,6 +65,14 @@ var (
 	argonThreads uint8  = 2
 )
 
+// The most a backup file may ask for: four times the memory this version
+// uses, 256 MiB.
+const (
+	maxArgonMemory  = 256 * 1024 // KiB
+	maxArgonTime    = 8
+	maxArgonThreads = 4
+)
+
 // ErrPassphrase is returned when the file does not open with the
 // passphrase given (or was altered).
 var ErrPassphrase = usererr.New("The backup could not be decrypted: the passphrase is wrong or the file is damaged")
@@ -363,7 +371,10 @@ func (res *Restore) read(ctx context.Context, br *bufio.Reader, instance *secret
 	}
 	p := hdr[len(magic):]
 	t, m, threads := binary.BigEndian.Uint32(p), binary.BigEndian.Uint32(p[4:]), p[8]
-	if t == 0 || t > 16 || m < 8 || m > 1<<20 || threads == 0 || threads > 16 {
+	// The file chooses the cost of its key, and the setup screen takes an
+	// upload before anyone signs in: the cap keeps a hostile header from
+	// exhausting a small host, with room above what this version writes.
+	if t == 0 || t > maxArgonTime || m < 8 || m > maxArgonMemory || threads == 0 || threads > maxArgonThreads {
 		return usererr.New("This backup uses settings this version of tlswatch does not read")
 	}
 	if pass == "" {
