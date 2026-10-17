@@ -609,19 +609,30 @@ func (d *Dispatcher) wantUpdate(ctx context.Context, n core.Node, rollback strin
 	return true
 }
 
-// Updating returns the progress of an update round: how many nodes are not
-// on the server's version yet, and which place the running one has.
+// Updating returns the progress of the round of updates to the server's
+// version: the place of the running update (0 when none runs) among the
+// nodes of the round, those already updated to this version and those
+// still to go. Nodes update one at a time, so the place is the number done
+// plus one.
 func (d *Dispatcher) Updating(nodes []core.Node) (n, of int) {
+	done, running := 0, false
 	for _, x := range nodes {
 		if x.State != core.NodeConfirmed || x.Facts.Container {
 			continue
 		}
-		if x.UpdateStarted > 0 {
-			n = of + 1
-		}
-		if x.Version != d.Version || x.UpdateStarted > 0 {
+		switch {
+		case x.UpdateStarted > 0:
+			running = true
+			of++
+		case x.Version == d.Version && x.UpdateTo == d.Version:
+			done++
+			of++
+		case x.Version != d.Version:
 			of++
 		}
+	}
+	if running {
+		n = done + 1
 	}
 	return n, of
 }
