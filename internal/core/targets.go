@@ -166,13 +166,17 @@ func (s *Service) Target(ctx context.Context, id int64) (Target, error) {
 }
 
 // Validate normalises the target in place (host and server name lower case
-// without a trailing dot or IPv6 brackets, the name trimmed and defaulting
+// without a trailing dot or IPv6 brackets, an IP address in its canonical
+// form, the name trimmed and defaulting
 // to the host, the bundle cleared unless bundle trust is chosen) and returns
 // the problems keyed by form field.
 func (t *Target) Validate(st config.Settings) map[string]string {
 	errs := map[string]string{}
 	t.Host = strings.TrimSuffix(strings.TrimSpace(strings.ToLower(t.Host)), ".")
 	t.Host = strings.TrimSuffix(strings.TrimPrefix(t.Host, "["), "]")
+	if ip := net.ParseIP(t.Host); ip != nil {
+		t.Host = ip.String() // one spelling per address, so duplicates are found
+	}
 	t.ServerName = strings.TrimSuffix(strings.TrimSpace(strings.ToLower(t.ServerName)), ".")
 	t.Name = strings.TrimSpace(t.Name)
 	if err := probe.ValidateHost(t.Host); err != nil {
