@@ -147,8 +147,9 @@ func TestEveryPostNeedsTheCSRFToken(t *testing.T) {
 	if n < 50 {
 		t.Fatalf("only %d POST routes", n)
 	}
-	// Signed out, the public forms need the double-submit cookie.
-	for _, p := range []string{"/login", "/setup", "/invite", "/logout"} {
+	// Signed out, the public forms need the double-submit cookie. Sign out
+	// itself, signed out, has nothing to protect and lands on /login.
+	for _, p := range []string{"/login", "/setup", "/invite"} {
 		if rec := hs.signedOut("POST", p, url.Values{"csrf": {"made-up-token-123456789"}}, nil); rec.Code != http.StatusForbidden {
 			t.Errorf("POST %s signed out without the CSRF cookie: %d, want 403", p, rec.Code)
 		}
@@ -196,6 +197,11 @@ func TestLogoutEndsSessionOnServer(t *testing.T) {
 	// Other users stay signed in.
 	if rec := hs.do(authz.Operator, "GET", "/", nil, false); rec.Code != http.StatusOK {
 		t.Fatalf("another user's session after a logout: %d", rec.Code)
+	}
+	// Sign out pressed again, the session long gone: the sign-in page, not
+	// "the form has expired".
+	if rec := hs.do(authz.Viewer, "POST", "/logout", nil, true); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/login" {
+		t.Fatalf("logout after the session ended: %d %s", rec.Code, rec.Header().Get("Location"))
 	}
 }
 

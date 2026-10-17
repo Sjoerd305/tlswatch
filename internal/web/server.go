@@ -244,6 +244,12 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 					return
 				}
 			}
+			// Sign out after the session already ended has nothing to
+			// protect: it clears the cookie and lands on the sign-in page.
+			if r.URL.Path == "/logout" && ri.session == nil {
+				next.ServeHTTP(w, r)
+				return
+			}
 			if !s.csrfOK(r, ri) {
 				s.fail(w, r, http.StatusForbidden, "The form has expired. Reload the page and try again.")
 				return
