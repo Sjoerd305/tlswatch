@@ -46,7 +46,7 @@ A finding is opened when a check first fails and resolved when a later check pas
 
 ## Targets and probing
 
-A target is `host:port` plus a protocol. The host is a DNS name or an IPv4/IPv6 address; the port defaults from the protocol and can be anything.
+A target is `host:port` plus a protocol. The host is a DNS name or an IPv4/IPv6 address; the port defaults from the protocol and can be anything. The host is stored in one spelling, so a repeat is found: lower case, without a trailing dot or brackets, an IP address in its canonical form (`2001:db8::1`), and an internationalised name in punycode (`bücher.example` is stored and probed as `xn--bcher-kva.example`, and the name defaults to the Unicode form). The server name is normalised the same way.
 
 **Protocols**
 

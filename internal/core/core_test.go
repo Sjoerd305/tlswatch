@@ -1174,3 +1174,22 @@ func TestMarkStaleSkipsExpiredPresentedRoot(t *testing.T) {
 		t.Fatalf("links %+v", links)
 	}
 }
+
+func TestCanonicalHost(t *testing.T) {
+	cases := []struct{ in, host, display string }{
+		{"Portal.Example.NL.", "portal.example.nl", "portal.example.nl"},
+		{"[2001:0DB8:0:0::1]", "2001:db8::1", "2001:db8::1"},
+		{"Bücher.Example", "xn--bcher-kva.example", "bücher.example"},
+		{"xn--bcher-kva.example", "xn--bcher-kva.example", "bücher.example"},
+	}
+	for _, c := range cases {
+		if h, d := CanonicalHost(c.in); h != c.host || d != c.display {
+			t.Errorf("%s: %s, %s", c.in, h, d)
+		}
+	}
+	st := config.Settings{}
+	tg := Target{Host: "bücher.example", Port: 443, Protocol: probe.TLS, Trust: probe.TrustSystem}
+	if errs := tg.Validate(st); errs["host"] != "" || tg.Host != "xn--bcher-kva.example" || tg.Name != "bücher.example" {
+		t.Fatalf("unicode host: %v, %+v", errs, tg)
+	}
+}

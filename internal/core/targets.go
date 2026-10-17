@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/net/idna"
+
 	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/probe"
 )
@@ -165,19 +167,35 @@ func (s *Service) Target(ctx context.Context, id int64) (Target, error) {
 	return t, rows.Err()
 }
 
-// Validate normalises the target in place (host and server name lower case
-// without a trailing dot or IPv6 brackets, an IP address in its canonical
-// form, the name trimmed and defaulting
+// CanonicalHost returns the one spelling of a host that is stored and
+// probed: lower case, without a trailing dot or IPv6 brackets, an IP
+// address in its canonical form and a Unicode name in punycode. display
+// is the name as people read it: the Unicode form of a punycode name.
+func CanonicalHost(h string) (host, display string) {
+	h = strings.TrimSuffix(strings.TrimSpace(strings.ToLower(h)), ".")
+	h = strings.TrimSuffix(strings.TrimPrefix(h, "["), "]")
+	if ip := net.ParseIP(h); ip != nil {
+		h = ip.String()
+		return h, h
+	}
+	if a, err := idna.Lookup.ToASCII(h); err == nil {
+		h = a
+	}
+	if u, err := idna.Lookup.ToUnicode(h); err == nil {
+		return h, u
+	}
+	return h, h
+}
+
+// Validate normalises the target in place (host and server name in their
+// CanonicalHost form, the name trimmed and defaulting
 // to the host, the bundle cleared unless bundle trust is chosen) and returns
 // the problems keyed by form field.
 func (t *Target) Validate(st config.Settings) map[string]string {
 	errs := map[string]string{}
-	t.Host = strings.TrimSuffix(strings.TrimSpace(strings.ToLower(t.Host)), ".")
-	t.Host = strings.TrimSuffix(strings.TrimPrefix(t.Host, "["), "]")
-	if ip := net.ParseIP(t.Host); ip != nil {
-		t.Host = ip.String() // one spelling per address, so duplicates are found
-	}
-	t.ServerName = strings.TrimSuffix(strings.TrimSpace(strings.ToLower(t.ServerName)), ".")
+	var display string
+	t.Host, display = CanonicalHost(t.Host)
+	t.ServerName, _ = CanonicalHost(t.ServerName)
 	t.Name = strings.TrimSpace(t.Name)
 	if err := probe.ValidateHost(t.Host); err != nil {
 		errs["host"] = "Enter a DNS name or an IP address"
@@ -206,7 +224,7 @@ func (t *Target) Validate(st config.Settings) map[string]string {
 		errs["trust_mode"] = "Choose a trust mode"
 	}
 	if t.Name == "" {
-		t.Name = t.Host
+		t.Name = display
 	}
 	if len(t.Name) > 120 {
 		errs["name"] = "Name is limited to 120 characters"

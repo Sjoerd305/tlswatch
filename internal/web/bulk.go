@@ -63,7 +63,7 @@ func parseEndpoints(text string, proto probe.Protocol) ([]endpoint, []string) {
 				continue
 			}
 		}
-		host = strings.TrimSuffix(strings.ToLower(strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")), ".")
+		host, _ = core.CanonicalHost(host)
 		if host == "" {
 			errs = append(errs, fmt.Sprintf("Line %d: enter a host, or host:port", n))
 			continue
