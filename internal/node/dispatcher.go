@@ -476,7 +476,8 @@ func (d *Dispatcher) judge(ctx context.Context) {
 }
 
 // expireJobs re-queues a leased job past its timeout once, then gives it
-// up.
+// up. A node already judged offline will not lease it again, so its job
+// fails at once: an offline node holds nothing.
 func (d *Dispatcher) expireJobs() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -486,6 +487,10 @@ func (d *Dispatcher) expireJobs() {
 			continue
 		}
 		ns := d.state(j.node)
+		if !d.onlineLocked(j.node) {
+			d.finishLocked(j, outcome{err: core.ErrNodeOffline})
+			continue
+		}
 		if j.attempts < 2 {
 			ns.leased--
 			j.leasedAt = time.Time{}
