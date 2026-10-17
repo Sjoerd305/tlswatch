@@ -697,8 +697,13 @@ func (s *Service) NodeOffline(ctx context.Context, n Node, lastSeen time.Time) e
 	} else {
 		cf.Details = fmt.Sprintf("No contact since %s", lastSeen.In(s.CurrentSettings(ctx).Location()).Format("2006-01-02 15:04"))
 	}
-	if n.Targets > 0 {
-		cf.Details += "; " + plural(n.Targets, "1 target waits", fmt.Sprintf("%d targets wait", n.Targets)) + " for it"
+	// Only enabled targets wait; a disabled one is not checked anyway.
+	var waiting int
+	if err := s.DB.R.QueryRowContext(ctx, "SELECT COUNT(*) FROM targets WHERE node_id = ? AND enabled = 1", n.ID).Scan(&waiting); err != nil {
+		return err
+	}
+	if waiting > 0 {
+		cf.Details += "; " + plural(waiting, "1 target waits", fmt.Sprintf("%d targets wait", waiting)) + " for it"
 	}
 	if overdue {
 		cf.Severity = check.Critical

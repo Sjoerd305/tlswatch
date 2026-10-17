@@ -397,3 +397,20 @@ func TestNodeFactsAuditIgnoresLinkLocal(t *testing.T) {
 		t.Fatalf("a changed routable address: %d entries", n-before)
 	}
 }
+
+// "N targets wait" counts the enabled targets only.
+func TestNodeOfflineCountsEnabledTargets(t *testing.T) {
+	e := newEnv(t)
+	n := e.confirmedNode("dc1")
+	e.target(func(t *Target) { t.NodeID = n.ID })
+	e.target(func(t *Target) { t.NodeID = n.ID; t.Name, t.Host, t.ServerName, t.Enabled = "Off", "off.example.nl", "off.example.nl", false })
+	n, _ = e.svc.Node(e.ctx, n.ID)
+	e.clock.Add(10 * time.Minute)
+	if err := e.svc.NodeOffline(e.ctx, n, e.clock.Now().Add(-10*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	fs, _ := e.svc.Findings(e.ctx, FindingFilter{})
+	if len(fs) != 1 || !strings.Contains(fs[0].Details, "1 target waits") {
+		t.Fatalf("findings: %+v", fs)
+	}
+}
