@@ -1224,3 +1224,47 @@ func TestRecoveryReachesChannelsThatGotAReminder(t *testing.T) {
 		t.Errorf("recovery to the channel that had the reminder: %+v", m)
 	}
 }
+
+// A bulk save that fails on one target saves none of them.
+func TestSaveTargetsAllOrNothing(t *testing.T) {
+	e := newEnv(t)
+	a := e.target(nil)
+	b := e.target(func(t *Target) { t.Name, t.Host, t.ServerName = "Shop", "shop.example.nl", "shop.example.nl" })
+	a.Notes, b.Notes = "changed", "changed"
+	b.NodeID = 4242 // no such node
+	off := false
+	if i, err := e.svc.SaveTargets(e.ctx, []Target{a, b}, &off, "test"); err == nil || i != 1 {
+		t.Fatalf("index %d, err %v", i, err)
+	}
+	if got, _ := e.svc.Target(e.ctx, a.ID); got.Notes != "" || !got.Enabled {
+		t.Fatalf("the first target was saved by a failed bulk save: %+v", got)
+	}
+	b.NodeID = 0
+	if _, err := e.svc.SaveTargets(e.ctx, []Target{a, b}, &off, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := e.svc.Target(e.ctx, a.ID); got.Notes != "changed" || got.Enabled {
+		t.Fatalf("after the bulk save: %+v", got)
+	}
+}
+
+// Lowering the interval moves the next check to the new interval's first
+// slot instead of waiting for the old one.
+func TestShorterIntervalPullsNextCheckForward(t *testing.T) {
+	e := newEnv(t)
+	tg := e.target(func(t *Target) { t.IntervalS = intp(7 * 86400) })
+	far := e.clock.Now().Add(6 * 24 * time.Hour).Unix()
+	if _, err := e.svc.DB.W.Exec("UPDATE targets SET next_check = ? WHERE id = ?", far, tg.ID); err != nil {
+		t.Fatal(err)
+	}
+	tg, _ = e.svc.Target(e.ctx, tg.ID)
+	tg.IntervalS = intp(3600)
+	if _, err := e.svc.SaveTarget(e.ctx, tg, "test"); err != nil {
+		t.Fatal(err)
+	}
+	var next int64
+	_ = e.svc.DB.R.QueryRow("SELECT next_check FROM targets WHERE id = ?", tg.ID).Scan(&next)
+	if next > e.clock.Now().Add(2*time.Hour).Unix() {
+		t.Fatalf("next check %v after lowering the interval to an hour", time.Unix(next, 0).Sub(e.clock.Now()))
+	}
+}

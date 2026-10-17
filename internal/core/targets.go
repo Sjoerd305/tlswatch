@@ -260,12 +260,45 @@ func (t *Target) Validate(st config.Settings) map[string]string {
 
 // SaveTarget creates (ID 0) or updates a target's configuration.
 func (s *Service) SaveTarget(ctx context.Context, t Target, user string) (int64, error) {
-	now := s.now().Unix()
+	def := s.CurrentSettings(ctx).Defaults // read before the write transaction
 	tx, err := s.DB.W.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
 	defer tx.Rollback()
+	id, err := s.saveTargetTx(ctx, tx, t, def, user)
+	if err != nil {
+		return 0, err
+	}
+	return id, tx.Commit()
+}
+
+// SaveTargets saves several targets in one transaction, all or none, as a
+// bulk edit does; enable, when set, then enables or disables each as
+// SetEnabled does. On an error it returns the index of the target that
+// failed.
+func (s *Service) SaveTargets(ctx context.Context, ts []Target, enable *bool, user string) (int, error) {
+	def := s.CurrentSettings(ctx).Defaults
+	tx, err := s.DB.W.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	for i, t := range ts {
+		if _, err := s.saveTargetTx(ctx, tx, t, def, user); err != nil {
+			return i, err
+		}
+		if enable != nil && *enable != t.Enabled {
+			if err := s.setEnabledTx(ctx, tx, t.ID, *enable); err != nil {
+				return i, err
+			}
+		}
+	}
+	return 0, tx.Commit()
+}
+
+func (s *Service) saveTargetTx(ctx context.Context, tx *sql.Tx, t Target, def config.Defaults, user string) (int64, error) {
+	now := s.now().Unix()
 	// Only a new assignment needs a confirmed node: a target stays editable
 	// while its node re-enrols.
 	if t.NodeID != 0 {
@@ -307,9 +340,9 @@ func (s *Service) SaveTarget(ctx context.Context, t Target, user string) (int64,
 		var oldTrust, oldHost, oldSNI, oldProto string
 		var oldPort int
 		var oldLegacy bool
-		var oldNode sql.NullInt64
-		err := tx.QueryRowContext(ctx, "SELECT trust_mode, host, servername, port, protocol, legacy_check, node_id FROM targets WHERE id = ?", t.ID).
-			Scan(&oldTrust, &oldHost, &oldSNI, &oldPort, &oldProto, &oldLegacy, &oldNode)
+		var oldNode, oldInterval sql.NullInt64
+		err := tx.QueryRowContext(ctx, "SELECT trust_mode, host, servername, port, protocol, legacy_check, node_id, interval_s FROM targets WHERE id = ?", t.ID).
+			Scan(&oldTrust, &oldHost, &oldSNI, &oldPort, &oldProto, &oldLegacy, &oldNode, &oldInterval)
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
 		}
@@ -343,6 +376,18 @@ func (s *Service) SaveTarget(ctx context.Context, t Target, user string) (int64,
 				return 0, err
 			}
 		}
+		// A shorter interval takes effect now, not after the old slot: the
+		// next check moves to the first slot of the new interval.
+		was := def.IntervalS
+		if oldInterval.Valid {
+			was = int(oldInterval.Int64)
+		}
+		if iv := t.Effective(def).IntervalS; iv < was {
+			next := NextCheck(t.ID, time.Duration(iv)*time.Second, s.now())
+			if _, err := tx.ExecContext(ctx, "UPDATE targets SET next_check = ? WHERE id = ? AND next_check > ?", next.Unix(), t.ID, next.Unix()); err != nil {
+				return 0, err
+			}
+		}
 		// Another node is a new view of the service, as a new host is.
 		if oldNode.Int64 != t.NodeID {
 			if err := newVantageTx(ctx, tx, "id = ?", t.ID); err != nil {
@@ -363,7 +408,7 @@ func (s *Service) SaveTarget(ctx context.Context, t Target, user string) (int64,
 	if _, err := s.refreshStatusTx(ctx, tx, t.ID); err != nil {
 		return 0, err
 	}
-	return t.ID, tx.Commit()
+	return t.ID, nil
 }
 
 func uniqueTarget(err error) error {
@@ -381,6 +426,13 @@ func (s *Service) SetEnabled(ctx context.Context, id int64, enabled bool) error 
 		return err
 	}
 	defer tx.Rollback()
+	if err := s.setEnabledTx(ctx, tx, id, enabled); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Service) setEnabledTx(ctx context.Context, tx *sql.Tx, id int64, enabled bool) error {
 	res, err := tx.ExecContext(ctx, "UPDATE targets SET enabled = ?, next_check = 0, updated_at = ? WHERE id = ?", enabled, s.now().Unix(), id)
 	if err != nil {
 		return err
@@ -396,10 +448,8 @@ func (s *Service) SetEnabled(ctx context.Context, id int64, enabled bool) error 
 			return err
 		}
 	}
-	if _, err := s.refreshStatusTx(ctx, tx, id); err != nil {
-		return err
-	}
-	return tx.Commit()
+	_, err = s.refreshStatusTx(ctx, tx, id)
+	return err
 }
 
 // DeleteImpact counts what deleting a target removes.

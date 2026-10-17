@@ -395,27 +395,33 @@ func (s *Server) bulkEdit(w http.ResponseWriter, r *http.Request) {
 		s.renderStatus(w, r, http.StatusBadRequest, "targets-bulk-edit", &Page{Title: "Edit targets", Nav: "targets", Data: f})
 		return
 	}
+	// All or nothing: one transaction for every target.
 	u := user(r)
+	ts = ts[:0]
+	for _, p := range work {
+		ts = append(ts, p.t)
+	}
+	var enable *bool
+	if f.Enabled != "" {
+		want := f.Enabled == "enable"
+		enable = &want
+	}
+	if i, err := s.Core.SaveTargets(ctx, ts, enable, u.Email); err != nil {
+		if msg, ok := usererr.Message(err); ok {
+			f.Errors["form"] = ts[i].Name + ": " + msg
+			s.renderStatus(w, r, http.StatusBadRequest, "targets-bulk-edit", &Page{Title: "Edit targets", Nav: "targets", Data: f})
+			return
+		}
+		s.serverError(w, r, err)
+		return
+	}
 	saved := 0
 	for _, p := range work {
 		t := p.t
-		if _, err := s.Core.SaveTarget(ctx, t, u.Email); err != nil {
-			if msg, ok := usererr.Message(err); ok {
-				f.Errors["node_id"] = t.Name + ": " + msg
-				s.renderStatus(w, r, http.StatusBadRequest, "targets-bulk-edit", &Page{Title: "Edit targets", Nav: "targets", Data: f})
-				return
-			}
-			s.serverError(w, r, err)
-			return
-		}
 		changed := p.changed
-		if want := f.Enabled == "enable"; f.Enabled != "" && want != t.Enabled {
-			if err := s.Core.SetEnabled(ctx, t.ID, want); err != nil {
-				s.serverError(w, r, err)
-				return
-			}
+		if enable != nil && *enable != t.Enabled {
 			changed = append(changed, f.Enabled)
-			if want {
+			if *enable {
 				s.Sched.CheckSoon(t.ID)
 			}
 		}
