@@ -239,7 +239,7 @@ func (d *Dispatcher) send(ctx context.Context, c Channel, delivered string, ps [
 
 // record stores the attempt on every alert of the batch: sent, or pending
 // with the next attempt after the backoff, or failed once retrying would
-// pass GiveUpAfter. It returns the alert IDs and those given up.
+// pass GiveUpAfter or cannot help (a *PermanentError). It returns the alert IDs and those given up.
 func (d *Dispatcher) record(ctx context.Context, a attempt, ps []pending) (ids, gaveUp []int64) {
 	now := d.now()
 	for _, p := range ps {
@@ -251,7 +251,8 @@ func (d *Dispatcher) record(ctx context.Context, a attempt, ps []pending) (ids, 
 			n := p.attempts + 1
 			next := now.Add(max(backoff(n), a.wait))
 			state := "pending"
-			if a.err == errDisabled || next.After(time.Unix(p.createdAt, 0).Add(GiveUpAfter)) {
+			var perm *PermanentError
+			if a.err == errDisabled || errors.As(a.err, &perm) || next.After(time.Unix(p.createdAt, 0).Add(GiveUpAfter)) {
 				state = "failed"
 				gaveUp = append(gaveUp, p.id)
 			}

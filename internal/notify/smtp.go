@@ -13,6 +13,8 @@ import (
 	"net"
 	"net/mail"
 	"net/smtp"
+	"net/textproto"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -90,12 +92,26 @@ type SMTPSender struct {
 
 // Send delivers m to every recipient in one transaction.
 func (s *SMTPSender) Send(ctx context.Context, m Message) error {
-	return redactErr(s.send(ctx, m), s.S.Password)
+	_, _, err := s.SendSkipping(ctx, m, nil)
+	return err
 }
 
-func (s *SMTPSender) send(ctx context.Context, m Message) error {
+// SendSkipping delivers m to the recipients not in done. The relay judges
+// each recipient: m goes to the ones it accepts, and the ones it refuses
+// for good (5xx) are reported as reached too, so a retry for a temporary
+// refusal does not try them again. The error names every refusal; it is
+// a *PermanentError when no refusal was temporary.
+func (s *SMTPSender) SendSkipping(ctx context.Context, m Message, done []string) (reached, refs []string, err error) {
+	reached, err = s.send(ctx, m, done)
+	if len(reached) > 0 {
+		refs = []string{MessageID(m.Ref)}
+	}
+	return reached, refs, redactErr(err, s.S.Password)
+}
+
+func (s *SMTPSender) send(ctx context.Context, m Message, done []string) ([]string, error) {
 	if err := s.S.Validate(); err != nil {
-		return err
+		return nil, &PermanentError{Err: err}
 	}
 	timeout := s.Timeout
 	if timeout == 0 {
@@ -107,28 +123,49 @@ func (s *SMTPSender) send(ctx context.Context, m Message) error {
 
 	conn, err := s.dial(ctx, tlsConf)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer conn.Close()
 	c, err := smtp.NewClient(conn, s.S.Host)
 	if err != nil {
-		return fmt.Errorf("smtp greeting: %w", err)
+		return nil, smtpErr("smtp greeting", err)
 	}
 	defer c.Close()
 	secure, err := s.hello(c, tlsConf)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := s.authenticate(c, secure); err != nil {
-		return err
+		return nil, err
 	}
-	if err := s.transmit(c, m); err != nil {
-		return err
+	reached, err := s.transmit(c, m, done)
+	if len(reached) > 0 {
+		// The relay has taken the mail: a QUIT that fails changes nothing,
+		// and reporting it would send the mail again on every retry.
+		_ = c.Quit()
 	}
-	// The relay has taken the mail: a QUIT that fails changes nothing, and
-	// reporting it would send the mail again on every retry.
-	_ = c.Quit()
-	return nil
+	return reached, err
+}
+
+// PermanentError is a delivery error that a retry will not change, such
+// as a recipient the relay refuses for good: the alert fails at once.
+type PermanentError struct{ Err error }
+
+func (e *PermanentError) Error() string { return e.Err.Error() }
+func (e *PermanentError) Unwrap() error { return e.Err }
+
+// smtpErr wraps a relay reply; a 5xx reply is permanent.
+func smtpErr(what string, err error) error {
+	err = fmt.Errorf("%s: %w", what, err)
+	if permanentReply(err) {
+		return &PermanentError{Err: err}
+	}
+	return err
+}
+
+func permanentReply(err error) bool {
+	var te *textproto.Error
+	return errors.As(err, &te) && te.Code >= 500 && te.Code < 600
 }
 
 // dial connects to the relay, with TLS from the first byte for implicit
@@ -162,7 +199,7 @@ func (s *SMTPSender) hello(c *smtp.Client, tlsConf *tls.Config) (bool, error) {
 		hostname = "tlswatch"
 	}
 	if err := c.Hello(hostname); err != nil {
-		return false, fmt.Errorf("EHLO: %w", err)
+		return false, smtpErr("EHLO", err)
 	}
 	switch s.S.encryption() {
 	case "tls":
@@ -203,36 +240,64 @@ func (s *SMTPSender) authenticate(c *smtp.Client, secure bool) error {
 		return fmt.Errorf("no supported AUTH mechanism (server offers %s)", mechs)
 	}
 	if err := c.Auth(a); err != nil {
-		return fmt.Errorf("authentication: %w", err)
+		return smtpErr("authentication", err)
 	}
 	return nil
 }
 
-// transmit sends m to every recipient in one transaction.
-func (s *SMTPSender) transmit(c *smtp.Client, m Message) error {
+// transmit sends m in one transaction to the recipients not in done that
+// the relay accepts. It returns the recipients settled: those that got the
+// mail and those refused for good. The To header lists every recipient.
+func (s *SMTPSender) transmit(c *smtp.Client, m Message, done []string) ([]string, error) {
 	from, _ := mail.ParseAddress(s.S.From)
 	if err := c.Mail(from.Address); err != nil {
-		return fmt.Errorf("MAIL FROM: %w", err)
+		return nil, smtpErr("MAIL FROM", err)
 	}
-	var to []string
+	var to, accepted, refused []string
+	var refusals []string
+	temporary := false
 	for _, r := range s.S.Recipients {
 		a, _ := mail.ParseAddress(r)
-		if err := c.Rcpt(a.Address); err != nil {
-			return fmt.Errorf("RCPT TO %s: %w", a.Address, err)
-		}
 		to = append(to, a.String())
+		if slices.Contains(done, a.Address) {
+			continue
+		}
+		if err := c.Rcpt(a.Address); err != nil {
+			refusals = append(refusals, fmt.Sprintf("RCPT TO %s: %v", a.Address, err))
+			if permanentReply(err) {
+				refused = append(refused, a.Address)
+			} else {
+				temporary = true
+			}
+			continue
+		}
+		accepted = append(accepted, a.Address)
+	}
+	refusedErr := func() error {
+		if len(refusals) == 0 {
+			return nil
+		}
+		err := errors.New(strings.Join(refusals, "; "))
+		if !temporary {
+			return &PermanentError{Err: err}
+		}
+		return err
+	}
+	if len(accepted) == 0 {
+		_ = c.Reset()
+		return refused, refusedErr()
 	}
 	w, err := c.Data()
 	if err != nil {
-		return fmt.Errorf("DATA: %w", err)
+		return nil, smtpErr("DATA", err)
 	}
 	if _, err := w.Write(buildMessage(from.String(), to, m, time.Now())); err != nil {
-		return fmt.Errorf("write message: %w", err)
+		return nil, fmt.Errorf("write message: %w", err)
 	}
 	if err := w.Close(); err != nil {
-		return fmt.Errorf("end of data: %w", err)
+		return nil, smtpErr("end of data", err)
 	}
-	return nil
+	return append(accepted, refused...), refusedErr()
 }
 
 // MessageID is the Message-ID header value for a delivery reference.
