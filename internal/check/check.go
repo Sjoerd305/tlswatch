@@ -688,8 +688,11 @@ func addressFacts(t Target, a probe.Address, th Thresholds, now time.Time) ([]Fi
 				latestStart = c.NotBefore
 			}
 		}
-		// A root's own signature is never checked, so a SHA-1 root is fine.
-		if d := probe.Describe(c); d.WeakSignature && !(d.SelfSigned && d.IsCA && c != leaf) {
+		// A root's own signature is never checked, so a SHA-1 root is fine;
+		// its key signs the next certificate and is judged like any other.
+		d := probe.Describe(c)
+		root := d.SelfSigned && d.IsCA && c != leaf
+		if d.WeakSignature && !root || root && d.KeyType == "RSA" && d.KeyBits < 2048 {
 			weak = append(weak, nameOf(c))
 		}
 	}
