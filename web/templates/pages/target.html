@@ -64,8 +64,8 @@
       <div class="chain">
         {{- $ecls := $t.ExpiryClass $p.Settings.Defaults $p.Now}}
         {{- range $d.Chain}}{{$dl := days $p.Now .NotAfter}}
-        <div class="link"><span class="d {{if or (lt $dl 0) .Weak}}bad{{else if and .Worst $ecls}}{{if eq $ecls "crit"}}bad{{else}}warn{{end}}{{else}}good{{end}}"></span>
-          <div><div class="name">{{.SubjectCN}}</div><div class="sub">{{.Role}}{{if .InStore}}, in {{if eq (print $t.Trust) "bundle"}}bundle{{else}}store{{end}}{{end}} · {{.KeyDesc}} · {{.SigAlg}}{{if .Weak}} · <span class="crit-t">weak</span>{{end}}</div></div>
+        <div class="link"><span class="d {{if .Stale}}warn{{else if or (lt $dl 0) .Weak}}bad{{else if and .Worst $ecls}}{{if eq $ecls "crit"}}bad{{else}}warn{{end}}{{else}}good{{end}}"></span>
+          <div><div class="name">{{.SubjectCN}}</div><div class="sub">{{.Role}}{{if .InStore}}, in {{if eq (print $t.Trust) "bundle"}}bundle{{else}}store{{end}}{{end}} · {{.KeyDesc}} · {{.SigAlg}}{{if .Weak}} · <span class="crit-t">weak</span>{{end}}{{if .Stale}} · not used by clients, can be dropped{{end}}</div></div>
           <span class="date mono">{{date $p.Loc .NotAfter}}</span>
           <span class="left mono{{if and .Worst $ecls}} {{$ecls}}-t bold{{end}}">{{if lt $dl 0}}expired{{else}}{{$dl}} d{{end}}</span>
         </div>

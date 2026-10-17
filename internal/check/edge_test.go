@@ -464,3 +464,37 @@ func TestKindLabelEmptyDoesNotPanic(t *testing.T) {
 	}()
 	_ = Kind("").Label()
 }
+
+// A server that still sends an expired root after a valid chain (the old
+// Let's Encrypt DST Root X3 case) is fine for clients: the chain ends in a
+// valid root from the store. Only the root a verified chain ends in counts.
+func TestStaleExpiredRootIsNotJudged(t *testing.T) {
+	stale := sign(t, &x509.Certificate{
+		Subject: pkix.Name{CommonName: "Old Root", Organization: []string{"Old CA"}},
+		IsCA:    true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
+		NotBefore: now.Add(-20 * 365 * 24 * time.Hour), NotAfter: now.Add(-24 * time.Hour),
+	}, nil)
+	root := newIssuer(t, "Test CA", "Test Root")
+	leaf := leafCert(t, root, 60, "a.example")
+	verify := func(chain []*x509.Certificate, anchor *x509.Certificate) Outcome {
+		pool := x509.NewCertPool()
+		pool.AddCert(anchor)
+		a := probe.Address{IP: "192.0.2.1", OK: true, Chain: chain}
+		probe.Verify(&a, probe.Request{ServerName: "a.example", Trust: probe.TrustBundle, Roots: pool, Now: func() time.Time { return now }})
+		tg := manual
+		tg.Trust, tg.ServerName = probe.TrustBundle, "a.example"
+		return Evaluate(tg, Previous{Open: open()}, result(a), now)
+	}
+
+	o := verify([]*x509.Certificate{leaf, stale.cert}, root.cert)
+	if len(o.Open) != 0 {
+		t.Fatalf("stale root sent after a valid chain: open %v", kindsOf(o.Open))
+	}
+
+	// The same expired root as the anchor of the chain is expired.
+	old := leafCert(t, stale, 60, "a.example")
+	o = verify([]*x509.Certificate{old, stale.cert}, stale.cert)
+	if _, ok := find(o.Open, Expired); !ok {
+		t.Fatalf("expired anchor: open %v", kindsOf(o.Open))
+	}
+}

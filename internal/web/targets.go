@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -370,6 +371,9 @@ func (s *Server) loadTargetDetail(ctx context.Context, t core.Target, st config.
 	}
 	if d.Findings, d.OpenMain, err = s.targetFindings(ctx, t.ID); err != nil {
 		return d, err
+	}
+	if !slices.ContainsFunc(d.Findings, func(f core.Finding) bool { return f.Open() && f.Kind == check.Expired }) {
+		core.MarkStale(d.Chain, d.ChainOK, s.now().Unix())
 	}
 	if d.Alerts, err = s.Core.Alerts(ctx, 0, t.ID, 8); err != nil {
 		return d, err

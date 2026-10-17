@@ -677,6 +677,17 @@ func addressFacts(t Target, a probe.Address, th Thresholds, now time.Time) ([]Fi
 	var weak []string
 	latestStart := leaf.NotBefore
 	for _, c := range a.Chain {
+		d := probe.Describe(c)
+		root := d.SelfSigned && d.IsCA && c != leaf
+		// A stale root the server still sends after a valid chain is not
+		// used by clients, so its dates are not judged; only the root a
+		// verified chain ends in is.
+		if root && !anchors(a, c) {
+			if d.KeyType == "RSA" && d.KeyBits < 2048 {
+				weak = append(weak, nameOf(c))
+			}
+			continue
+		}
 		if c.NotAfter.Before(earliest) {
 			earliest = c.NotAfter
 		}
@@ -693,8 +704,6 @@ func addressFacts(t Target, a probe.Address, th Thresholds, now time.Time) ([]Fi
 		}
 		// A root's own signature is never checked, so a SHA-1 root is fine;
 		// its key signs the next certificate and is judged like any other.
-		d := probe.Describe(c)
-		root := d.SelfSigned && d.IsCA && c != leaf
 		if d.WeakSignature && !root || root && d.KeyType == "RSA" && d.KeyBits < 2048 {
 			weak = append(weak, nameOf(c))
 		}
@@ -733,6 +742,12 @@ func addressFacts(t Target, a probe.Address, th Thresholds, now time.Time) ([]Fi
 		fs = append(fs, Finding{Kind: WeakSignature, Severity: Warning, Fingerprint: fp, Details: "weak signature or key: " + strings.Join(weak, ", ")})
 	}
 	return fs, earliest
+}
+
+// anchors reports whether c is the root a verified chain of a ends in.
+func anchors(a probe.Address, c *x509.Certificate) bool {
+	n := len(a.VerifiedChain)
+	return n > 0 && a.VerifiedChain[n-1].Equal(c)
 }
 
 func trustLabel(m probe.TrustMode) string {

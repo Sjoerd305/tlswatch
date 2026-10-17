@@ -172,7 +172,7 @@ Every observation runs the full set of checks (the test for legacy TLS versions 
 | Kind | Opens when | Severity | Notes |
 | --- | --- | --- | --- |
 | `expiring` | The earliest NotAfter in the presented chain is within the warning or critical threshold | warning / critical | Counts whole days; escalates from warning to critical as the date nears |
-| `expired` | Any certificate in the presented chain has expired | critical | |
+| `expired` | Any certificate in the presented chain has expired | critical | A root the server still sends after a chain that verifies without it (the old DST Root CA X3 case) is not judged: clients ignore it. The chain view marks it "not used by clients, can be dropped". The root a verified chain ends in is judged |
 | `not_yet_valid` | Any certificate in the presented chain has a NotBefore in the future | critical | Every client refuses it, as an expired one. Deployed too early, or a clock off on the issuing side; trust is still judged apart from the validity window |
 | `chain_untrusted` | The chain does not verify against the trust mode (system store or bundle) | critical | Missing intermediate, unknown root, broken signature, a certificate not valid for server authentication (for example client-only); not raised for `self-signed` targets |
 | `self_signed` | A self-signed leaf on a target whose trust mode is not `self-signed` | critical | The fix is either the server or switching the target to `self-signed` |

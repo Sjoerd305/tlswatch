@@ -93,6 +93,9 @@ type ChainLink struct {
 	InStore bool   // root added from the trust store or bundle
 	Weak    bool
 	Worst   bool // the link that expires first
+	// Stale: an expired root the server still sends after a chain that
+	// verifies without it; clients ignore it and it can be dropped.
+	Stale bool
 }
 
 // Chain resolves an observation's chain to certificates.
@@ -113,12 +116,34 @@ func (s *Service) Chain(ctx context.Context, o Observation) []ChainLink {
 		default:
 			l.Role = "intermediate"
 		}
-		l.Weak = isWeak(c) && !(c.SelfSigned && c.IsCA)
+		// A root's own signature is never checked; its key is.
+		l.Weak = isWeak(c) && !(c.SelfSigned && c.IsCA) || c.KeyType == "RSA" && c.KeyBits < 2048
 		out = append(out, l)
 	}
+	markWorst(out)
+	return out
+}
+
+// MarkStale flags the expired roots sent after a chain that verified, when
+// no expired finding says the chain needs them, and moves Worst past them.
+func MarkStale(links []ChainLink, verified bool, now int64) {
+	if !verified {
+		return
+	}
+	for i := range links {
+		l := &links[i]
+		l.Stale = i > 0 && l.Role == "root" && !l.InStore && l.NotAfter < now
+	}
+	markWorst(links)
+}
+
+// markWorst flags the presented link that expires first.
+func markWorst(out []ChainLink) {
 	worst := -1
-	for i, l := range out {
-		if l.InStore {
+	for i := range out {
+		out[i].Worst = false
+		l := out[i]
+		if l.InStore || l.Stale {
 			continue
 		}
 		if worst < 0 || l.NotAfter < out[worst].NotAfter {
@@ -128,7 +153,6 @@ func (s *Service) Chain(ctx context.Context, o Observation) []ChainLink {
 	if worst >= 0 {
 		out[worst].Worst = true
 	}
-	return out
 }
 
 func isWeak(c Certificate) bool {

@@ -1151,3 +1151,24 @@ func TestGradeStoredWithTheDailyTest(t *testing.T) {
 		t.Fatalf("a new port kept the grade: %q %v %v", tg.Grade, tg.GradeReasons, tg.ConfigTest)
 	}
 }
+
+func TestMarkStaleSkipsExpiredPresentedRoot(t *testing.T) {
+	now := time.Now().Unix()
+	links := []ChainLink{
+		{Certificate: Certificate{NotAfter: now + 60*86400}, Role: "leaf"},
+		{Certificate: Certificate{NotAfter: now + 400*86400}, Role: "intermediate"},
+		{Certificate: Certificate{NotAfter: now - 86400}, Role: "root"},
+	}
+	markWorst(links)
+	if !links[2].Worst {
+		t.Fatal("before MarkStale the expired root is the worst link")
+	}
+	MarkStale(links, false, now)
+	if links[2].Stale {
+		t.Fatal("stale on a chain that did not verify")
+	}
+	MarkStale(links, true, now)
+	if !links[2].Stale || links[2].Worst || !links[0].Worst {
+		t.Fatalf("links %+v", links)
+	}
+}
