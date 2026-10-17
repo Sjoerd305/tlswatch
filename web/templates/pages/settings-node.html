@@ -7,7 +7,7 @@
   </div>
   {{- if eq $n.State "confirmed"}}
   <div class="actions row">
-    {{- if and $r.Note (not $n.Facts.Container) (not $n.UpdateStarted)}}
+    {{- if $r.CanUpdate}}
     <form method="post" action="/settings/nodes/{{$n.ID}}/update">{{template "csrf" $p.CSRF}}<input type="hidden" name="next" value="/settings/nodes/{{$n.ID}}"><button type="submit" class="btn">Update to {{$d.Version}}</button></form>
     {{- end}}
     {{- if $n.Enabled}}

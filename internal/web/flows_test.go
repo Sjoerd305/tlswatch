@@ -22,6 +22,7 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/core"
 	"github.com/sjoerd305/tlswatch/internal/db"
+	"github.com/sjoerd305/tlswatch/internal/node"
 )
 
 // Restores that must not happen: a damaged or foreign file, a database of
@@ -243,6 +244,19 @@ func TestNodeActions(t *testing.T) {
 	if n.Name != "Amsterdam" || n.Notes != "rack 4" {
 		t.Fatalf("after save: %q %q", n.Name, n.Notes)
 	}
+	// A node on another platform than this development build: nothing to
+	// update to, so no Update.
+	_ = c.TouchNode(ctx, id, time.Now(), "v0.0.1", 1, "192.0.2.1")
+	n, _ = c.Node(ctx, id)
+	_ = c.SaveNodeFacts(ctx, n, core.NodeFacts{Hostname: "probe", Arch: "plan9/arm"})
+	if rec := hs.do(authz.Admin, "POST", fmt.Sprintf("/settings/nodes/%d/update", id), nil, true); rec.Code != http.StatusBadRequest {
+		t.Errorf("update a node whose platform this build cannot serve: %d", rec.Code)
+	}
+	if body := hs.do(authz.Admin, "GET", fmt.Sprintf("/settings/nodes/%d", id), nil, false).Body.String(); strings.Contains(body, "Update to ") || !strings.Contains(body, "no plan9/arm binary") {
+		t.Error("the node page offers Update for a platform this build cannot serve")
+	}
+	n, _ = c.Node(ctx, id)
+	_ = c.SaveNodeFacts(ctx, n, core.NodeFacts{Hostname: "probe", Arch: node.OwnPlatform()})
 	rec = hs.do(authz.Admin, "POST", fmt.Sprintf("/settings/nodes/%d/update", id), url.Values{"next": {"https://evil.example/"}}, true)
 	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/" {
 		t.Fatalf("update: %d %s", rec.Code, rec.Header().Get("Location"))

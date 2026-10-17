@@ -41,7 +41,7 @@
       {{template "csrf" $p.CSRF}}
       <h3 class="h3">Updates</h3>
       <label class="check"><input type="checkbox" name="auto_update" value="1"{{if $d.Auto}} checked{{end}}> Keep nodes on the server's version</label>
-      <span class="help lift">Nodes update themselves from this server, one at a time, and roll back when the new version does not reach the server within five minutes. A node in a container is updated by pulling the image instead.{{if not $d.Release}} This server is a development build ({{$d.Version}}), so nodes are updated only with Update.{{end}}</span>
+      <span class="help lift">Nodes update themselves from this server, one at a time, and roll back when the new version does not reach the server within five minutes. A node in a container is updated by pulling the image instead.{{if not $d.Release}} This server is a development build ({{$d.Version}}): nodes are never updated on their own, Update is offered only for nodes on {{$d.Own}}, and such a node takes the build only when it runs with <code>-allow-unsigned-update</code>.{{end}}</span>
       <div class="form-foot"><button type="submit" class="btn btn-primary">Save</button>{{if $d.Outdated}}<button type="submit" form="update-all" class="btn">Update all ({{$d.Outdated}})</button>{{end}}</div>
     </form>
     {{- if $d.Outdated}}<form id="update-all" method="post" action="/settings/nodes/update-all">{{template "csrf" $p.CSRF}}</form>{{end}}

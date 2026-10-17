@@ -21,6 +21,9 @@ type nodeRow struct {
 	// "updating", "update failed" or "update by pulling the image".
 	Note      string
 	NoteClass string
+	// CanUpdate: Update is offered, since this server can hand out a
+	// binary for the node's platform.
+	CanUpdate bool
 }
 
 // Waiting reports whether the node holds its targets: offline, disabled or
@@ -38,10 +41,14 @@ func (s *Server) nodeRow(n core.Node) nodeRow {
 	case n.Version == s.Version:
 	case n.Facts.Container:
 		r.Note, r.NoteClass = "update by pulling the image", "warn"
+	case n.Facts.Arch != "" && !s.Nodes.ServesPlatform(n.Facts.Arch):
+		// A development build has no release to fetch other platforms
+		// from; Update could only fail.
+		r.Note, r.NoteClass = "no "+n.Facts.Arch+" binary for "+s.Version, "info"
 	case n.UpdateFailed != "":
-		r.Note, r.NoteClass = "update failed", "crit"
+		r.Note, r.NoteClass, r.CanUpdate = "update failed", "crit", true
 	default:
-		r.Note, r.NoteClass = "update available", "warn"
+		r.Note, r.NoteClass, r.CanUpdate = "update available", "warn", true
 	}
 	return r
 }
@@ -78,7 +85,7 @@ func (s *Server) settingsNodes(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, n := range nodes {
 		row := s.nodeRow(n)
-		if row.Note == "update available" || row.Note == "update failed" {
+		if row.CanUpdate {
 			d.Outdated++
 		}
 		d.Rows = append(d.Rows, row)
@@ -117,9 +124,19 @@ func (s *Server) nodesAuto(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) nodesUpdateAll(w http.ResponseWriter, r *http.Request) {
-	if err := s.Core.RequestNodeUpdate(r.Context(), 0); err != nil {
+	nodes, err := s.Core.Nodes(r.Context())
+	if err != nil {
 		s.serverError(w, r, err)
 		return
+	}
+	// Only the nodes this server can hand a binary to.
+	for _, n := range nodes {
+		if s.nodeRow(n).CanUpdate {
+			if err := s.Core.RequestNodeUpdate(r.Context(), n.ID); err != nil {
+				s.serverError(w, r, err)
+				return
+			}
+		}
 	}
 	s.Core.Audit(r.Context(), user(r).Email, "node.update_request", "all nodes", "to="+s.Version)
 	s.back(w, r, "/settings/nodes", "Every node on another version is updated in turn, one at a time.", "info")
@@ -279,6 +296,14 @@ func (s *Server) nodeRotate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) nodeUpdate(w http.ResponseWriter, r *http.Request) {
 	n, ok := s.loadNode(w, r)
 	if !ok {
+		return
+	}
+	if row := s.nodeRow(n); !row.CanUpdate {
+		msg := n.Label() + " has nothing to update to"
+		if row.Note != "" {
+			msg += ": " + row.Note
+		}
+		s.fail(w, r, http.StatusBadRequest, msg+".")
 		return
 	}
 	if err := s.Core.RequestNodeUpdate(r.Context(), n.ID); err != nil {
