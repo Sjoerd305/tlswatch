@@ -498,3 +498,30 @@ func TestStaleExpiredRootIsNotJudged(t *testing.T) {
 		t.Fatalf("expired anchor: open %v", kindsOf(o.Open))
 	}
 }
+
+// A self-signed certificate put in a bundle on its own is trusted through
+// that bundle; the same certificate without it in the bundle is not.
+func TestSelfSignedLeafInBundle(t *testing.T) {
+	self := sign(t, &x509.Certificate{Subject: pkix.Name{CommonName: "a.example"}, DNSNames: []string{"a.example"},
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, NotAfter: now.Add(400 * 24 * time.Hour)}, nil).cert
+	other := newIssuer(t, "Test CA", "Other Root")
+	for _, c := range []struct {
+		name   string
+		bundle *x509.Certificate
+		want   []Kind
+	}{
+		{"in the bundle", self, nil},
+		{"not in the bundle", other.cert, []Kind{SelfSigned}},
+	} {
+		pool := x509.NewCertPool()
+		pool.AddCert(c.bundle)
+		a := probe.Address{IP: "192.0.2.1", OK: true, Chain: []*x509.Certificate{self}}
+		probe.Verify(&a, probe.Request{ServerName: "a.example", Trust: probe.TrustBundle, Roots: pool, Now: func() time.Time { return now }})
+		tg := manual
+		tg.Trust, tg.ServerName = probe.TrustBundle, "a.example"
+		o := Evaluate(tg, Previous{Open: open()}, result(a), now)
+		if got := kindsOf(o.Open); !slices.Equal(got, c.want) {
+			t.Errorf("%s: %v, want %v", c.name, got, c.want)
+		}
+	}
+}

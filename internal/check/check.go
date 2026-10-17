@@ -728,7 +728,8 @@ func addressFacts(t Target, a probe.Address, th Thresholds, now time.Time) ([]Fi
 	}
 	selfSigned := probe.Describe(leaf).SelfSigned
 	if t.Trust != probe.TrustSelfSigned {
-		if selfSigned {
+		// A self-signed leaf that verifies is itself in the bundle or store.
+		if selfSigned && !a.Verified {
 			fs = append(fs, Finding{Kind: SelfSigned, Severity: Critical, Fingerprint: fp, Details: "self-signed certificate on a target verified against the " + trustLabel(t.Trust)})
 		} else if !a.Verified {
 			fs = append(fs, Finding{Kind: ChainUntrusted, Severity: Critical, Fingerprint: fp, Details: a.VerifyError})
