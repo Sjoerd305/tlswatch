@@ -636,3 +636,13 @@ func TestNodeEnvironmentValues(t *testing.T) {
 		t.Fatalf("stray argument: %v", err)
 	}
 }
+
+func TestCheckHelpExitsZero(t *testing.T) {
+	var out, errOut bytes.Buffer
+	if code := checkCmd([]string{"-h"}, &out, &errOut); code != 0 || !strings.Contains(errOut.String(), "-servername") {
+		t.Fatalf("check -h: exit %d, %q", code, errOut.String())
+	}
+	if code := checkCmd([]string{"-bogus"}, &out, &errOut); code != 2 {
+		t.Fatalf("unknown flag: exit %d", code)
+	}
+}

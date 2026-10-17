@@ -75,6 +75,9 @@ var errUsage = errors.New("usage")
 // errors).
 func checkCmd(args []string, stdout, stderr io.Writer) int {
 	run, err := parseCheck(args, stderr)
+	if errors.Is(err, flag.ErrHelp) {
+		return 0 // the usage asked for, printed by the flag set
+	}
 	if err != nil {
 		if !errors.Is(err, errUsage) {
 			fmt.Fprintln(stderr, err)
@@ -111,6 +114,9 @@ func parseCheck(args []string, stderr io.Writer) (checkRun, error) {
 	noConfig := fs.Bool("no-config-test", false, "skip the configuration test (TLS 1.0 and 1.1, weak cipher suites, the grade)")
 	noLegacy := fs.Bool("no-legacy", false, "alias of -no-config-test")
 	if err := fs.Parse(reorder(args, map[string]bool{"protocol": true, "servername": true, "ca-file": true, "warn": true, "crit": true, "timeout": true})); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return checkRun{}, err
+		}
 		return checkRun{}, errUsage
 	}
 	if fs.NArg() != 1 {
