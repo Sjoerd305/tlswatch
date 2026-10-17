@@ -21,6 +21,7 @@ type Kind string
 const (
 	Expiring           Kind = "expiring"
 	Expired            Kind = "expired"
+	NotYetValid        Kind = "not_yet_valid"
 	ChainUntrusted     Kind = "chain_untrusted"
 	SelfSigned         Kind = "self_signed"
 	HostnameMismatch   Kind = "hostname_mismatch"
@@ -49,11 +50,13 @@ const (
 )
 
 // Kinds lists every kind, for filters.
-var Kinds = []Kind{Expiring, Expired, ChainUntrusted, SelfSigned, HostnameMismatch, WeakSignature, LegacyProtocol, WeakConfiguration, CertificateChanged, IssuerChanged, GradeChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed, NodeOffline, UnexpectedCertificate, CTSourceFailed, CertificateIssued}
+var Kinds = []Kind{Expiring, Expired, NotYetValid, ChainUntrusted, SelfSigned, HostnameMismatch, WeakSignature, LegacyProtocol, WeakConfiguration, CertificateChanged, IssuerChanged, GradeChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed, NodeOffline, UnexpectedCertificate, CTSourceFailed, CertificateIssued}
 
 // Label is the human name of a kind.
 func (k Kind) Label() string {
 	switch k {
+	case NotYetValid:
+		return "Not yet valid"
 	case ChainUntrusted:
 		return "Chain untrusted"
 	case SelfSigned:
@@ -96,6 +99,8 @@ func (k Kind) Short() string {
 		return "changed"
 	case IssuerChanged:
 		return "issuer"
+	case NotYetValid:
+		return "not yet valid"
 	case ChainUntrusted:
 		return "untrusted"
 	case HostnameMismatch:
@@ -665,14 +670,23 @@ func addressFacts(t Target, a probe.Address, th Thresholds, now time.Time) ([]Fi
 	leaf := a.Chain[0]
 	fp := probe.Fingerprint(leaf)
 	earliest := leaf.NotAfter
-	var expired []string
+	var expired, early []string
 	var weak []string
+	latestStart := leaf.NotBefore
 	for _, c := range a.Chain {
 		if c.NotAfter.Before(earliest) {
 			earliest = c.NotAfter
 		}
 		if now.After(c.NotAfter) {
 			expired = append(expired, nameOf(c))
+		}
+		// Clients refuse a certificate before its NotBefore just as after
+		// its NotAfter; Verify judges trust apart from both.
+		if now.Before(c.NotBefore) {
+			early = append(early, nameOf(c))
+			if c.NotBefore.After(latestStart) {
+				latestStart = c.NotBefore
+			}
 		}
 		// A root's own signature is never checked, so a SHA-1 root is fine.
 		if d := probe.Describe(c); d.WeakSignature && !(d.SelfSigned && d.IsCA && c != leaf) {
@@ -692,6 +706,10 @@ func addressFacts(t Target, a probe.Address, th Thresholds, now time.Time) ([]Fi
 		d := days
 		fs = append(fs, Finding{Kind: Expiring, Severity: sev, Fingerprint: fp, DaysLeft: &d,
 			Details: fmt.Sprintf("%d days left · %s", days, earliest.UTC().Format("2006-01-02"))})
+	}
+	if len(early) > 0 {
+		fs = append(fs, Finding{Kind: NotYetValid, Severity: Critical, Fingerprint: fp,
+			Details: fmt.Sprintf("%s not valid until %s", strings.Join(early, ", "), latestStart.UTC().Format("2006-01-02 15:04 MST"))})
 	}
 	selfSigned := probe.Describe(leaf).SelfSigned
 	if t.Trust != probe.TrustSelfSigned {
