@@ -15,6 +15,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -212,9 +213,13 @@ func (c *Client) Run(ctx context.Context) error {
 		default:
 		}
 		if time.Since(factsAt) >= FactsEvery {
-			if err := c.sendFacts(ctx); err == nil {
+			var later factsLater
+			switch err := c.sendFacts(ctx); {
+			case err == nil:
 				factsAt = time.Now()
-			} else if ctx.Err() == nil {
+			case errors.As(err, &later):
+				factsAt = time.Now().Add(later.wait - FactsEvery)
+			case ctx.Err() == nil:
 				c.Log.Warn("facts not sent", "err", err)
 			}
 		}
@@ -360,6 +365,12 @@ func gzipped(b []byte) []byte {
 	return buf.Bytes()
 }
 
+// factsLater is the server asking for the facts again after a while: the
+// last report was too recent to store.
+type factsLater struct{ wait time.Duration }
+
+func (e factsLater) Error() string { return "facts reported too soon; again in " + e.wait.String() }
+
 func (c *Client) sendFacts(ctx context.Context) error {
 	body, _ := json.Marshal(GatherFacts(c.Version, c.Container))
 	resp, err := c.do(ctx, http.MethodPost, c.Server+Prefix+"/facts", body, nil)
@@ -367,6 +378,10 @@ func (c *Client) sendFacts(ctx context.Context) error {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusTooManyRequests {
+		s, _ := strconv.Atoi(resp.Header.Get("Retry-After"))
+		return factsLater{wait: time.Duration(max(s, 1)) * time.Second}
+	}
 	if resp.StatusCode/100 != 2 {
 		return errors.New(serverError(resp))
 	}

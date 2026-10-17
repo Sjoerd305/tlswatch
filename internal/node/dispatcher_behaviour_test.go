@@ -646,7 +646,9 @@ func TestFactsClockOffsetClippingAndRate(t *testing.T) {
 		t.Fatalf("hostname not clipped: %d bytes", len(got.Facts.Hostname))
 	}
 	f.Hostname, f.Time = "moved", e.clock.now()
-	post(f)
+	if code := post(f); code != http.StatusTooManyRequests {
+		t.Fatalf("a second report within five minutes: %d, want 429 so the node sends it again", code)
+	}
 	if got, _ = e.core.Node(ctx, n.ID); got.Facts.Hostname == "moved" {
 		t.Fatal("a second report within five minutes was stored")
 	}

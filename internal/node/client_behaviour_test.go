@@ -36,6 +36,7 @@ type fakeServer struct {
 	download http.HandlerFunc
 	poll     http.HandlerFunc
 	result   http.HandlerFunc
+	facts    http.HandlerFunc
 }
 
 func newFakeServer(t *testing.T, version string, released []byte) *fakeServer {
@@ -62,7 +63,8 @@ func newFakeServer(t *testing.T, version string, released []byte) *fakeServer {
 	mux.HandleFunc(Prefix+"/download/", func(w http.ResponseWriter, r *http.Request) { f.handler(&f.download)(w, r) })
 	mux.HandleFunc(Prefix+"/jobs", func(w http.ResponseWriter, r *http.Request) { f.handler(&f.poll)(w, r) })
 	mux.HandleFunc(Prefix+"/jobs/", func(w http.ResponseWriter, r *http.Request) { f.handler(&f.result)(w, r) })
-	mux.HandleFunc(Prefix+"/facts", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	f.facts = func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }
+	mux.HandleFunc(Prefix+"/facts", func(w http.ResponseWriter, r *http.Request) { f.handler(&f.facts)(w, r) })
 	f.Server = httptest.NewServer(mux)
 	t.Cleanup(f.Close)
 	return f
@@ -570,5 +572,37 @@ func TestUninstallNeedsRoot(t *testing.T) {
 	}
 	if len(out) != 0 {
 		t.Fatalf("uninstall did something without root: %v", out)
+	}
+}
+
+// Facts the server could not store yet (a restart within five minutes of
+// the last report) are sent again when it asks, not an hour later.
+func TestFactsSentAgainWhenTheServerAsks(t *testing.T) {
+	f := newFakeServer(t, "v1.2.0", nil)
+	var reports atomic.Int32
+	f.set(&f.facts, func(w http.ResponseWriter, r *http.Request) {
+		if reports.Add(1) == 1 {
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	f.set(&f.poll, func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(200 * time.Millisecond):
+		}
+		writeJSON(w, http.StatusOK, PollResponse{ServerVersion: "v1.2.0"})
+	})
+	c, _ := nodeAt(t, f, "v1.2.0")
+	_ = os.WriteFile(filepath.Join(c.Data, "credential"), []byte("cred\n"), 0o600)
+	ctx, cancel := context.WithTimeout(context.Background(), 2500*time.Millisecond)
+	defer cancel()
+	if err := c.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := reports.Load(); n != 2 {
+		t.Fatalf("%d facts reports, want the refused one and one again after Retry-After", n)
 	}
 }

@@ -196,13 +196,17 @@ func (d *Dispatcher) facts(w http.ResponseWriter, r *http.Request, n core.Node) 
 	now := d.now()
 	d.mu.Lock()
 	ns := d.state(n.ID)
-	tooSoon := !ns.factsAt.IsZero() && now.Sub(ns.factsAt) < factsInterval
+	wait := factsInterval - now.Sub(ns.factsAt)
+	tooSoon := !ns.factsAt.IsZero() && wait > 0
 	if !tooSoon {
 		ns.factsAt = now
 	}
 	d.mu.Unlock()
 	if tooSoon {
-		w.WriteHeader(http.StatusNoContent) // taken, not stored
+		// Not stored: the node sends them again when asked, so facts
+		// changed by a restart (a self-update) are not lost for an hour.
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "facts reported too soon"})
 		return
 	}
 	if err := d.Core.SaveNodeFacts(r.Context(), n, d.stamp(f)); err != nil {
