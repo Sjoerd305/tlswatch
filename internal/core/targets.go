@@ -281,15 +281,22 @@ func (s *Service) SaveTarget(ctx context.Context, t Target, user string) (int64,
 		if err != nil {
 			return 0, uniqueTarget(err)
 		}
-		// A new endpoint or trust mode starts a new pin and history baseline.
-		if oldTrust != string(t.Trust) || oldHost != t.Host || oldSNI != t.ServerName {
+		// A new endpoint or trust mode starts a new pin; a new endpoint also
+		// starts a new baseline, so its certificate is not a replacement.
+		newEndpoint := oldHost != t.Host || oldSNI != t.ServerName || oldPort != t.Port || oldProto != string(t.Protocol)
+		if newEndpoint || oldTrust != string(t.Trust) {
 			if _, err := tx.ExecContext(ctx, "UPDATE targets SET pinned_fp = '', next_check = 0 WHERE id = ?", t.ID); err != nil {
+				return 0, err
+			}
+		}
+		if newEndpoint {
+			if _, err := tx.ExecContext(ctx, "UPDATE targets SET current_fp = '', not_after = 0 WHERE id = ?", t.ID); err != nil {
 				return 0, err
 			}
 		}
 		// A new endpoint, or the test switched on or off, forgets the last
 		// test of the old versions, so the next check runs it.
-		if oldHost != t.Host || oldSNI != t.ServerName || oldPort != t.Port || oldProto != string(t.Protocol) || oldLegacy == t.SkipLegacy {
+		if newEndpoint || oldLegacy == t.SkipLegacy {
 			if _, err := tx.ExecContext(ctx, "UPDATE targets SET legacy_checked = 0, legacy_accepted = '', grade = '', grade_reasons = '', grade_rules = 0, config_test = '' WHERE id = ?", t.ID); err != nil {
 				return 0, err
 			}

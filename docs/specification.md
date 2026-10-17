@@ -196,6 +196,8 @@ Every observation runs the full set of checks (the test for legacy TLS versions 
 - Not renewal managed: any new leaf is a `warning` finding, so an operator confirms the replacement was intended. Acknowledging it resolves the finding.
 - `self-signed` targets: pinned fingerprint; any change is a warning.
 
+Changing a target's host, port, protocol or server name points it at another endpoint: the pin and the current certificate start over, so the next check sets a new baseline and opens no change. Changing only the trust mode starts a new pin.
+
 A leaf that any address of the target served in the last 24 hours is not new: when the address serving the current certificate is briefly down and another address's certificate becomes current, and when it comes back, nothing opens.
 
 A `certificate_changed` or `issuer_changed` warning (without an expected issuer) stays open until acknowledged or until an automatic renewal (the `info` case above) confirms the certificate is back on its normal cycle; that renewal resolves it without an acknowledgement. Any other new leaf leaves it open: a new `certificate_changed` warning replaces the old one's details, and an open `issuer_changed` stays as it is, so whoever acknowledges the new certificate still sees that the issuer moved.
