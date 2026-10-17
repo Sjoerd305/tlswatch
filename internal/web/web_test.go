@@ -64,6 +64,11 @@ func newHarnessUsers(t *testing.T, withUsers bool) *harness {
 	chans := &notify.Channels{DB: d, Key: key}
 	disp := &notify.Dispatcher{DB: d, Channels: chans, Log: log}
 	c := &core.Service{DB: d, Settings: st, Channels: chans, Dispatcher: disp, Log: log}
+	// A local CT source with nothing issued: adding a domain polls in the
+	// background, and a test must not wait on, or race, the real service.
+	ctSrc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("[]")) }))
+	t.Cleanup(ctSrc.Close)
+	c.CTClient, c.CTBase = ctSrc.Client(), ctSrc.URL
 	sc := &sched.Scheduler{Core: c, Log: log, Probe: func(context.Context, probe.Request) probe.Result {
 		return probe.Result{DNSError: "no such host"}
 	}}

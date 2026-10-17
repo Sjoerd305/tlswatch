@@ -519,6 +519,10 @@ func (s *Service) PollDomain(ctx context.Context, id int64) error {
 		return s.pollFailed(ctx, d, now, err)
 	}
 	found, cursor, err := src.Issuances(ctx, d.Name, d.Subdomains, d.Cursor)
+	// The source can take a while; the watch may be gone meanwhile.
+	if same, serr := s.stillWatched(ctx, d); serr != nil || !same {
+		return serr
+	}
 	if err != nil {
 		return s.pollFailed(ctx, d, now, err)
 	}
@@ -531,6 +535,21 @@ func (s *Service) PollDomain(ctx context.Context, id int64) error {
 		return err
 	}
 	return s.resolveDomainFinding(ctx, d, check.CTSourceFailed, true)
+}
+
+// stillWatched reports whether the watch d is still the one stored under
+// its ID. A watch deleted while a poll ran gives its ID to the next one
+// added (SQLite reuses the highest rowid), and that watch must not get the
+// old one's issuances.
+func (s *Service) stillWatched(ctx context.Context, d Domain) (bool, error) {
+	cur, err := s.Domain(ctx, d.ID)
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return cur.Name == d.Name && cur.CreatedAt == d.CreatedAt, nil
 }
 
 // pollFailed records a failed poll and, after a day of failures, opens

@@ -294,3 +294,46 @@ func TestDomainValidationAndDelete(t *testing.T) {
 		t.Fatalf("after delete: %v", err)
 	}
 }
+
+// A watch deleted while its poll waits on the source gives its ID to the
+// next watch added; the poll's results must not land on that one.
+func TestPollOfReplacedWatchRecordsNothing(t *testing.T) {
+	e, stub := ctEnv(t)
+	now := e.clock.Now()
+	stub.add(1, "www.old.example", "C=US, O=Let's Encrypt, CN=R11", "AAAA", now.Add(-time.Hour))
+	// The first request waits until the watch is replaced; a poll may ask
+	// more than once.
+	entered, release := make(chan struct{}), make(chan struct{})
+	var first sync.Once
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		first.Do(func() {
+			close(entered)
+			<-release
+		})
+		stub.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	e.svc.CTClient, e.svc.CTBase = srv.Client(), srv.URL
+
+	old := e.watch("old.example")
+	errc := make(chan error, 1)
+	go func() { errc <- e.svc.PollDomain(e.ctx, old.ID) }()
+	<-entered
+	if err := e.svc.DeleteDomain(e.ctx, old.ID); err != nil {
+		t.Fatal(err)
+	}
+	nw := e.watch("new.example")
+	if nw.ID != old.ID {
+		t.Fatalf("the new watch got ID %d, not the deleted %d: the test no longer reproduces the reuse", nw.ID, old.ID)
+	}
+	close(release)
+	if err := <-errc; err != nil {
+		t.Fatalf("poll of a deleted watch: %v", err)
+	}
+	if iss, _ := e.svc.Issuances(e.ctx, nw.ID, 0); len(iss) != 0 {
+		t.Errorf("the new watch got the old one's issuances: %+v", iss)
+	}
+	if d, _ := e.svc.Domain(e.ctx, nw.ID); d.PolledAt != 0 || d.PolledOK != 0 {
+		t.Errorf("the new watch counts as polled: %+v", d)
+	}
+}
