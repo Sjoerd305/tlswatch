@@ -334,17 +334,12 @@ func (s *Store) Get(ctx context.Context) (Settings, error) {
 	if st.SignIn.GoogleClientSecret, st.SignIn.SecretUnreadable, err = s.loadSealed(ctx, keySecret); err != nil {
 		return st, err
 	}
-	stored := st.General
 	applyEnv(&st)
 	// Metrics switched on by the environment alone still need a token,
-	// shown under Settings › General: one is made and kept once.
-	if st.General.Metrics && st.General.MetricsToken == "" {
-		stored.MetricsToken = NewToken()
-		b, _ := json.Marshal(stored)
-		if _, err := s.db.W.ExecContext(ctx, "INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", keyGeneral, string(b)); err != nil {
-			return st, err
-		}
-		st.General.MetricsToken = stored.MetricsToken
+	// shown under Settings › General: until one is saved it is derived
+	// from the instance key, so it holds across restarts without a write.
+	if st.General.Metrics && st.General.MetricsToken == "" && s.key != nil {
+		st.General.MetricsToken = s.key.Token("metrics")
 	}
 	st.loc = st.Location()
 	cp := st

@@ -483,7 +483,7 @@ Secrets entered in the UI (SMTP passwords, Telegram bot tokens, Slack and Discor
 | `TLSWATCH_BEHIND_PROXY` | `false` | Settings › General | Trust `X-Forwarded-For` and `X-Forwarded-Proto` from one hop |
 | `TLSWATCH_ALLOW_LOCAL` | `false` | Settings › General | Allow loopback and link-local targets |
 | `TLSWATCH_METRICS` | `false` | Settings › General | Serve Prometheus metrics at `/metrics` |
-| `TLSWATCH_METRICS_TOKEN` | generated | Settings › General | The bearer token `/metrics` requires (16 characters at least) |
+| `TLSWATCH_METRICS_TOKEN` | generated | Settings › General | The bearer token `/metrics` requires (16 characters at least). With metrics on and no token saved (switched on by `TLSWATCH_METRICS` alone), it is derived from the instance key, the same on every start; saving Settings › General keeps it, and Rotate makes a random one |
 | `TLSWATCH_ACCEPT_NEW_KEY` | unset | bootstrap only | `true` starts with a new secret key although the database holds credentials sealed under a missing one; otherwise that start is refused |
 | `TLSWATCH_WORKERS` | `8` | Settings › Defaults | Concurrent probes |
 | `TLSWATCH_RETENTION_DAYS` | `180` | Settings › Defaults | History retention; the audit log is kept at least a year regardless |

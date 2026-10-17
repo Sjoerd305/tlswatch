@@ -96,3 +96,11 @@ func TestWriteFileRefusesOverwrite(t *testing.T) {
 		t.Fatalf("mode %v", st.Mode())
 	}
 }
+
+func TestTokenIsStablePerKey(t *testing.T) {
+	a, _ := New(make([]byte, 32))
+	b, _ := New(append(make([]byte, 31), 1))
+	if a.Token("metrics") != a.Token("metrics") || a.Token("metrics") == b.Token("metrics") || a.Token("metrics") == a.Token("other") || len(a.Token("metrics")) != 64 {
+		t.Fatal("token not stable per key and purpose")
+	}
+}

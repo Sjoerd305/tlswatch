@@ -92,6 +92,12 @@ func New(raw []byte) (*Key, error) {
 	return k, err
 }
 
+// Token is a stable secret for purpose, derived from the key: the same on
+// every start, different on every instance, and new after a key rotation.
+func (k *Key) Token(purpose string) string {
+	return hex.EncodeToString(k.derive("token " + purpose))
+}
+
 func (k *Key) derive(purpose string) []byte {
 	m := hmac.New(sha256.New, k.raw[:])
 	m.Write([]byte("tlswatch " + purpose))
