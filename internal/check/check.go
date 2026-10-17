@@ -245,7 +245,10 @@ type Target struct {
 
 // Previous is the state left by the last check.
 type Previous struct {
-	LeafFP     string
+	LeafFP string
+	// Recent holds the leaves served at any address of the target lately:
+	// one of them becoming current again is not a new certificate.
+	Recent     map[string]bool
 	IssuerOrg  string
 	IssuerCN   string
 	SANs       []string
@@ -648,7 +651,7 @@ func (e *evaluation) changes(info probe.CertInfo) {
 			e.open(Finding{Kind: CertificateChanged, Severity: Warning, Fingerprint: fp,
 				Details: fmt.Sprintf("pinned %s replaced by %s, %s", e.t.PinnedFP[:8], fp[:8], describeChange(prev, info))})
 		}
-	case prev.LeafFP != "" && fp != prev.LeafFP:
+	case prev.LeafFP != "" && fp != prev.LeafFP && !prev.Recent[fp]:
 		sameIssuer := prev.IssuerOrg != "" && strings.EqualFold(prev.IssuerOrg, info.IssuerOrg)
 		if e.out.RenewalManaged && sameIssuer && superset(info.SANs, prev.SANs) {
 			renewed = true

@@ -73,6 +73,9 @@ func (s *Service) Evaluate(ctx context.Context, t Target, r probe.Result, st con
 			prev.Open[check.Kind(k)] = true
 		}
 		rows.Close()
+		if prev.Recent, err = s.recentLeaves(ctx, t.ID); err != nil {
+			return check.Outcome{}, err
+		}
 	}
 	eff := t.Effective(st.Defaults)
 	ct := check.Target{
@@ -83,6 +86,29 @@ func (s *Service) Evaluate(ctx context.Context, t Target, r probe.Result, st con
 		Debounce: eff.Debounce, PinnedFP: t.PinnedFP, SkipLegacy: t.SkipLegacy,
 	}
 	return check.Evaluate(ct, prev, r, s.now()), nil
+}
+
+// RecentLeaves is how far back a leaf served at any address of a target
+// still counts as known: a balancer member that was briefly down coming
+// back with its certificate is not a change.
+const RecentLeaves = 24 * time.Hour
+
+func (s *Service) recentLeaves(ctx context.Context, targetID int64) (map[string]bool, error) {
+	rows, err := s.DB.R.QueryContext(ctx, "SELECT DISTINCT leaf_fp FROM observations WHERE target_id = ? AND checked_at >= ? AND leaf_fp != ''",
+		targetID, s.now().Add(-RecentLeaves).Unix())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	m := map[string]bool{}
+	for rows.Next() {
+		var fp string
+		if err := rows.Scan(&fp); err != nil {
+			return nil, err
+		}
+		m[fp] = true
+	}
+	return m, rows.Err()
 }
 
 func newCheckID() string {

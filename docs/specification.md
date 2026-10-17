@@ -196,6 +196,8 @@ Every observation runs the full set of checks (the test for legacy TLS versions 
 - Not renewal managed: any new leaf is a `warning` finding, so an operator confirms the replacement was intended. Acknowledging it resolves the finding.
 - `self-signed` targets: pinned fingerprint; any change is a warning.
 
+A leaf that any address of the target served in the last 24 hours is not new: when the address serving the current certificate is briefly down and another address's certificate becomes current, and when it comes back, nothing opens.
+
 A `certificate_changed` or `issuer_changed` warning (without an expected issuer) stays open until acknowledged or until an automatic renewal (the `info` case above) confirms the certificate is back on its normal cycle; that renewal resolves it without an acknowledgement. Any other new leaf leaves it open: a new `certificate_changed` warning replaces the old one's details, and an open `issuer_changed` stays as it is, so whoever acknowledges the new certificate still sees that the issuer moved.
 
 **Legacy TLS versions.** The normal probe offers every version from TLS 1.0 to 1.3, so the server picks its highest and a server on TLS 1.3 says nothing about whether it would still accept TLS 1.0. To find out, each address that answered gets one more handshake per legacy version, TLS 1.0 and TLS 1.1, with the client pinned to exactly that version. The negotiated version settles some without a handshake: a server that negotiated TLS 1.0 accepts it and cannot accept 1.1. A completed handshake means accepted; a refused one (an alert or a closed connection) means refused; a connect failure, a STARTTLS failure or a timeout gives no verdict for that address.
