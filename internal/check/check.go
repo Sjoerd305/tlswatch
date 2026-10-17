@@ -89,6 +89,9 @@ func (k Kind) Label() string {
 		return "Certificate issued"
 	}
 	s := string(k)
+	if s == "" {
+		return ""
+	}
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
