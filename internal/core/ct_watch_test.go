@@ -354,3 +354,27 @@ func TestTestCTSource(t *testing.T) {
 		t.Fatal("unknown source accepted")
 	}
 }
+
+// Disabling a watch closes its findings; enabling it again opens those of
+// its still unexpected issuances, which did not change meanwhile.
+func TestCTReenableReopensUnexpected(t *testing.T) {
+	e, stub, d, _, _ := ctServed(t)
+	nb := e.clock.Now().Add(-time.Hour)
+	stub.entry(85, "admin.example.nl", []string{"admin.example.nl"}, "C=GB, O=Sectigo Limited, CN=Sectigo RSA DV", "8501", nb, nb.Add(days(90)))
+	e.poll()
+	if _, ok := e.domainFindings(d.ID)[check.UnexpectedCertificate]; !ok {
+		t.Fatal("no finding")
+	}
+	if err := e.svc.SetDomainEnabled(e.ctx, d.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.domainFindings(d.ID)) != 0 {
+		t.Fatal("findings open on a disabled watch")
+	}
+	if err := e.svc.SetDomainEnabled(e.ctx, d.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := e.domainFindings(d.ID)[check.UnexpectedCertificate]; !ok {
+		t.Fatal("the unexpected issuance has no open finding after enabling the watch again")
+	}
+}

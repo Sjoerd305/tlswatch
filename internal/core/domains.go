@@ -283,7 +283,8 @@ func uniqueDomain(err error) error {
 }
 
 // SetDomainEnabled enables or disables a watch. Disabling resolves its
-// open findings without recovery notices and stops its polls.
+// open findings without recovery notices and stops its polls; enabling
+// opens those of its unexpected issuances again.
 func (s *Service) SetDomainEnabled(ctx context.Context, id int64, enabled bool) error {
 	tx, err := s.DB.W.BeginTx(ctx, nil)
 	if err != nil {
@@ -303,7 +304,37 @@ func (s *Service) SetDomainEnabled(ctx context.Context, id int64, enabled bool) 
 			return err
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if enabled {
+		return s.reopenUnexpected(ctx, id)
+	}
+	return nil
+}
+
+// reopenUnexpected opens the findings of a watch's unexpected issuances
+// again, after disabling closed them: the issuances did not change.
+// Expired ones stay closed, as the sweep would close them.
+func (s *Service) reopenUnexpected(ctx context.Context, id int64) error {
+	d, err := s.Domain(ctx, id)
+	if err != nil {
+		return err
+	}
+	list, err := s.Issuances(ctx, id, 0)
+	if err != nil {
+		return err
+	}
+	loc := s.CurrentSettings(ctx).Location()
+	for _, i := range list {
+		if i.State != IssuanceUnexpected || i.NotAfter > 0 && i.NotAfter < s.now().Unix() {
+			continue
+		}
+		if err := s.openDomainFinding(ctx, d, unexpectedFinding(i, "still unexpected when the watch was enabled again", loc), strconv.FormatInt(i.ID, 10)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DomainDeleteImpact returns what deleting a watch removes.
