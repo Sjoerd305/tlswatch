@@ -473,15 +473,26 @@ func (s *Service) RejectNode(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
+	confirmed := usererr.New("The node is already confirmed")
 	if n.State == NodeConfirmed {
-		return usererr.New("The node is already confirmed")
+		return confirmed
 	}
+	// The state is checked again in the write: a Confirm in between wins,
+	// and the node is not deleted or revoked under it.
+	var res sql.Result
 	if n.ConfirmedAt == 0 {
-		_, err = s.DB.W.ExecContext(ctx, "DELETE FROM nodes WHERE id = ?", id)
+		res, err = s.DB.W.ExecContext(ctx, "DELETE FROM nodes WHERE id = ? AND state != ? AND confirmed_at = 0", id, NodeConfirmed)
+	} else {
+		res, err = s.DB.W.ExecContext(ctx, "UPDATE nodes SET state = ?, credential_hash = '', updated_at = ? WHERE id = ? AND state != ?",
+			NodeConfirmed, s.now().Unix(), id, NodeConfirmed)
+	}
+	if err != nil {
 		return err
 	}
-	_, err = s.DB.W.ExecContext(ctx, "UPDATE nodes SET state = ?, credential_hash = '', updated_at = ? WHERE id = ?", NodeConfirmed, s.now().Unix(), id)
-	return err
+	if k, _ := res.RowsAffected(); k == 0 {
+		return confirmed
+	}
+	return nil
 }
 
 // SaveNode changes a node's name and notes.

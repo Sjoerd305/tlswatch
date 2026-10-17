@@ -2,7 +2,9 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -412,5 +414,27 @@ func TestNodeOfflineCountsEnabledTargets(t *testing.T) {
 	fs, _ := e.svc.Findings(e.ctx, FindingFilter{})
 	if len(fs) != 1 || !strings.Contains(fs[0].Details, "1 target waits") {
 		t.Fatalf("findings: %+v", fs)
+	}
+}
+
+// Confirm and Reject pressed at once on a pending node: never both. A node
+// that was confirmed is not deleted or revoked by the Reject that lost.
+func TestConfirmRejectRace(t *testing.T) {
+	e := newEnv(t)
+	for i := range 40 {
+		n, _ := e.enrolledNode(fmt.Sprintf("race%d.internal", i))
+		var wg sync.WaitGroup
+		var confirmErr, rejectErr error
+		wg.Add(2)
+		go func() { defer wg.Done(); confirmErr = e.svc.ConfirmNode(e.ctx, n.ID, fmt.Sprintf("race%d", i), "admin@example.nl") }()
+		go func() { defer wg.Done(); rejectErr = e.svc.RejectNode(e.ctx, n.ID) }()
+		wg.Wait()
+		if (confirmErr == nil) == (rejectErr == nil) {
+			t.Fatalf("round %d: confirm %v, reject %v", i, confirmErr, rejectErr)
+		}
+		got, err := e.svc.Node(e.ctx, n.ID)
+		if confirmErr == nil && (err != nil || got.State != NodeConfirmed || !got.HasCredential) {
+			t.Fatalf("round %d: confirmed node after the losing reject: %+v, %v", i, got, err)
+		}
 	}
 }
