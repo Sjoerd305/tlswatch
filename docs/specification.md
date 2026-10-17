@@ -18,7 +18,7 @@ In scope for version 1:
 - A TLS configuration grade per target (A to F) from the protocol versions, cipher suites and key the server accepts, tested once a day next to the legacy TLS test.
 - Certificate Transparency watching: every certificate publicly issued for a watched domain is matched against what the targets serve, and one that no target serves is reported.
 
-Out of scope for version 1 (listed under open points as candidates for later): certificate issuance or renewal, a public REST API, OCSP and CRL checks, and uptime monitoring.
+Out of scope for version 1: certificate issuance or renewal, and uptime monitoring. A public REST API, CRL checks and the other features adopted after the competitive research are specified under Planned after version 1.
 
 The tool does not manage certificates. It only observes what is served and reports on it.
 
@@ -370,7 +370,7 @@ Three roles, one per user, no organisations or tenants: the tool is single-tenan
 
 **Removing users.** Disabling a user ends their sessions and keeps the account for later; deleting removes the account with its sessions and one-time links for good. The audit log keeps their entries, which record the e-mail address. Nobody can delete their own account, and the last enabled admin can be neither deleted, disabled nor demoted.
 
-**TOTP** as second factor for local accounts is a later version (see Later versions); the tool holds no secrets beyond its own channel credentials.
+**TOTP** as second factor for local accounts, and generic OpenID Connect next to Google, are planned (see Planned after version 1); the tool holds no secrets beyond its own channel credentials.
 
 **Sessions**: server-side session store in SQLite, cookie `HttpOnly; Secure; SameSite=Lax`, named with the `__Host-` prefix over HTTPS (as is the pre-sign-in CSRF cookie) so a cookie planted from a sibling subdomain or over plain HTTP is never read, and every non-GET request a browser marks `Sec-Fetch-Site: cross-site` is refused before anything is read, 8 hours idle timeout (the live-page polling does not count as activity, so an open tab does not keep a session alive) and a 7-day maximum age after sign-in, CSRF token on every state-changing form and JSON call. While no account exists, every page redirects to a setup screen where the first admin is created with their own e-mail address and password and signed in directly; the screen disappears once an account exists. The setup screen also restores a backup (see Backup and restore), so a new installation takes over from an old one without a throwaway admin; that too is refused once an account exists, checked on the writer connection in the same step as the restore. The check and the insert are one transaction, so concurrent attempts create one admin only. Scripted installs can use the `create-admin` subcommand, which prints a one-time password link on the terminal (stderr) or writes it to a file (`-out`, mode 0600), so it does not land in a captured stdout.
 
@@ -546,6 +546,96 @@ Nobody chooses a version for a build by hand. `scripts/version.sh` derives it fr
 
 **Name**: tlswatch. Candidates checked and rejected: `certlens` and `certscope` are taken (a Python package and a Firefox extension), `certwatch` is CertLight's former name, `certview` is a Qualys product. Check the GitHub name, the Go module path and Docker Hub before the first release.
 
+## Planned after version 1
+
+The features below were adopted on 17 October 2026 after a review of comparable tools. None of them is built yet. Each one is specified here so it can be built as written, and its text moves into the sections above in the same change that ships it. They are listed in the order of building, by value against effort. Most of them exist to make tlswatch stand out, not to catch up: they make it the independent check that a team's renewal automation actually deployed its certificate, at a size and price nobody else covers.
+
+### 1. Lifetime-relative thresholds and `renewal_overdue`
+
+Under the CA/Browser Forum schedule, validity is capped at 200 days from 15 March 2026, 100 days from 15 March 2027 and 47 days from 15 March 2029, and Let's Encrypt already issues 6-day certificates. A fixed "30 / 7 days" stops meaning anything at those lifetimes: a 30-day warning on a 47-day certificate fires two weeks after issuance, and on a 6-day certificate it fires on the day of issuance. The outage of the coming years is a renewal that ran and was never deployed, or an ACME client that silently stopped.
+
+- **Thresholds as a share of the lifetime.** The warning and critical thresholds each also accept a percentage of the leaf's lifetime remaining, next to the number of days (`30 d or 33 %`). The threshold that fires first wins. The lifetime is NotAfter minus NotBefore of the leaf. New defaults: warning 30 days or 33 %, critical 7 days or 10 % for manually managed targets; warning 10 days or 20 %, critical 3 days or 7 % for renewal-managed targets. Existing targets keep their stored day values and get the percentage from the defaults. A percentage field left empty means "days only".
+- **`renewal_overdue`** (warning) opens on a renewal-managed target when its leaf has used more than its renewal point of its lifetime. The default point is 75 %, which gives margin past the two-thirds where ACME clients renew. It can be set per target from 50 to 95 %, under "Probe and reminder settings". The finding says "renewal was due 9 days ago; the certificate expires in 12 days". It resolves when a new leaf is served. It sits below `expiring` and does not replace it. While `renewal_overdue` is open, the warning-level `expiring` finding is not alerted separately, so the operator gets one alert and not two. Escalation to critical stays with `expiring`. Manually managed targets never get `renewal_overdue`.
+- **Hours under a week.** The UI and alerts show the time left as hours below 7 days ("expires in 31 h"), using the same truncation rule as for days. Thresholds still count in whole days or in a percentage, never in hours.
+- **Interval guard.** A target whose check interval is longer than a fifth of its leaf's lifetime gets a note on its page ("checked every 24 h; this certificate lives 6 days"). The note opens no finding.
+- Overview and digest: "Expiring next" sorts by the share of lifetime remaining when the lifetimes differ by more than a factor of four, so a 6-day certificate with two days left ranks above a 1-year certificate with 20 days left.
+
+### 2. Distrust calendar
+
+Root programs remove CAs with a date and a scope: Entrust in 2024, Chunghwa Telecom and NetLock after 31 July 2025, DigiCert's G1 roots from 15 April 2026, and more announced every year. A certificate keeps working on the day of the announcement and fails months later in one browser, which no expiry check catches.
+
+- **The table.** `internal/check` holds a table of distrust events. An event has the SHA-256 fingerprints of the roots and intermediates it covers, the root programs it applies to (Chrome, Mozilla, Apple, Microsoft), an effective date, a rule, a short description and a link to the announcement. The rule is one of: *all certificates* (removed from the store) or *issued after* a date (SCT or NotBefore after it). The table is versioned like the grade rules, ships in the binary, and gets new rows in an ordinary release. Nothing is fetched at run time.
+- **`distrusted_ca`** opens when the served chain contains a certificate that an event covers and the leaf falls under the rule. It is a warning until the effective date and critical from that date on. If the leaf expires before the effective date, nothing opens. The details name the CA, the program, the date and the link: "chain roots in Entrust Root CA – G2; Chrome distrusts certificates from it issued after 11 Nov 2024; this one was issued 3 Dec 2024". The finding is computed on the server from the stored chain, so nodes need no update. It is raised on the first observation like the other fact findings, and it resolves when the chain no longer matches.
+- Trust mode `bundle` and `self-signed` targets are not checked, because a private PKI is not in any root program.
+- The Certificates page gets a "distrusted" chip, and the target page shows the event next to the chain link it concerns. A new table version re-evaluates every target on its next check, with no probe needed. The digest lists events that take effect in the next 90 days and the targets they touch.
+
+### 3. Discovery through nodes and from CT
+
+The nodes already sit inside the networks. Discovery turns them from a probe into the inventory sensor that the enterprise suites charge for.
+
+- **Network scan.** Under Targets › Discover (operator and admin), an operator gives one or more CIDRs (at most a /20, or 4,096 addresses, per scan), a port list (default 443, 8443, 636, 993, 995, 465, 587, 5061), and "Probe from" (this server or a node). The scan is a new job kind, `scan`, in the node envelope. The node, or the server, connects to each address and port with the probe's dialer at a fixed low rate (default 50 connects per second, at most 200), does the implicit-TLS handshake on each port and STARTTLS on 587 and 25, and returns per open port the chain and the negotiated version. The scan is bounded by the node's allowlist and local-address rule, like any probe. The result page lists each endpoint found with subject, SANs, issuer, expiry and "already a target" where one matches by address and port, with a checkbox per row. Ticking rows and pressing "Add selected" opens the Add many form pre-filled. The first SAN becomes the server name when it resolves to the address. A scan is audited with its ranges, ports and node. Scan results are kept for 7 days and are not inventory: nothing is monitored until it is added.
+- **From CT.** The domain page gets a "Names without a target" list: every name in a `known` or `acknowledged` issuance of the last 90 days that no enabled target covers, with the issuer and last issuance date. Wildcards are listed as such and cannot be added directly. Ticking names and pressing "Add selected" opens the Add many form, in the same way as from a scan. An `unexpected_certificate` finding gets an "Add as target" link next to Acknowledge.
+- The scan job is protocol v1 compatible: a node that does not know `scan` answers "unsupported kind", and the screen asks to update it.
+- Limits that keep the scan from being a scanner for hire: only operators and admins can scan, private and allowlisted ranges only (a public range needs Settings › General › "Allow discovery of public addresses", off by default), one scan per node at a time, and every scan in the audit log.
+
+### 4. Revocation through CRLs
+
+Let's Encrypt removed OCSP URLs from its certificates in May 2025 and turned its responders off in August 2025. The CA/Browser Forum made OCSP optional, and CRLs are now the mechanism that works everywhere. In 2026 a revocation check means fetching the CRL.
+
+- **CRL check.** For each leaf with a CRL distribution point, the server fetches the CRL over HTTP (`http://` is normal for CRLs; the signature is what counts) at most once a day per URL. It caches the result per URL in the database with its `nextUpdate`, verifies the signature against the leaf's issuer from the served chain, and looks up the leaf's serial. Partitioned CRLs are followed through the distribution point of the leaf itself. A CRL larger than 50 MB is refused and logged.
+- **`revoked`** (critical) opens when the serial is listed, with the revocation date and reason. It is a fact finding, raised on the first observation that shows it. It resolves when a different leaf is served.
+- **`revocation_unknown`** (info, never alerted) is recorded when the CRL cannot be fetched or verified for 3 days in a row. "No CRL and no OCSP URL" is normal and records nothing.
+- **Stapling.** The probe records whether the server stapled an OCSP response (Go exposes it in the connection state) and its status. A stapled response saying revoked opens `revoked` too. Stapling present becomes a grade reason that is shown but never lowers the grade.
+- CRLs are fetched by the server only, also for node targets, because a CRL URL is public by design. A private CA whose CRL is reachable only inside the network is fetched by the node: a `crl` job kind fetches the URL and returns the bytes, and the server verifies them. OCSP queries follow later, only for private CAs that still run responders, behind a per-bundle switch.
+- Outbound connections gain the CRL distribution points of served certificates, which are named by the CAs in the certificates themselves. The security section lists them. Fetches go through the named outbound client: no credentials, no redirect to a non-HTTP scheme, a 30-second timeout.
+
+### 5. REST API and import/export
+
+Every comparable tool has an API, and reviewers check for it.
+
+- **Tokens.** Under Account, a user creates API tokens with a name, an expiry (30 days to 1 year, or none for admins), and a role no higher than their own (viewer, operator, admin). A token is shown once, stored as a hash like the node credential, used as `Authorization: Bearer`, rate limited, and listed with its last use. Deleting or disabling the user revokes their tokens. Every write through a token is in the audit log with the token's name. A token never works for the browser UI, and a session cookie never works for the public API, so CSRF does not apply to it.
+- **Endpoints** under `/api/v2` (the internal `/api/v1` stays private to the TypeScript): targets (list with the same filters as the UI, get, create, update, delete, check now), certificates (list, get), findings (list, get, acknowledge), domain watches (list, get, create, update, delete, poll now), issuances (list), channels (list, test; admin), and `GET /api/v2/openapi.json`, which is generated from the handler definitions and served without sign-in. Lists are paginated with a cursor. Errors are JSON with a stable code. The same role × action decision function guards every endpoint, and the negative test suite covers it.
+- **Export and import.** Targets and domain watches export as YAML (`GET /api/v2/export`, and Settings › Export in the UI): one document with every setting that differs from the defaults, channels by name, bundles and nodes by name, no credentials. The Add many form accepts the same YAML next to the line format, so config as code is a round trip. Import shows a diff before saving (added, changed, unchanged, and present here but absent from the file), never deletes unless "remove targets not in the file" is ticked, and is atomic. CSV import with the columns of the Add many line format is accepted too.
+
+### 6. Field-level diff on `certificate_changed`
+
+When a certificate changes, tlswatch says what changed, not only that it changed.
+
+- The `certificate_changed` finding and its message carry a diff of the old and new leaf: issuer, subject, SANs added and removed, key type and size, signature algorithm, validity (old and new NotAfter, and lifetime), and whether the intermediate changed. Unchanged fields are left out. Example: "SANs +api.example.nl −old.example.nl; key RSA 2048 → ECDSA P-256; lifetime 90 → 47 days".
+- The info-level renewal event under recent changes shows the same one-line diff, so a renewal that quietly dropped a name is visible even when it alerts nothing.
+- A renewal that removes a SAN which the target's server name needs is no longer treated as an expected renewal: it becomes a warning, because the rule today only checks that the SANs are the same or a superset.
+
+### 7. CAA monitoring
+
+A CAA record names the CAs allowed to issue for a domain. A CT issuance by a CA the record does not allow is either a CA that ignored CAA, which is reportable, or a record that changed after the issuance. Both are worth seeing.
+
+- On every CT poll the server resolves CAA for the watched domain, walking up the tree as RFC 8659 prescribes, through the system resolver, and stores the record set with the time. A changed record set is an `info` event on the domain page and under recent changes.
+- Each new issuance's issuer is mapped to CAA identifiers with a table in the code of the CAs' published identifiers (`letsencrypt.org`, `sectigo.com`, `pki.goog` and so on), versioned like the grade rules. An issuance whose names fall under a CAA set that does not permit its issuer opens **`caa_violation`** (warning) on the watch, next to `unexpected_certificate` and acknowledged the same way. An issuer the table does not know is shown as "CAA not evaluated", which is not a finding.
+- The domain page shows the current CAA record, or "no CAA record: any CA may issue" as a hint, not a finding.
+
+### 8. Post-quantum key exchange
+
+Cloudflare reported on 29 September 2026 that about 70 % of browser traffic to its edge uses post-quantum key exchange, against about 15 % of origins. OpenSSL 3.5 and Go both offer X25519MLKEM768 by default.
+
+- In the daily configuration test, each answering address gets one more handshake that offers only X25519MLKEM768 at TLS 1.3. A completed handshake means "negotiates post-quantum key exchange". The normal probe also records the negotiated group from the connection state.
+- It is a grade reason ("post-quantum key exchange: yes" or "no"). It does not change the letter in this rule version. The rules table may let it gate A in a later version, which would be announced in the changelog.
+- The targets list gets a "PQ" chip group (yes, no, untested). The overview's run summary gets one line: "12 of 40 targets negotiate post-quantum key exchange". `/metrics` gains `tlswatch_targets_pq{state}`. `tlswatch check` reports `pq_kex` per address.
+
+### 9. More channels and an expiry calendar
+
+- **Microsoft Teams** through a Workflows (Power Automate) webhook with an Adaptive Card; **Matrix** through the client-server API (homeserver, room ID, access token). Both use the shared HTTP transport and the existing form layout.
+- **PagerDuty** (Events API v2) needs one outbox change first. The sender gets the alert event (open, escalate, remind, recover) and the finding ID, so it can send `trigger` and `resolve` with the finding ID as the dedup key. The channel kind is exempt from batching, because one incident per finding is the point. Acknowledgement stays one-way, from tlswatch to PagerDuty.
+- **ICS calendar feed.** Under Account, a user creates a secret calendar URL (`/calendar/<token>.ics`, read-only, revocable, scoped to the user's role and optionally to one tag). It lists one all-day event per served certificate on its expiry date. With lifetime thresholds it also lists an event at the renewal point of each renewal-managed target. The UID is the certificate fingerprint, so a renewal moves the event instead of adding one. The token is stored hashed and audited, like an API token.
+
+### 10. TOTP and generic OpenID Connect
+
+- **TOTP** (RFC 6238, SHA-1, 6 digits, 30 seconds, one step of drift) as a second factor for local accounts. It is set up under Account with a QR code rendered on the server as an inline SVG, with no library. It gives 10 single-use recovery codes, stored hashed. An admin can require it for every local account or per role, and can reset it for a user, which is audited. The TOTP secret is sealed under the secret key like the channel credentials. Lockout counts a wrong code like a wrong password.
+- **Generic OIDC** next to Google: issuer URL (discovery through `.well-known/openid-configuration`), client ID and secret, scopes, an optional allowed e-mail domain, and an optional claim that maps groups to roles. Sign-in keeps the allowlist rule: a user must exist unless "create users from the role claim" is ticked. That covers Microsoft Entra ID, Keycloak, Authentik, Okta and Google Workspace through one implementation. The Google settings stay as they are, as a preset of it. SAML is not planned.
+
+### Left out on purpose
+
+Status pages, login and uptime checks, SSH banners, and certificates read from files, keystores or Kubernetes secrets are not planned. They would widen the tool into what Uptime Kuma, Gatus and the Prometheus exporters already are. "It only observes what is served" is the reason to pick tlswatch over them.
+
 ## Decisions taken, assumptions and open points
 
 Where the requirements said "not sure" or "what do you recommend", this document takes a position. The table records why, so a later change knows what it reverses.
@@ -576,6 +666,11 @@ Where the requirements said "not sure" or "what do you recommend", this document
 | CT: an index, not the logs | Issuances come from Cert Spotter or crt.sh through a source interface, polled hourly per domain from the server | Tailing the logs is a service in itself; an interface keeps the choice open, including a self-hosted index |
 | CT: match by issuer and serial, hold renewals 48 hours | A precertificate has no usable fingerprint; an issuance whose names and issuer match a target waits 48 hours before it is unexpected | ACME renewals appear in the logs hours before they are deployed and must show up as one quiet line, not as a warning followed by a recovery |
 | CT: watches are explicit | Operators add domains; nothing is derived from targets; the first poll's backlog opens no finding | A target on a customer's host does not make that domain yours; a new watch must not open fifty findings on day one |
+| Expiry: lifetime-relative (planned) | Thresholds in days or as a share of the lifetime, whichever fires first; `renewal_overdue` past 75 % on renewal-managed targets | At 47-day and 6-day lifetimes a fixed day count fires on the day of issuance; the failure to catch is a renewal that never deployed |
+| Distrust: a table in the binary (planned) | Root-program distrust events as a versioned table of fingerprints, dates and rules; `distrusted_ca` warning before the date, critical after | Distrust is announced months ahead and fails silently in one browser; a table needs no runtime fetch and nodes need no update |
+| Revocation: CRL first (planned) | Daily CRL fetch per distribution point, `revoked` critical; OCSP stapling shown, never required; OCSP queries only for private CAs later | Public CAs are dropping OCSP; "no OCSP URL" is normal, not a finding |
+| Discovery: offered, never monitored (planned) | Network scans from a node and names from CT produce a list to tick, which goes through Add many; private ranges only by default | Discovery feeds the inventory without silently widening what is monitored or turning nodes into scanners |
+| Scope: what stays out | No status pages, uptime or login checks, SSH, or certificates from files, keystores or Kubernetes secrets | Those are what Uptime Kuma, Gatus and the exporters already do; observing what is served is the reason to pick this tool |
 
 **Assumptions**
 
@@ -586,4 +681,4 @@ Where the requirements said "not sure" or "what do you recommend", this document
 
 **Open points settled.** The questions the first draft left open were decided on 16 October 2026 and are recorded in the sections above: MIT as the licence; all addresses as the default; TOTP as a later version; `info` findings outside the weekly digest; and letsencrypt.org plus the badssl.com hosts as the screenshot data. No open point remains for version 1.
 
-**Later versions**, in rough priority: a public REST API with tokens; bulk import and export of targets as YAML; TOTP as a second factor for local accounts; OCSP and CRL checks; a self-hosted Certificate Transparency index as a third source; a stricter grade rule set (TLS 1.2 without 1.3 to C) once the installed base allows it; Microsoft Teams, PagerDuty and Matrix channels; ticket creation in a service desk on critical findings.
+**Later versions**: the ten features under Planned after version 1, in the order given there; then a self-hosted Certificate Transparency index as a third source; a stricter grade rule set (TLS 1.2 without 1.3 to C, post-quantum key exchange gating A) once the installed base allows it; OCSP queries for private CAs; ticket creation in a service desk on critical findings.
