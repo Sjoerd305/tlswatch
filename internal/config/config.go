@@ -55,6 +55,10 @@ func env(k, def string) string {
 	return def
 }
 
+// EnvBool reads a bootstrap boolean variable; unset or invalid is def, and
+// CheckEnv reports an invalid one.
+func EnvBool(k string, def bool) bool { return envBool(k, def) }
+
 func envBool(k string, def bool) bool {
 	v, ok := os.LookupEnv(k)
 	if !ok || v == "" {
@@ -614,9 +618,11 @@ func applyEnv(st *Settings) {
 // ignored.
 func CheckEnv() error {
 	var errs []error
-	if v := os.Getenv("TLSWATCH_LOG_JSON"); v != "" {
-		if _, err := ParseBool(v); err != nil {
-			errs = append(errs, fmt.Errorf("TLSWATCH_LOG_JSON: %q is not true or false", v))
+	for _, k := range []string{"TLSWATCH_LOG_JSON", "TLSWATCH_DEBUG", "TLSWATCH_ACCEPT_NEW_KEY"} {
+		if v := os.Getenv(k); v != "" {
+			if _, err := ParseBool(v); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %q is not true or false", k, v))
+			}
 		}
 	}
 	for _, e := range envVars {

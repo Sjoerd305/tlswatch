@@ -90,9 +90,11 @@ func nodeFlagSet(name string, enrol bool) (*flag.FlagSet, nodeFlags) {
 		f.noUpdate = fs.Bool("no-self-update", f.envBool("TLSWATCH_NODE_NO_UPDATE"), "never replace the binary, whatever the server says (TLSWATCH_NODE_NO_UPDATE)")
 		f.allowUnsigned = fs.Bool("allow-unsigned-update", f.envBool("TLSWATCH_NODE_ALLOW_UNSIGNED_UPDATE"), "also follow a development build of the server, which has no signed checksums (TLSWATCH_NODE_ALLOW_UNSIGNED_UPDATE)")
 	}
-	if v := os.Getenv("TLSWATCH_LOG_JSON"); v != "" {
-		if _, err := config.ParseBool(v); err != nil {
-			f.envErr = append(f.envErr, fmt.Errorf("TLSWATCH_LOG_JSON=%q is not true or false", v))
+	for _, k := range []string{"TLSWATCH_LOG_JSON", "TLSWATCH_DEBUG"} {
+		if v := os.Getenv(k); v != "" {
+			if _, err := config.ParseBool(v); err != nil {
+				f.envErr = append(f.envErr, fmt.Errorf("%s=%q is not true or false", k, v))
+			}
 		}
 	}
 	return fs, f

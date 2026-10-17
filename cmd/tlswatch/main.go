@@ -128,7 +128,7 @@ func main() {
 
 func logger(b config.Bootstrap) *slog.Logger {
 	level := slog.LevelInfo
-	if os.Getenv("TLSWATCH_DEBUG") == "true" {
+	if config.EnvBool("TLSWATCH_DEBUG", false) {
 		level = slog.LevelDebug
 	}
 	opts := &slog.HandlerOptions{Level: level}
@@ -176,7 +176,7 @@ func keyGuard(d *db.DB, path string, log *slog.Logger) error {
 	if !sealed {
 		return nil
 	}
-	if os.Getenv("TLSWATCH_ACCEPT_NEW_KEY") == "true" {
+	if config.EnvBool("TLSWATCH_ACCEPT_NEW_KEY", false) {
 		log.Error("the secret key file is missing while the database holds credentials sealed under it; starting with a new key as TLSWATCH_ACCEPT_NEW_KEY says, every stored credential must be entered again", "file", path)
 		return nil
 	}
