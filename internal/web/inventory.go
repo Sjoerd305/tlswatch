@@ -249,7 +249,15 @@ func (s *Server) certificatePEM(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/x-pem-file")
 	if r.URL.Query().Get("download") == "1" {
-		name := strings.NewReplacer("*", "wildcard", "/", "_", " ", "_").Replace(c.SubjectCN)
+		// The CN comes from a server tlswatch does not control: only safe
+		// characters reach the header.
+		name := strings.Map(func(r rune) rune {
+			switch {
+			case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-', r == '_':
+				return r
+			}
+			return '_'
+		}, strings.ReplaceAll(c.SubjectCN, "*", "wildcard"))
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-%s.pem"`, name, fp[:8]))
 	} else {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
