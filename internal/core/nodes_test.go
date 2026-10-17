@@ -405,7 +405,10 @@ func TestNodeOfflineCountsEnabledTargets(t *testing.T) {
 	e := newEnv(t)
 	n := e.confirmedNode("dc1")
 	e.target(func(t *Target) { t.NodeID = n.ID })
-	e.target(func(t *Target) { t.NodeID = n.ID; t.Name, t.Host, t.ServerName, t.Enabled = "Off", "off.example.nl", "off.example.nl", false })
+	e.target(func(t *Target) {
+		t.NodeID = n.ID
+		t.Name, t.Host, t.ServerName, t.Enabled = "Off", "off.example.nl", "off.example.nl", false
+	})
 	n, _ = e.svc.Node(e.ctx, n.ID)
 	e.clock.Add(10 * time.Minute)
 	if err := e.svc.NodeOffline(e.ctx, n, e.clock.Now().Add(-10*time.Minute)); err != nil {
@@ -426,7 +429,10 @@ func TestConfirmRejectRace(t *testing.T) {
 		var wg sync.WaitGroup
 		var confirmErr, rejectErr error
 		wg.Add(2)
-		go func() { defer wg.Done(); confirmErr = e.svc.ConfirmNode(e.ctx, n.ID, fmt.Sprintf("race%d", i), "admin@example.nl") }()
+		go func() {
+			defer wg.Done()
+			confirmErr = e.svc.ConfirmNode(e.ctx, n.ID, fmt.Sprintf("race%d", i), "admin@example.nl")
+		}()
 		go func() { defer wg.Done(); rejectErr = e.svc.RejectNode(e.ctx, n.ID) }()
 		wg.Wait()
 		if (confirmErr == nil) == (rejectErr == nil) {
