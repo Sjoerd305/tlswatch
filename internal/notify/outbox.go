@@ -106,10 +106,12 @@ type pending struct {
 }
 
 // batchKey groups due alerts into one message: per channel, and per set of
-// recipients already reached, so a retry skips exactly those.
+// recipients already reached, so a retry skips exactly those. A digest is
+// a message of its own (solo is its alert id), never a line in a batch.
 type batchKey struct {
 	channel   int64
 	delivered string
+	solo      int64
 }
 
 // Hold waits for a running flush and keeps the next one from starting until
@@ -125,7 +127,7 @@ func (d *Dispatcher) Flush(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	now := d.now()
-	rows, err := d.DB.R.QueryContext(ctx, `SELECT id, channel_id, delivered, ref, created_at, attempts, subject, body, html FROM alerts
+	rows, err := d.DB.R.QueryContext(ctx, `SELECT id, channel_id, delivered, ref, created_at, attempts, subject, body, html, event FROM alerts
 		WHERE state = 'pending' AND next_attempt <= ? ORDER BY id`, now.Unix())
 	if err != nil {
 		return err
@@ -135,9 +137,13 @@ func (d *Dispatcher) Flush(ctx context.Context) error {
 	for rows.Next() {
 		var p pending
 		var k batchKey
-		if err := rows.Scan(&p.id, &k.channel, &k.delivered, &p.ref, &p.createdAt, &p.attempts, &p.msg.Subject, &p.msg.Body, &p.msg.HTML); err != nil {
+		var event string
+		if err := rows.Scan(&p.id, &k.channel, &k.delivered, &p.ref, &p.createdAt, &p.attempts, &p.msg.Subject, &p.msg.Body, &p.msg.HTML, &event); err != nil {
 			rows.Close()
 			return err
+		}
+		if event == EventDigest {
+			k.solo = p.id
 		}
 		if _, ok := batches[k]; !ok {
 			order = append(order, k)
