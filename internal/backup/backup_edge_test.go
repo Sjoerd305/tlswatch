@@ -137,3 +137,19 @@ func TestWrongPassphraseMessage(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+// Data after the last chunk is not what the backup wrote.
+func TestTrailingBytesRefused(t *testing.T) {
+	ctx := context.Background()
+	k := key(t, 'a')
+	file := write(t, source(t, k, "admin"), k)
+	dst := fileDB(t)
+	if res, err := Open(ctx, bytes.NewReader(file), dst, k, pass); err != nil {
+		t.Fatalf("the backup itself: %v", err)
+	} else {
+		res.Close()
+	}
+	if _, err := Open(ctx, bytes.NewReader(append(append([]byte(nil), file...), "extra"...)), dst, k, pass); !isUser(err) {
+		t.Fatalf("trailing bytes: %v", err)
+	}
+}

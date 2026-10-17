@@ -373,7 +373,8 @@ func (res *Restore) read(ctx context.Context, br *bufio.Reader, instance *secret
 	if err != nil {
 		return err
 	}
-	tr := tar.NewReader(&decReader{r: br, aead: k.stream, hdr: hdr})
+	dec := &decReader{r: br, aead: k.stream, hdr: hdr}
+	tr := tar.NewReader(dec)
 	var man *Manifest
 	haveDB := false
 	for {
@@ -405,6 +406,14 @@ func (res *Restore) read(ctx context.Context, br *bufio.Reader, instance *secret
 	}
 	if man == nil || !haveDB {
 		return usererr.New("The backup is incomplete")
+	}
+	// Up to the last chunk and not a byte more: anything after it is not
+	// what the backup wrote.
+	if _, err := io.Copy(io.Discard, dec); err != nil {
+		return readErr(err)
+	}
+	if n, _ := io.CopyN(io.Discard, br, 1); n > 0 {
+		return usererr.New("The backup is damaged: there is data after its end")
 	}
 	res.Manifest = man
 	return prepare(ctx, res.Path, k.secrets, instance)
