@@ -87,7 +87,8 @@ func TestStoreEnvWinsOverSaved(t *testing.T) {
 	if got.Locked("time_zone") || got.Locked("workers") {
 		t.Errorf("fields the environment does not set are locked: %v", got.Env)
 	}
-	// A save does not lose the override, and the stored values are intact.
+	// A save does not lose the override, and does not write the field the
+	// environment sets: the stored value is intact.
 	if err := st.SaveGeneral(ctx, General{BaseURL: "https://other.example.nl"}); err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +100,7 @@ func TestStoreEnvWinsOverSaved(t *testing.T) {
 	os.Unsetenv("TLSWATCH_GOOGLE_CLIENT_ID")
 	os.Unsetenv("TLSWATCH_GOOGLE_SECRET_FILE")
 	got, _ = NewStore(d, st.key).Get(ctx)
-	if got.General.BaseURL != "https://other.example.nl" || got.General.AllowLocal || got.SignIn.GoogleClientID != "ui-id" || got.SignIn.GoogleClientSecret != "ui-secret" || len(got.Env) != 0 {
+	if got.General.BaseURL != "https://ui.example.nl" || got.General.AllowLocal || got.SignIn.GoogleClientID != "ui-id" || got.SignIn.GoogleClientSecret != "ui-secret" || len(got.Env) != 0 {
 		t.Fatalf("without the environment: %+v %+v %v", got.General, got.SignIn, got.Env)
 	}
 }

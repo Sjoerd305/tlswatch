@@ -418,13 +418,52 @@ func (s *Store) load(ctx context.Context, key string, into any) error {
 }
 
 func (s *Store) save(ctx context.Context, key string, v any) error {
-	b, err := json.Marshal(v)
+	b, err := s.keepEnvLocked(ctx, key, v)
 	if err != nil {
 		return err
 	}
 	_, err = s.db.W.ExecContext(ctx, "INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", key, string(b))
 	s.invalidate()
 	return err
+}
+
+// keepEnvLocked encodes v for the settings row key, with every field the
+// environment sets taken from what is stored instead: a form shows the
+// environment's value and posts it back, but that value belongs to the
+// environment and must not outlive the variable in the database or land
+// in a backup. Fields are matched by their JSON names, which are the
+// override names.
+func (s *Store) keepEnvLocked(ctx context.Context, key string, v any) ([]byte, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	locked := DefaultSettings()
+	applyEnv(&locked)
+	if len(locked.Env) == 0 {
+		return b, nil
+	}
+	var in, stored map[string]json.RawMessage
+	if err := json.Unmarshal(b, &in); err != nil {
+		return b, nil // not an object: nothing to keep
+	}
+	var raw string
+	err = s.db.R.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&raw)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	_ = json.Unmarshal([]byte(raw), &stored)
+	for name := range locked.Env {
+		if _, ok := in[name]; !ok {
+			continue
+		}
+		if old, ok := stored[name]; ok {
+			in[name] = old
+		} else {
+			delete(in, name)
+		}
+	}
+	return json.Marshal(in)
 }
 
 // Invalidate drops the cached settings, after the database was replaced.
