@@ -707,8 +707,9 @@ func (s *Service) SweepIssuances(ctx context.Context) error {
 			return err
 		}
 		switch {
-		case i.NotAfter > 0 && i.NotAfter < now.Unix() && i.State == IssuanceUnexpected:
-			// Expired: whatever it was, it is over. The finding closes
+		case i.NotAfter > 0 && i.NotAfter < now.Unix():
+			// Expired: whatever it was, it is over. A pending one never
+			// becomes unexpected, an unexpected one's finding closes
 			// without a notice; the issuance keeps its state as history.
 			if err := s.resolveDomainFinding(ctx, d, check.UnexpectedCertificate, false, strconv.FormatInt(i.ID, 10)); err != nil {
 				return err
