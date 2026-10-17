@@ -192,7 +192,7 @@ func (s *Server) invitePage(w http.ResponseWriter, r *http.Request) {
 	tok := r.URL.Query().Get("token")
 	d := inviteData{Token: tok}
 	if id, err := s.Auth.PeekToken(r.Context(), auth.TokenInvite, tok); err == nil {
-		if u, err := s.Auth.UserByID(r.Context(), id); err == nil && u.Enabled {
+		if u, err := s.Auth.UserByID(r.Context(), id); err == nil && u.Enabled && u.Method == auth.MethodLocal {
 			d.User, d.Valid = u, true
 		}
 	}
@@ -206,7 +206,8 @@ func (s *Server) invite(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		d.User, err = s.Auth.UserByID(r.Context(), id)
 	}
-	if err != nil || !d.User.Enabled {
+	// A Google account has no password to set.
+	if err != nil || !d.User.Enabled || d.User.Method != auth.MethodLocal {
 		s.renderStatus(w, r, http.StatusBadRequest, "invite", &Page{Title: "Set your password", Data: d})
 		return
 	}

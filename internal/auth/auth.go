@@ -219,7 +219,8 @@ func (s *Service) CountUsers(ctx context.Context) (int, error) {
 }
 
 // UpdateUser changes a user's name, role, method and status. Disabling a
-// user ends their sessions; switching to Google removes the password. The
+// user ends their sessions; switching to Google removes the password, the
+// sessions and the password links. The
 // last enabled admin can be neither demoted nor disabled.
 func (s *Service) UpdateUser(ctx context.Context, id int64, name string, role authz.Role, method string, enabled bool) error {
 	if _, err := authz.ParseRole(string(role)); err != nil {
@@ -233,9 +234,9 @@ func (s *Service) UpdateUser(ctx context.Context, id int64, name string, role au
 		return err
 	}
 	defer tx.Rollback()
-	var curRole string
+	var curRole, curMethod string
 	var curEnabled int
-	if err := tx.QueryRowContext(ctx, "SELECT role, enabled FROM users WHERE id = ?", id).Scan(&curRole, &curEnabled); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT role, enabled, method FROM users WHERE id = ?", id).Scan(&curRole, &curEnabled, &curMethod); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -257,8 +258,16 @@ func (s *Service) UpdateUser(ctx context.Context, id int64, name string, role au
 	if _, err := tx.ExecContext(ctx, q, strings.TrimSpace(name), string(role), method, boolInt(enabled), id); err != nil {
 		return err
 	}
-	if !enabled {
+	// Switching to Google ends what the password gave: the sessions signed
+	// in with it and the links to set one.
+	toGoogle := method == MethodGoogle && curMethod != MethodGoogle
+	if !enabled || toGoogle {
 		if _, err := tx.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = ?", id); err != nil {
+			return err
+		}
+	}
+	if method == MethodGoogle {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM tokens WHERE user_id = ? AND kind = 'invite'", id); err != nil {
 			return err
 		}
 	}
