@@ -344,3 +344,29 @@ func TestEditTargetOfReenrollingNode(t *testing.T) {
 		t.Errorf("editing the notes of a target on a re-enrolling node: %v", err)
 	}
 }
+
+// A failed update stays on the node until it runs another version than the
+// one it failed from: reinstalled by hand, it is no longer "update failed".
+func TestFailedUpdateClearsOnAnotherVersion(t *testing.T) {
+	e := newEnv(t)
+	n := e.confirmedNode("edge")
+	if err := e.svc.TouchNode(e.ctx, n.ID, e.clock.Now(), "v0.0.3", 1, "192.0.2.1"); err != nil {
+		t.Fatal(err)
+	}
+	n, _ = e.svc.Node(e.ctx, n.ID)
+	if err := e.svc.StartNodeUpdate(e.ctx, n, "v0.0.5"); err != nil {
+		t.Fatal(err)
+	}
+	n, _ = e.svc.Node(e.ctx, n.ID)
+	if err := e.svc.EndNodeUpdate(e.ctx, n, "the download needs a node credential"); err != nil {
+		t.Fatal(err)
+	}
+	_ = e.svc.TouchNode(e.ctx, n.ID, e.clock.Now(), "v0.0.3", 1, "192.0.2.1")
+	if n, _ = e.svc.Node(e.ctx, n.ID); n.UpdateFailed == "" {
+		t.Fatal("failure forgotten while the node still runs the old version")
+	}
+	_ = e.svc.TouchNode(e.ctx, n.ID, e.clock.Now(), "v0.0.5", 1, "192.0.2.1")
+	if n, _ = e.svc.Node(e.ctx, n.ID); n.UpdateFailed != "" {
+		t.Fatalf("still update failed on v0.0.5: %q", n.UpdateFailed)
+	}
+}

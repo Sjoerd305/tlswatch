@@ -555,9 +555,12 @@ func (s *Service) DeleteNode(ctx context.Context, id int64, move bool) error {
 }
 
 // TouchNode records a request from a node: when, its version and protocol,
-// and the address the server sees it from.
+// and the address the server sees it from. A failed update is forgotten
+// once the node runs another version than the one it failed from: it was
+// updated some other way (reinstalled, or a container pulled).
 func (s *Service) TouchNode(ctx context.Context, id int64, seen time.Time, version string, protocol int, addr string) error {
-	_, err := s.DB.W.ExecContext(ctx, "UPDATE nodes SET last_seen = ?, version = ?, protocol = ?, address = ? WHERE id = ?",
+	_, err := s.DB.W.ExecContext(ctx, `UPDATE nodes SET last_seen = ?1, version = ?2, protocol = ?3, address = ?4,
+		update_failed = CASE WHEN update_started = 0 AND update_from != ?2 THEN '' ELSE update_failed END WHERE id = ?5`,
 		seen.Unix(), version, protocol, addr, id)
 	return err
 }
