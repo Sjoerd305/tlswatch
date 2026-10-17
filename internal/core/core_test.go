@@ -855,21 +855,23 @@ func TestStatusOf(t *testing.T) {
 	cases := []struct {
 		name             string
 		enabled, checked bool
-		failing          bool
+		failing, partial bool
 		open             []check.Finding
 		want             string
 	}{
-		{"disabled", false, true, false, nil, StatusDisabled},
-		{"never checked", true, false, false, nil, StatusPending},
-		{"healthy", true, true, false, nil, StatusHealthy},
-		{"failing before the finding opens", true, true, true, nil, StatusUnreachable},
-		{"critical outranks unreachable", true, true, false, []check.Finding{f(check.Unreachable, check.Critical), f(check.Expired, check.Critical)}, StatusCritical},
-		{"change only", true, true, false, []check.Finding{f(check.CertificateChanged, check.Warning)}, StatusChanged},
-		{"change and expiring", true, true, false, []check.Finding{f(check.CertificateChanged, check.Warning), f(check.Expiring, check.Warning)}, StatusWarning},
-		{"info only", true, true, false, []check.Finding{f(check.CertificateChanged, check.Info)}, StatusHealthy},
+		{"disabled", false, true, false, false, nil, StatusDisabled},
+		{"never checked", true, false, false, false, nil, StatusPending},
+		{"healthy", true, true, false, false, nil, StatusHealthy},
+		{"failing before the finding opens", true, true, true, false, nil, StatusUnreachable},
+		{"critical outranks unreachable", true, true, false, false, []check.Finding{f(check.Unreachable, check.Critical), f(check.Expired, check.Critical)}, StatusCritical},
+		{"change only", true, true, false, false, []check.Finding{f(check.CertificateChanged, check.Warning)}, StatusChanged},
+		{"change and expiring", true, true, false, false, []check.Finding{f(check.CertificateChanged, check.Warning), f(check.Expiring, check.Warning)}, StatusWarning},
+		{"one address down", true, true, false, true, nil, StatusWarning},
+		{"one address down and a change", true, true, false, true, []check.Finding{f(check.CertificateChanged, check.Warning)}, StatusWarning},
+		{"info only", true, true, false, false, []check.Finding{f(check.CertificateChanged, check.Info)}, StatusHealthy},
 	}
 	for _, c := range cases {
-		if got := StatusOf(c.enabled, c.checked, c.failing, c.open); got != c.want {
+		if got := StatusOf(c.enabled, c.checked, c.failing, c.partial, c.open); got != c.want {
 			t.Errorf("%s: %s, want %s", c.name, got, c.want)
 		}
 	}

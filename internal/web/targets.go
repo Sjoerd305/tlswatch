@@ -778,7 +778,7 @@ func (s *Server) testProbe(ctx context.Context, st config.Settings, t core.Targe
 		res.Err = err.Error()
 	}
 	res.Findings = o.Open
-	res.Status = core.StatusOf(true, true, !o.Answered, o.Open)
+	res.Status = core.StatusOf(true, true, !o.Answered, o.Answered && o.Error != "", o.Open)
 	if o.Leaf != nil {
 		ci := probe.Describe(o.Leaf)
 		res.Cert = &ci

@@ -303,7 +303,7 @@ type Outcome struct {
 	DNSFail       int
 	DNSOk         int
 	Addresses     map[string]AddressOutcome
-	Error         string // summary error when nothing answered
+	Error         string // the addresses that failed, when any did
 	// Waiting lists network kinds that failed this check but are not open
 	// yet: the debounce wants more consecutive failures.
 	Waiting []Kind
@@ -338,6 +338,7 @@ func Evaluate(t Target, prev Previous, r probe.Result, now time.Time) Outcome {
 		return e.out
 	}
 	e.out.Answered = true
+	e.out.Error = partialError(r.Addresses)
 	e.out.OkStreak, e.out.FailStreak = prev.OkStreak+1, 0
 	e.recovering(Unreachable, e.out.OkStreak)
 
@@ -460,6 +461,18 @@ func (e *evaluation) nothingAnswered(r probe.Result) {
 		e.failing(Unreachable, e.out.FailStreak, details)
 	}
 	e.keepAllBut(Unreachable, DNSFailed, TLSUnavailable)
+}
+
+// partialError names the addresses that could not be reached in a check
+// where others answered; a STARTTLS refusal has its own finding.
+func partialError(addrs []probe.Address) string {
+	var failures []string
+	for _, a := range addrs {
+		if !a.OK && a.ErrorKind != probe.ErrStartTLS {
+			failures = append(failures, a.IP+": "+a.Error)
+		}
+	}
+	return strings.Join(failures, "; ")
 }
 
 // pickLeaf returns the address serving the current leaf: the one most

@@ -28,6 +28,8 @@
 <div class="notice info" role="status">{{template "notice-icon" "info"}}<div>Not checked yet. The first check runs shortly{{if $p.Can "targets.edit"}}, or use Check now{{end}}.</div></div>
 {{- else if and $t.LastError (not $c)}}
 <div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$t.LastError}}</div></div>
+{{- else if and $t.LastError (eq $t.Status "warning")}}
+<div class="notice warn" role="status">{{template "notice-icon" "warn"}}<div>Not every address answered: {{$t.LastError}}</div></div>
 {{- end}}
 <div class="grid-main-side w360">
   <div class="stack">

@@ -450,7 +450,8 @@ func (s *Service) refreshStatusTx(ctx context.Context, tx *sql.Tx, id int64) (st
 	var enabled bool
 	var lastCheck int64
 	var failStreak, dnsFail int
-	if err := tx.QueryRowContext(ctx, "SELECT enabled, last_check, fail_streak, dns_fail_streak FROM targets WHERE id = ?", id).Scan(&enabled, &lastCheck, &failStreak, &dnsFail); err != nil {
+	var lastError string
+	if err := tx.QueryRowContext(ctx, "SELECT enabled, last_check, fail_streak, dns_fail_streak, last_error FROM targets WHERE id = ?", id).Scan(&enabled, &lastCheck, &failStreak, &dnsFail, &lastError); err != nil {
 		return "", err
 	}
 	var open []check.Finding
@@ -472,17 +473,19 @@ func (s *Service) refreshStatusTx(ctx context.Context, tx *sql.Tx, id int64) (st
 			return "", err
 		}
 	}
-	status := StatusOf(enabled, lastCheck > 0, failStreak > 0 || dnsFail > 0, open)
+	failing := failStreak > 0 || dnsFail > 0
+	status := StatusOf(enabled, lastCheck > 0, failing, !failing && lastError != "", open)
 	_, err := tx.ExecContext(ctx, "UPDATE targets SET status = ? WHERE id = ?", status, id)
 	return status, err
 }
 
 // StatusOf derives a target's status. failing is whether the last check
 // reached no address: the target shows unreachable right away, while the
-// finding and its alert wait for the debounce. Critical certificate
-// findings outrank unreachable; a warning that is only a certificate or
-// issuer change is "changed".
-func StatusOf(enabled, checked, failing bool, open []check.Finding) string {
+// finding and its alert wait for the debounce. partial is whether some
+// address failed while others answered: the target is at least a warning.
+// Critical certificate findings outrank unreachable; a warning that is
+// only a certificate or issuer change is "changed".
+func StatusOf(enabled, checked, failing, partial bool, open []check.Finding) string {
 	switch {
 	case !enabled:
 		return StatusDisabled
@@ -506,9 +509,9 @@ func StatusOf(enabled, checked, failing bool, open []check.Finding) string {
 		return StatusCritical
 	case unreachable:
 		return StatusUnreachable
-	case worst == check.Warning.Rank() && changeOnly:
+	case worst == check.Warning.Rank() && changeOnly && !partial:
 		return StatusChanged
-	case worst == check.Warning.Rank():
+	case worst == check.Warning.Rank() || partial:
 		return StatusWarning
 	}
 	return StatusHealthy
