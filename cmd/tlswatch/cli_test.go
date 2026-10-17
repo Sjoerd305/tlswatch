@@ -606,3 +606,33 @@ func TestLinkBaseAndDevAssets(t *testing.T) {
 		}
 	}
 }
+
+// Node variables read as the server's do, and one that does not parse
+// stops the node instead of being ignored: TLSWATCH_NODE_NO_UPDATE=1 is a
+// security setting.
+func TestNodeEnvironmentValues(t *testing.T) {
+	t.Setenv("TLSWATCH_NODE_SERVER", "https://tlswatch.example.nl")
+	t.Setenv("TLSWATCH_NODE_NO_UPDATE", "1")
+	t.Setenv("TLSWATCH_NODE_ALLOW_LOCAL", "yes")
+	fs, f := nodeFlagSet("node", false)
+	if err := parseNodeFlags(fs, nil); err != nil {
+		t.Fatal(err)
+	}
+	if c, err := nodeClient(f); err != nil || !c.NoUpdate || !c.AllowLocal {
+		t.Fatalf("1 and yes: %+v %v", c, err)
+	}
+	for k, v := range map[string]string{"TLSWATCH_NODE_WORKERS": "abc", "TLSWATCH_NODE_NO_UPDATE": "maybe", "TLSWATCH_LOG_JSON": "garbage"} {
+		t.Run(k, func(t *testing.T) {
+			t.Setenv(k, v)
+			fs, f := nodeFlagSet("node", false)
+			_ = parseNodeFlags(fs, nil)
+			if _, err := nodeClient(f); err == nil || !strings.Contains(err.Error(), k) {
+				t.Fatalf("%s=%s: %v", k, v, err)
+			}
+		})
+	}
+	fs, _ = nodeFlagSet("node", false)
+	if err := parseNodeFlags(fs, []string{"-server", "https://tlswatch.example.nl", "enrol", "-token", "T"}); err == nil || !strings.Contains(err.Error(), `"enrol"`) {
+		t.Fatalf("stray argument: %v", err)
+	}
+}

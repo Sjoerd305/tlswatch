@@ -60,11 +60,23 @@ func envBool(k string, def bool) bool {
 	if !ok || v == "" {
 		return def
 	}
-	b, err := strconv.ParseBool(v)
+	b, err := ParseBool(v)
 	if err != nil {
 		return def
 	}
 	return b
+}
+
+// ParseBool reads a boolean environment value: what strconv.ParseBool
+// takes, and yes or no.
+func ParseBool(v string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "yes", "y", "on":
+		return true, nil
+	case "no", "n", "off":
+		return false, nil
+	}
+	return strconv.ParseBool(strings.TrimSpace(v))
 }
 
 // Thresholds are the expiry thresholds for one renewal style.
@@ -525,7 +537,7 @@ type envVar struct {
 
 func boolVar(dst func(*Settings) *bool) func(*Settings, string) error {
 	return func(st *Settings, v string) error {
-		b, err := strconv.ParseBool(v)
+		b, err := ParseBool(v)
 		if err != nil {
 			return errors.New("must be true or false")
 		}
@@ -602,6 +614,11 @@ func applyEnv(st *Settings) {
 // ignored.
 func CheckEnv() error {
 	var errs []error
+	if v := os.Getenv("TLSWATCH_LOG_JSON"); v != "" {
+		if _, err := ParseBool(v); err != nil {
+			errs = append(errs, fmt.Errorf("TLSWATCH_LOG_JSON: %q is not true or false", v))
+		}
+	}
 	for _, e := range envVars {
 		if v, ok := os.LookupEnv(e.env); ok && v != "" && e.env != "TZ" {
 			st := DefaultSettings()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -137,5 +138,16 @@ func TestGeneralValidation(t *testing.T) {
 	}
 	if ok, err := HasSealed(ctx, st.db); err != nil || ok {
 		t.Errorf("HasSealed without sealed settings: %v %v", ok, err)
+	}
+}
+
+func TestCheckEnvLogJSON(t *testing.T) {
+	t.Setenv("TLSWATCH_LOG_JSON", "garbage")
+	if err := CheckEnv(); err == nil || !strings.Contains(err.Error(), "TLSWATCH_LOG_JSON") {
+		t.Fatalf("invalid TLSWATCH_LOG_JSON: %v", err)
+	}
+	t.Setenv("TLSWATCH_LOG_JSON", "no")
+	if err := CheckEnv(); err != nil || LoadBootstrap().LogJSON {
+		t.Fatalf("no: %v", err)
 	}
 }
