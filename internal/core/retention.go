@@ -31,7 +31,9 @@ func (s *Service) Prune(ctx context.Context) error {
 		// Keep each target's latest check.
 		`DELETE FROM observations WHERE id IN (SELECT id FROM observations WHERE checked_at < ?1
 			AND check_id NOT IN (SELECT last_check_id FROM targets) LIMIT ?2)`,
-		"DELETE FROM alerts WHERE id IN (SELECT id FROM alerts WHERE created_at < ?1 AND state != 'pending' LIMIT ?2)",
+		// Keep the alerts of an open finding: its recovery goes to them.
+		`DELETE FROM alerts WHERE id IN (SELECT id FROM alerts WHERE created_at < ?1 AND state != 'pending'
+			AND (finding_id IS NULL OR finding_id NOT IN (SELECT id FROM findings WHERE resolved_at = 0)) LIMIT ?2)`,
 		"DELETE FROM findings WHERE id IN (SELECT id FROM findings WHERE resolved_at > 0 AND resolved_at < ?1 LIMIT ?2)",
 		"DELETE FROM tokens WHERE expires_at < ?1",
 		// Issuances age out with the rest, except one with an open finding.
