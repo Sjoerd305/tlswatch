@@ -17,6 +17,12 @@
 {{- if .User}}
 {{template "chrome" .}}
 <main class="page" id="main">
+{{- if .Demo}}
+<div class="notice info demo-strip" role="note">
+  {{template "notice-icon" "info"}}
+  <div>This is a read-only demo of tlswatch, watching public endpoints. The badssl.com ones are broken on purpose. <a href="https://github.com/sjoerd305/tlswatch">Run your own</a></div>
+</div>
+{{- end}}
 {{template "notices" .}}
 {{template "content" .}}
 </main>
@@ -55,8 +61,10 @@
   <details class="menu">
     <summary class="who">{{.User.DisplayName}} <span class="role">{{.User.Role}}</span></summary>
     <div class="menu-list">
+      {{- if not .Demo}}
       <div class="menu-meta">{{.User.Email}}</div>
       <a href="/account">Account</a>
+      {{- end}}
       <form method="post" action="/account/theme" class="menu-theme" aria-label="Theme">
         <input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="next" value="{{.Path}}" data-follow-url="all">
         <span class="menu-label">Theme</span>
@@ -67,7 +75,9 @@
           <button type="submit" name="theme" value="dark"{{if eq $theme "dark"}} class="on" aria-current="true"{{end}}>Dark</button>
         </span>
       </form>
+      {{- if not .Demo}}
       <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button type="submit" class="linkbtn">Sign out</button></form>
+      {{- end}}
     </div>
   </details>
 </header>

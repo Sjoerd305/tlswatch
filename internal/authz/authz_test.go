@@ -26,6 +26,7 @@ func TestDenied(t *testing.T) {
 	denied := map[Role][]Action{
 		Viewer:   {EditTargets, Acknowledge, ManageSettings, ManageUsers, ViewAudit},
 		Operator: {ManageSettings, ManageUsers, ViewAudit},
+		Demo:     {ManageOwnAccount, EditTargets, Acknowledge, ManageSettings, ManageUsers, ViewAudit},
 	}
 	for r, as := range denied {
 		for _, a := range as {
@@ -54,5 +55,16 @@ func TestParseRole(t *testing.T) {
 	}
 	if _, err := ParseRole("Admin"); err == nil {
 		t.Error("ParseRole accepted wrong case")
+	}
+	if _, err := ParseRole(string(Demo)); err == nil {
+		t.Error("ParseRole accepted the demo role, which no user may have")
+	}
+}
+
+func TestDemoViewsOnly(t *testing.T) {
+	for _, a := range Actions {
+		if got := Allowed(Demo, a); got != (a == ViewData) {
+			t.Errorf("Allowed(demo, %s) = %v", a, got)
+		}
 	}
 }

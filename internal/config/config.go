@@ -35,6 +35,9 @@ type Bootstrap struct {
 	DBPath        string
 	SecretKeyFile string
 	LogJSON       bool
+	// Demo is the demo file of an instance in demo mode, "" otherwise:
+	// no sign-in, every visitor views the data read-only.
+	Demo string
 }
 
 // LoadBootstrap reads the bootstrap variables with their defaults.
@@ -43,6 +46,7 @@ func LoadBootstrap() Bootstrap {
 		Listen:  env("TLSWATCH_LISTEN", "127.0.0.1:8080"),
 		DBPath:  env("TLSWATCH_DB", "./data/tlswatch.db"),
 		LogJSON: envBool("TLSWATCH_LOG_JSON", true),
+		Demo:    env("TLSWATCH_DEMO", ""),
 	}
 	b.SecretKeyFile = env("TLSWATCH_SECRET_KEY_FILE", filepath.Join(filepath.Dir(b.DBPath), "secret.key"))
 	return b

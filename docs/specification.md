@@ -381,6 +381,10 @@ Three roles, one per user, no organisations or tenants: the tool is single-tenan
 
 **Authorisation** is one decision function role × action, called by every handler and covered by a negative test suite (every role tried against every action it must not have).
 
+**Demo mode** (`TLSWATCH_DEMO`, the path of a demo file) runs a public demo without accounts. Nobody signs in: every visitor is the built-in demo role, which views targets, domains, certificates, findings and history and does nothing else (not even what a viewer does under Account). The role is never stored on a user and cannot be assigned. Session cookies are not read. The sign-in, setup, invitation, Google, account and settings pages redirect to the overview, so a new demo instance without accounts never offers its setup screen. Every write is refused with "This is a demo: it shows the data, and nothing can be changed.", except the theme switch, which a demo visitor keeps in the theme cookie alone. Every page shows a strip saying it is a read-only demo, with a link to the project. The user menu holds only the theme.
+
+Demo mode refuses to start on a database that has user accounts: that is a real instance, and demo mode would show its data to anyone. On start, it reads the demo file: JSON with `bundles` (name, PEM), `targets` (`host`, and optionally `port`, `name`, `protocol`, `server_name`, `trust` (system, bundle or self-signed), `bundle`, `renewal` (auto, managed or manual), `expected_issuer`, `warn_days`, `crit_days`, `first_address_only`, `skip_config_test`, `disabled`, `tags`, `notes`) and `domains` (`name`, `subdomains`, `tags`, `notes`). Left-out fields follow the Add targets form. An unknown field, an unreadable file or a file without targets and domains stops the start. The file fills an instance that has no targets, domain watches or CA bundles yet, in one go, all targets or none, audited as `demo.load`; an instance that has any is left as it is, so a restart keeps the history. Checks, CT polls and the configuration test then run as usual. A demo has no channels, so it sends nothing. The demo file lives outside the binary; the repository's is `demo/demo.json`, with `demo/compose.yaml` to run it.
+
 ## Architecture
 
 One Go binary, one SQLite file, no other services. The frontend is server-rendered with `html/template` and embedded in the binary together with the CSS, fonts and compiled TypeScript; the scheduler and alert dispatcher run as goroutines in the same process.
@@ -484,6 +488,7 @@ Secrets entered in the UI (SMTP passwords, Telegram bot tokens, Slack and Discor
 | `TLSWATCH_ALLOW_LOCAL` | `false` | Settings › General | Allow loopback and link-local targets |
 | `TLSWATCH_METRICS` | `false` | Settings › General | Serve Prometheus metrics at `/metrics` |
 | `TLSWATCH_METRICS_TOKEN` | generated | Settings › General | The bearer token `/metrics` requires (16 characters at least). With metrics on and no token saved (switched on by `TLSWATCH_METRICS` alone), it is derived from the instance key, the same on every start; saving Settings › General keeps it, and Rotate makes a random one |
+| `TLSWATCH_DEMO` | unset | bootstrap only | Demo mode: the path of the demo file; no sign-in, every visitor views read-only (see Users, authentication and authorisation) |
 | `TLSWATCH_ACCEPT_NEW_KEY` | unset | bootstrap only | `true` starts with a new secret key although the database holds credentials sealed under a missing one; otherwise that start is refused |
 | `TLSWATCH_WORKERS` | `8` | Settings › Defaults | Concurrent probes |
 | `TLSWATCH_RETENTION_DAYS` | `180` | Settings › Defaults | History retention; the audit log is kept at least a year regardless |
@@ -497,7 +502,7 @@ Settings pages added for this: **General** (base URL, proxy trust, local targets
 
 **Operations**: `/healthz` reports database reachability and scheduler progress (last run, backlog, how long the oldest due check has waited); when enabled under Settings › General, `/metrics` serves Prometheus gauges to the bearer token generated there, since they name every target (targets by status, open findings by severity, alerts pending and given up, each target's certificate expiry, scheduler backlog and checks, checks running on nodes and targets held; nodes online and offline, seconds since each node was seen, jobs completed and failed per node); structured logs with request IDs and one line per check; a daily backup is the `backup` subcommand on a cron, and Settings › Backup downloads and restores an encrypted backup of the whole instance. Upgrades are a binary swap; migrations are forward-only and refuse to run a database written by a newer version.
 
-**Development**: `make build`, `make test`, `make frontend`, `make run` with a throw-away database. There is no seed subcommand: test data does not ship in the binary. The README screenshot shows letsencrypt.org and the badssl.com hosts (expired, self-signed, wrong host, untrusted root, tls-v1-0.badssl.com:1010), added through the UI.
+**Development**: `make build`, `make test`, `make frontend`, `make run` with a throw-away database. There is no seed subcommand: test data does not ship in the binary. Demo data is a file outside it too (`demo/demo.json`, read in demo mode); a test loads that file, so it keeps working. The README screenshot shows letsencrypt.org and the badssl.com hosts (expired, self-signed, wrong host, untrusted root, tls-v1-0.badssl.com:1010), added through the UI.
 
 ## Security
 

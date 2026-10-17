@@ -1,0 +1,21 @@
+# Runs a public, read-only demo of tlswatch from demo.json in this folder:
+# `docker compose up -d`, then open http://127.0.0.1:8082/. Nobody signs in;
+# the first start fills the empty database from the file, later starts keep
+# the history. To start over: `docker compose down -v`.
+#
+# Put a reverse proxy with TLS in front before exposing it. Demo mode
+# refuses a database that has user accounts, so keep this volume its own.
+services:
+  tlswatch-demo:
+    image: ghcr.io/sjoerd305/tlswatch:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8082:8080"
+    environment:
+      TLSWATCH_DEMO: /demo/demo.json
+    volumes:
+      - ./demo.json:/demo/demo.json:ro
+      - tlswatch-demo-data:/data
+
+volumes:
+  tlswatch-demo-data:

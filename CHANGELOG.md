@@ -4,6 +4,7 @@ Newest first, one line per change.
 
 ## Unreleased
 
+- Demo mode for a public demo: `TLSWATCH_DEMO=/path/to/demo.json` switches sign-in off and makes every visitor a read-only demo role, closes the sign-in, setup, account and settings pages, refuses every write but the theme, and fills an empty database from the demo file. It refuses a database that has user accounts. `demo/demo.json` covers every kind of target on public endpoints (STARTTLS and implicit TLS, an IP address, a private CA bundle, a pinned self-signed certificate, the badssl.com failures, a disabled target, a CT watch); `demo/compose.yaml` runs it.
 - Behaviour tests across every package, written against the specification; everything they found is fixed:
   - Checks: a certificate that is not valid yet opens a new critical `not_yet_valid` finding (it passed as healthy); a weak RSA key on a root the server sends opens `weak_signature`; an expired root sent needlessly after a valid chain is no longer critical and the chain view says it can be dropped; a self-signed certificate put in the target's own bundle is trusted; an IPv6-only name without an IPv6 route says so.
   - Targets: one address of several down makes the target a warning, with the failing addresses on its page and in the digest (it stayed healthy); a balancer member coming and going no longer opens `certificate_changed`, nor does a new host or port; a target stays editable while its node re-enrols; IP addresses are stored in one spelling and Unicode host names as punycode; an unknown CA bundle is a form error.

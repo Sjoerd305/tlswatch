@@ -49,6 +49,9 @@ type Server struct {
 	DevAssets bool
 	Listen    string
 	Now       func() time.Time
+	// Demo is demo mode (TLSWATCH_DEMO): nobody signs in, every visitor
+	// is the demo role, which views the data and changes nothing.
+	Demo bool
 
 	pages     map[string]*template.Template
 	static    http.Handler
@@ -198,7 +201,11 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		if c, err := readCookie(r, sessionCookie, ri.https); err == nil && c.Value != "" {
+		if s.Demo {
+			if !s.demoOpen(w, r, ri) {
+				return
+			}
+		} else if c, err := readCookie(r, sessionCookie, ri.https); err == nil && c.Value != "" {
 			lookup := s.Auth.Session
 			if passiveRequest(r) {
 				lookup = s.Auth.SessionPassive
@@ -524,6 +531,10 @@ func (s *Server) require(a authz.Action, h http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		if !authz.Allowed(ri.session.User.Role, a) {
+			if ri.session.User.Role == authz.Demo {
+				s.fail(w, r, http.StatusForbidden, demoRefusal)
+				return
+			}
 			s.fail(w, r, http.StatusForbidden, "Your role does not allow this.")
 			return
 		}
@@ -601,3 +612,39 @@ func safeNext(v string) string {
 }
 
 var errBadID = errors.New("bad id")
+
+// demoRefusal is the answer to anything a demo visitor may not do.
+const demoRefusal = "This is a demo: it shows the data, and nothing can be changed."
+
+// demoClosed lists the pages a demo has no use for: signing in and out,
+// setup, invitations, the account and the settings. A visit lands on the
+// overview.
+var demoClosed = []string{"/login", "/logout", "/setup", "/invite", "/auth/", "/account", "/settings"}
+
+// demoOpen makes the request a demo visitor's, or answers it: a closed
+// page redirects to the overview, and any write but the theme is refused.
+// It reports whether the request goes on.
+func (s *Server) demoOpen(w http.ResponseWriter, r *http.Request, ri *reqInfo) bool {
+	path := r.URL.Path
+	write := r.Method != http.MethodGet && r.Method != http.MethodHead
+	if write && path != "/account/theme" {
+		s.fail(w, r.WithContext(context.WithValue(r.Context(), keyReq, ri)), http.StatusForbidden, demoRefusal)
+		return false
+	}
+	if !write {
+		for _, p := range demoClosed {
+			if path == p || strings.HasPrefix(path, strings.TrimSuffix(p, "/")+"/") {
+				http.Redirect(w, r, "/", http.StatusSeeOther)
+				return false
+			}
+		}
+	}
+	// The double-submit cookie stands in for the session's CSRF token,
+	// so the theme form works as it does for a signed-in user.
+	u := auth.User{Name: "Demo visitor", Role: authz.Demo, Enabled: true}
+	if c, err := r.Cookie(themeCookie); err == nil && (c.Value == "light" || c.Value == "dark") {
+		u.Theme = c.Value
+	}
+	ri.session = &auth.Session{User: u, CSRF: s.preCSRF(w, r)}
+	return true
+}

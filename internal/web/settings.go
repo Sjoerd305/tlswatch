@@ -831,7 +831,16 @@ func (s *Server) accountSave(w http.ResponseWriter, r *http.Request) {
 func (s *Server) accountTheme(w http.ResponseWriter, r *http.Request) {
 	theme := r.PostFormValue("theme")
 	next := safeNext(r.PostFormValue("next"))
-	if err := s.Auth.SetTheme(r.Context(), user(r).ID, theme); err != nil {
+	// A demo visitor is no stored user: the cookie alone remembers it.
+	var err error
+	if s.Demo {
+		if theme != "system" && theme != "light" && theme != "dark" {
+			err = errors.New("unknown theme")
+		}
+	} else {
+		err = s.Auth.SetTheme(r.Context(), user(r).ID, theme)
+	}
+	if err != nil {
 		s.back(w, r, next, "Choose system, light or dark.", "crit")
 		return
 	}

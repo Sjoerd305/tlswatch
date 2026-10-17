@@ -94,6 +94,7 @@ Everything an operator changes is in the UI. The process itself needs at most th
 | `TLSWATCH_LOG_JSON` | `true` |
 | `TLSWATCH_DEBUG` | `false` (debug logging) |
 | `TLSWATCH_ACCEPT_NEW_KEY` | unset: a missing key file next to a database with sealed credentials stops the start |
+| `TLSWATCH_DEMO` | unset: the path of a demo file runs a public, read-only demo without sign-in (see `demo/`) |
 
 Settings that can also be pinned by environment (for containers and GitOps) are shown read-only in the UI; an invalid value stops tlswatch at start with a message naming the variable. See [docs/operations.md](docs/operations.md) and the [specification](docs/specification.md).
 

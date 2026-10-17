@@ -10,9 +10,13 @@ const (
 	Viewer   Role = "viewer"
 	Operator Role = "operator"
 	Admin    Role = "admin"
+	// Demo is the visitor of an instance in demo mode (TLSWATCH_DEMO): it
+	// views the data and nothing else. It is never stored on a user, so
+	// Roles and ParseRole leave it out.
+	Demo Role = "demo"
 )
 
-// Roles lists every role, least privileged first.
+// Roles lists every role a user can have, least privileged first.
 var Roles = []Role{Viewer, Operator, Admin}
 
 // ParseRole validates a role name.
@@ -41,6 +45,9 @@ const (
 var Actions = []Action{ViewData, EditTargets, Acknowledge, ManageSettings, ManageUsers, ViewAudit, ManageOwnAccount}
 
 var policy = map[Role]map[Action]bool{
+	Demo: {
+		ViewData: true,
+	},
 	Viewer: {
 		ViewData: true, ManageOwnAccount: true,
 	},

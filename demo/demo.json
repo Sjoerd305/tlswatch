@@ -1,0 +1,169 @@
+{
+  "bundles": [
+    {
+      "name": "BadSSL Untrusted Root",
+      "pem": "-----BEGIN CERTIFICATE-----\nMIIGfjCCBGagAwIBAgIJAJeg/PrX5Sj9MA0GCSqGSIb3DQEBCwUAMIGBMQswCQYD\nVQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTEWMBQGA1UEBwwNU2FuIEZyYW5j\naXNjbzEPMA0GA1UECgwGQmFkU1NMMTQwMgYDVQQDDCtCYWRTU0wgVW50cnVzdGVk\nIFJvb3QgQ2VydGlmaWNhdGUgQXV0aG9yaXR5MB4XDTE2MDcwNzA2MzEzNVoXDTM2\nMDcwMjA2MzEzNVowgYExCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApDYWxpZm9ybmlh\nMRYwFAYDVQQHDA1TYW4gRnJhbmNpc2NvMQ8wDQYDVQQKDAZCYWRTU0wxNDAyBgNV\nBAMMK0JhZFNTTCBVbnRydXN0ZWQgUm9vdCBDZXJ0aWZpY2F0ZSBBdXRob3JpdHkw\nggIiMA0GCSqGSIb3DQEBAQUAA4ICDwAwggIKAoICAQDKQtPMhEH073gis/HISWAi\nbOEpCtOsatA3JmeVbaWal8O/5ZO5GAn9dFVsGn0CXAHR6eUKYDAFJLa/3AhjBvWa\ntnQLoXaYlCvBjodjLEaFi8ckcJHrAYG9qZqioRQ16Yr8wUTkbgZf+er/Z55zi1yn\nCnhWth7kekvrwVDGP1rApeLqbhYCSLeZf5W/zsjLlvJni9OrU7U3a9msvz8mcCOX\nfJX9e3VbkD/uonIbK2SvmAGMaOj/1k0dASkZtMws0Bk7m1pTQL+qXDM/h3BQZJa5\nDwTcATaa/Qnk6YHbj/MaS5nzCSmR0Xmvs/3CulQYiZJ3kypns1KdqlGuwkfiCCgD\nyWJy7NE9qdj6xxLdqzne2DCyuPrjFPS0mmYimpykgbPnirEPBF1LW3GJc9yfhVXE\nCc8OY8lWzxazDNNbeSRDpAGbBeGSQXGjAbliFJxwLyGzZ+cG+G8lc+zSvWjQu4Xp\nGJ+dOREhQhl+9U8oyPX34gfKo63muSgo539hGylqgQyzj+SX8OgK1FXXb2LS1gxt\nVIR5Qc4MmiEG2LKwPwfU8Yi+t5TYjGh8gaFv6NnksoX4hU42gP5KvjYggDpR+NSN\nCGQSWHfZASAYDpxjrOo+rk4xnO+sbuuMk7gORsrl+jgRT8F2VqoR9Z3CEdQxcCjR\n5FsfTymZCk3GfIbWKkaeLQIDAQABo4H2MIHzMB0GA1UdDgQWBBRvx4NzSbWnY/91\n3m1u/u37l6MsADCBtgYDVR0jBIGuMIGrgBRvx4NzSbWnY/913m1u/u37l6MsAKGB\nh6SBhDCBgTELMAkGA1UEBhMCVVMxEzARBgNVBAgMCkNhbGlmb3JuaWExFjAUBgNV\nBAcMDVNhbiBGcmFuY2lzY28xDzANBgNVBAoMBkJhZFNTTDE0MDIGA1UEAwwrQmFk\nU1NMIFVudHJ1c3RlZCBSb290IENlcnRpZmljYXRlIEF1dGhvcml0eYIJAJeg/PrX\n5Sj9MAwGA1UdEwQFMAMBAf8wCwYDVR0PBAQDAgEGMA0GCSqGSIb3DQEBCwUAA4IC\nAQBQU9U8+jTRT6H9AIFm6y50tXTg/ySxRNmeP1Ey9Zf4jUE6yr3Q8xBv9gTFLiY1\nqW2qfkDSmXVdBkl/OU3+xb5QOG5hW7wVolWQyKREV5EvUZXZxoH7LVEMdkCsRJDK\nwYEKnEErFls5WPXY3bOglBOQqAIiuLQ0f77a2HXULDdQTn5SueW/vrA4RJEKuWxU\niD9XPnVZ9tPtky2Du7wcL9qhgTddpS/NgAuLO4PXh2TQ0EMCll5reZ5AEr0NSLDF\nc/koDv/EZqB7VYhcPzr1bhQgbv1dl9NZU0dWKIMkRE/T7vZ97I3aPZqIapC2ulrf\nKrlqjXidwrGFg8xbiGYQHPx3tHPZxoM5WG2voI6G3s1/iD+B4V6lUEvivd3f6tq7\nd1V/3q1sL5DNv7TvaKGsq8g5un0TAkqaewJQ5fXLigF/yYu5a24/GUD783MdAPFv\ngWz8F81evOyRfpf9CAqIswMF+T6Dwv3aw5L9hSniMrblkg+ai0K22JfoBcGOzMtB\nKe/Ps2Za56dTRoY/a4r62hrcGxufXd0mTdPaJLw3sJeHYjLxVAYWQq4QKJQWDgTS\ndAEWyN2WXaBFPx5c8KIW95Eu8ShWE00VVC3oA4emoZ2nrzBXLrUScifY6VaYYkkR\n2O2tSqU8Ri3XRdgpNPDWp8ZL49KhYGYo3R/k98gnMHiY5g==\n-----END CERTIFICATE-----\n---\nServer certificate\nsubject=C=US, ST=California, L=San Francisco, O=BadSSL, CN=*.badssl.com\nissuer=C=US, ST=California, L=San Francisco, O=BadSSL, CN=BadSSL Untrusted Root Certificate Authority\n---\nNo client certificate CA names sent\nPeer signing digest: SHA512\nPeer signature type: rsa_pkcs1_sha512\nPeer Temp Key: ECDH, prime256v1, 256 bits\n---\nSSL handshake has read 3556 bytes and written 1690 bytes\nVerification error: self-signed certificate in certificate chain\n---\nNew, TLSv1.2, Cipher is ECDHE-RSA-AES128-GCM-SHA256\nProtocol: TLSv1.2\nServer public key is 2048 bit\nSecure Renegotiation IS supported\nCompression: NONE\nExpansion: NONE\nNo ALPN negotiated\nSSL-Session:\n    Protocol  : TLSv1.2\n    Cipher    : ECDHE-RSA-AES128-GCM-SHA256\n    Session-ID: 0F41DC9C019920C2ABEE723A839A52558569C14237496D9688A9C6404E566877\n    Session-ID-ctx: \n    Master-Key: 3B7DC95A6BA04E1DD1DC7097226F4A5E684400D87A1DFA1923BB7E22E6920DB8557CC0769681AD63C162FFE10BC4EACE\n    PSK identity: None\n    PSK identity hint: None\n    SRP username: None\n    TLS session ticket lifetime hint: 300 (seconds)\n    TLS session ticket:\n    0000 - a0 4d b2 93 26 f2 79 f7-62 d5 df b2 57 0f 10 aa   .M..&.y.b...W...\n    0010 - 89 bd e4 aa 9d 80 9a fc-27 32 2e 3f d7 ef 52 b0   ........'2.?..R.\n    0020 - e5 d5 68 d5 e0 b7 a5 5b-e7 78 c2 16 a0 eb 45 f7   ..h....[.x....E.\n    0030 - 6e 06 a3 e2 10 9c 0b cc-1f 22 42 6c ee 8c 7d 9e   n........\"Bl..}.\n    0040 - 0d 41 a2 f4 25 4a 07 5d-0c a5 09 36 d2 66 83 11   .A..%J.]...6.f..\n    0050 - 11 8c cc 4c ad 68 be c4-0a a4 a5 ee 32 29 e4 20   ...L.h......2). \n    0060 - a0 4a 05 b2 11 80 31 fa-ea e0 5e d5 76 91 ea 7a   .J....1...^.v..z\n    0070 - 2c 08 6c 15 f1 3b 49 77-a3 1d 56 78 9d 20 ca 2b   ,.l..;Iw..Vx. .+\n    0080 - 02 3f 6a 3f 3e 7f 60 a8-d5 dd 3d 0b e6 ec 6b 23   .?j?>.`...=...k#\n    0090 - 35 ce 22 f6 73 33 70 91-20 b9 bc 9a 0f 17 a7 d1   5.\".s3p. .......\n    00a0 - c9 41 eb cf 67 a4 52 3b-3b 8d 6f 0c c6 07 d6 bb   .A..g.R;;.o.....\n    00b0 - fa d8 c5 87 a3 c1 02 07-16 73 a6 9a 24 5d cf 5d   .........s..$].]\n    00c0 - 1e 9a 04 dd 5f 9b fb 3f-a2 0c cc 50 52 b1 89 4f   ...._..?...PR..O\n\n    Start Time: 1792265756\n    Timeout   : 7200 (sec)\n    Verify return code: 19 (self-signed certificate in certificate chain)\n    Extended master secret: no\n---\nECH: NOT CONFIGURED: -103\n---\n"
+    }
+  ],
+  "targets": [
+    {
+      "host": "letsencrypt.org",
+      "tags": [
+        "web"
+      ],
+      "notes": "A healthy site on a 90-day ACME certificate: renewals are recognised and not alerted."
+    },
+    {
+      "host": "www.wikipedia.org",
+      "warn_days": 90,
+      "crit_days": 14,
+      "tags": [
+        "web"
+      ],
+      "notes": "Healthy, but the warning threshold is raised to 90 days, so it shows the warning state."
+    },
+    {
+      "host": "1.1.1.1",
+      "server_name": "one.one.one.one",
+      "name": "1.1.1.1 (DNS resolver)",
+      "tags": [
+        "dns"
+      ],
+      "notes": "Probed by IP address, with the server name sent separately."
+    },
+    {
+      "host": "smtp.migadu.com",
+      "protocol": "smtp",
+      "name": "Mail submission (STARTTLS)",
+      "tags": [
+        "mail"
+      ]
+    },
+    {
+      "host": "imap.migadu.com",
+      "port": 993,
+      "name": "IMAP over TLS",
+      "tags": [
+        "mail"
+      ]
+    },
+    {
+      "host": "pop.migadu.com",
+      "port": 995,
+      "name": "POP3 over TLS",
+      "tags": [
+        "mail"
+      ]
+    },
+    {
+      "host": "demo.wftpserver.com",
+      "protocol": "ftp",
+      "name": "FTP (AUTH TLS)",
+      "tags": [
+        "ftp"
+      ]
+    },
+    {
+      "host": "untrusted-root.badssl.com",
+      "trust": "bundle",
+      "bundle": "BadSSL Untrusted Root",
+      "name": "Private CA",
+      "tags": [
+        "private-ca"
+      ],
+      "notes": "Signed by a root no browser trusts. Trusted here through a CA bundle, as an internal CA would be. The configuration test is off for this target.",
+      "skip_config_test": true
+    },
+    {
+      "host": "self-signed.badssl.com",
+      "trust": "self-signed",
+      "name": "Pinned self-signed",
+      "tags": [
+        "pinned"
+      ],
+      "notes": "A self-signed certificate, pinned on first sight: only a change of certificate is a finding. The configuration test is off for this target.",
+      "skip_config_test": true
+    },
+    {
+      "host": "expired.badssl.com",
+      "tags": [
+        "badssl"
+      ],
+      "notes": "badssl.com serves this one broken on purpose, for testing TLS clients."
+    },
+    {
+      "host": "wrong.host.badssl.com",
+      "tags": [
+        "badssl"
+      ],
+      "notes": "badssl.com serves this one broken on purpose, for testing TLS clients."
+    },
+    {
+      "host": "mitm-software.badssl.com",
+      "tags": [
+        "badssl"
+      ],
+      "notes": "badssl.com serves this one broken on purpose, for testing TLS clients."
+    },
+    {
+      "host": "sha1-intermediate.badssl.com",
+      "tags": [
+        "badssl"
+      ],
+      "notes": "badssl.com serves this one broken on purpose, for testing TLS clients."
+    },
+    {
+      "host": "tls-v1-0.badssl.com",
+      "port": 1010,
+      "tags": [
+        "badssl"
+      ],
+      "notes": "badssl.com serves this one broken on purpose, for testing TLS clients."
+    },
+    {
+      "host": "tls-v1-1.badssl.com",
+      "port": 1011,
+      "tags": [
+        "badssl"
+      ],
+      "notes": "badssl.com serves this one broken on purpose, for testing TLS clients."
+    },
+    {
+      "host": "3des.badssl.com",
+      "tags": [
+        "badssl"
+      ],
+      "notes": "badssl.com serves this one broken on purpose, for testing TLS clients."
+    },
+    {
+      "host": "rc4.badssl.com",
+      "tags": [
+        "badssl"
+      ],
+      "notes": "badssl.com serves this one broken on purpose, for testing TLS clients."
+    },
+    {
+      "host": "badssl.com",
+      "tags": [
+        "badssl"
+      ],
+      "notes": "A valid certificate on a server that still accepts TLS 1.0 and weak cipher suites: graded C."
+    },
+    {
+      "host": "tls-v1-2.badssl.com",
+      "port": 1012,
+      "disabled": true,
+      "tags": [
+        "badssl"
+      ],
+      "notes": "A disabled target: kept, but not checked."
+    }
+  ],
+  "domains": [
+    {
+      "name": "badssl.com",
+      "subdomains": true,
+      "notes": "Every certificate publicly issued for badssl.com, matched against what the targets serve."
+    }
+  ]
+}

@@ -14,7 +14,7 @@ Then, in the browser:
 
 ## Environment overrides
 
-Only `TLSWATCH_LISTEN`, `TLSWATCH_DB`, `TLSWATCH_SECRET_KEY_FILE`, `TLSWATCH_LOG_JSON`, `TLSWATCH_DEBUG`, `TLSWATCH_ACCEPT_NEW_KEY` (below) and, in the image, `TLSWATCH_CONTAINER` are read before the database opens. These override a UI setting and make it read-only there:
+Only `TLSWATCH_LISTEN`, `TLSWATCH_DB`, `TLSWATCH_SECRET_KEY_FILE`, `TLSWATCH_LOG_JSON`, `TLSWATCH_DEBUG`, `TLSWATCH_ACCEPT_NEW_KEY` (below), `TLSWATCH_DEMO` (see Running a public demo) and, in the image, `TLSWATCH_CONTAINER` are read before the database opens. These override a UI setting and make it read-only there:
 
 | Variable | UI setting |
 | --- | --- |
@@ -92,6 +92,18 @@ Booleans take `true`/`false`, `1`/`0` or `yes`/`no`; a value that does not parse
 **Updates.** Nodes update themselves to the server's version, one at a time, and roll back when the new version does not reach the server within five minutes. A node takes only a release whose `SHA256SUMS` is signed by the tlswatch release key built into it; the server passes the signed list on and serves its own binary only when it is the released one, otherwise the node is sent to the GitHub release asset, which that machine must then reach. A node on a plain-http server (`-insecure`) or with `TLSWATCH_NODE_NO_UPDATE=true` never replaces its binary; a download that fails (a development server serving another platform, for example) is reported on the next poll and shown on the node row at once; this is automatic for release builds and can be switched off under Settings › Nodes. A node in a container is updated by pulling the image tag of the server's version.
 
 **Removing.** `sudo tlswatch node uninstall` on the machine, or, when the binary is gone, `curl -fsSL https://<server>/agent/v1/uninstall | sudo sh`. Delete the node under Settings › Nodes too; a node with targets offers to move them to the server.
+
+## Running a public demo
+
+`TLSWATCH_DEMO=/path/to/demo.json tlswatch serve` runs tlswatch as a public demo: nobody signs in, every visitor sees the targets, domains, certificates and findings read-only, and the sign-in, setup, account and settings pages lead back to the overview. On the first start the demo file fills the empty database; later starts leave the database as it is, so the history builds up. To start over, stop tlswatch, delete the database and start again.
+
+The repository's `demo/demo.json` watches public endpoints only: healthy sites, mail and FTP over STARTTLS and implicit TLS, an IP address with a server name, a private CA through a CA bundle, a pinned self-signed certificate, the badssl.com hosts that are broken on purpose, a disabled target and a Certificate Transparency watch for badssl.com. `demo/compose.yaml` runs it:
+
+```sh
+cd demo && docker compose up -d     # http://127.0.0.1:8082/
+```
+
+Put the same reverse proxy with TLS in front as for any instance; a demo needs no channels, no public URL and no backups. Give the demo a database of its own: demo mode refuses to start on a database that has user accounts, so it cannot publish a real instance by mistake.
 
 ## Releasing
 

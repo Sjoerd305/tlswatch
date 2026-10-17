@@ -49,6 +49,8 @@ type Page struct {
 	// Live pages refresh themselves when Stamp changes on the server.
 	Live  bool
 	Stamp string
+	// Demo is demo mode: the chrome says so, and has no account menu.
+	Demo bool
 }
 
 // Can reports whether the signed-in user may perform an action.
@@ -88,6 +90,7 @@ func (s *Server) fill(w http.ResponseWriter, r *http.Request, p *Page) {
 	p.Settings = ri.settings
 	p.Loc = ri.settings.Location()
 	p.Version = s.Version
+	p.Demo = s.Demo
 	p.Assets = "/static/" + assetVersion(s.Version)
 	p.Path = r.URL.RequestURI()
 	p.Theme = "system"

@@ -27,6 +27,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sjoerd305/tlswatch/internal/auth"
+	"github.com/sjoerd305/tlswatch/internal/authz"
 	"github.com/sjoerd305/tlswatch/internal/check"
 	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/core"
@@ -644,5 +646,31 @@ func TestCheckHelpExitsZero(t *testing.T) {
 	}
 	if code := checkCmd([]string{"-bogus"}, &out, &errOut); code != 2 {
 		t.Fatalf("unknown flag: exit %d", code)
+	}
+}
+
+// Demo mode stops before listening on a database with accounts, and on a
+// demo file it cannot read.
+func TestServeDemoRefusals(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TLSWATCH_DB", filepath.Join(dir, "tlswatch.db"))
+	t.Setenv("TLSWATCH_SECRET_KEY_FILE", "")
+	t.Setenv("TLSWATCH_LISTEN", "127.0.0.1:1")
+	t.Setenv("TLSWATCH_LOG_JSON", "false")
+	t.Setenv("TLSWATCH_DEMO", filepath.Join(dir, "missing.json"))
+	if err := serve(nil); err == nil || !strings.Contains(err.Error(), "TLSWATCH_DEMO") {
+		t.Fatalf("missing demo file: %v", err)
+	}
+	t.Setenv("TLSWATCH_DEMO", "../../demo/demo.json")
+	a, err := open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.auth.CreateUser(context.Background(), "admin@example.test", "", authz.Admin, auth.MethodLocal); err != nil {
+		t.Fatal(err)
+	}
+	a.db.Close()
+	if err := serve(nil); err == nil || !strings.Contains(err.Error(), "user accounts") {
+		t.Fatalf("database with accounts: %v", err)
 	}
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/core"
 	"github.com/sjoerd305/tlswatch/internal/db"
+	"github.com/sjoerd305/tlswatch/internal/demo"
 	"github.com/sjoerd305/tlswatch/internal/node"
 	"github.com/sjoerd305/tlswatch/internal/notify"
 	"github.com/sjoerd305/tlswatch/internal/sched"
@@ -268,14 +269,35 @@ func serve(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if n, err := a.auth.CountUsers(ctx); err == nil && n == 0 {
+	demoMode := a.boot.Demo != ""
+	if demoMode {
+		// A demo shows everything to anyone: a database that has accounts
+		// is a real instance, never a demo's.
+		if n, err := a.auth.CountUsers(ctx); err != nil {
+			return err
+		} else if n > 0 {
+			return errors.New("TLSWATCH_DEMO: this database has user accounts, and demo mode would show its data to anyone without signing in; give the demo a database of its own")
+		}
+		f, err := demo.Read(a.boot.Demo)
+		if err != nil {
+			return err
+		}
+		loaded, err := demo.Load(ctx, a.core, f)
+		if err != nil {
+			return err
+		}
+		if loaded {
+			a.log.Info("demo: loaded the demo file", "file", a.boot.Demo, "targets", len(f.Targets), "domains", len(f.Domains))
+		}
+		a.log.Warn("demo mode: no sign-in, every visitor views the data read-only", "file", a.boot.Demo)
+	} else if n, err := a.auth.CountUsers(ctx); err == nil && n == 0 {
 		link := a.linkBase(ctx) + "/setup"
 		a.log.Info("no accounts yet: open tlswatch in a browser to create the first admin", "url", link)
 		fmt.Fprintf(os.Stderr, "\n  Set up tlswatch: %s\n\n", link)
 	}
 
 	srv := &web.Server{Core: a.core, Sched: a.sched, Nodes: a.nodes, Auth: a.auth, Settings: a.settings, Dispatch: a.dispatch, Key: a.key,
-		Log: a.log, Version: version, DevAssets: devAssets(), Listen: a.boot.Listen}
+		Log: a.log, Version: version, DevAssets: devAssets(), Listen: a.boot.Listen, Demo: demoMode}
 	h, err := srv.Handler()
 	if err != nil {
 		return err

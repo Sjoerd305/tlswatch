@@ -121,7 +121,11 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /settings/about", admin(s.settingsAbout))
 	mux.HandleFunc("GET /account", own(s.account))
 	mux.HandleFunc("POST /account", own(s.accountSave))
-	mux.HandleFunc("POST /account/theme", own(s.accountTheme))
+	if s.Demo {
+		mux.HandleFunc("POST /account/theme", view(s.accountTheme))
+	} else {
+		mux.HandleFunc("POST /account/theme", own(s.accountTheme))
+	}
 	mux.HandleFunc("POST /account/password", own(s.accountPassword))
 
 	// JSON API for the TypeScript modules.
