@@ -1290,3 +1290,16 @@ func TestAddTargetsAllOrNothing(t *testing.T) {
 		t.Fatalf("ids %v, err %v", ids, err)
 	}
 }
+
+func TestFailingAddressesInOrder(t *testing.T) {
+	out := check.Outcome{Addresses: map[string]check.AddressOutcome{}}
+	for _, ip := range []string{"192.0.2.10", "192.0.2.9", "2001:db8::1", "192.0.2.2", "192.0.2.30", "192.0.2.1"} {
+		out.Addresses[ip] = check.AddressOutcome{Status: "error"}
+	}
+	out.Addresses["192.0.2.5"] = check.AddressOutcome{Status: "ok"}
+	for range 20 {
+		if got := failingAddresses(out); got != "192.0.2.1, 192.0.2.2, 192.0.2.9, 192.0.2.10, +2" {
+			t.Fatalf("%q", got)
+		}
+	}
+}

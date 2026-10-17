@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/netip"
+	"slices"
 	"strings"
 	"time"
 
@@ -122,6 +124,15 @@ func failingAddresses(out check.Outcome) string {
 			bad = append(bad, ip)
 		}
 	}
+	// In address order, so the same outage names the same addresses.
+	slices.SortFunc(bad, func(a, b string) int {
+		x, errx := netip.ParseAddr(a)
+		y, erry := netip.ParseAddr(b)
+		if errx != nil || erry != nil {
+			return strings.Compare(a, b)
+		}
+		return x.Compare(y)
+	})
 	if len(bad) > 4 {
 		bad = append(bad[:4], fmt.Sprintf("+%d", len(bad)-4))
 	}
