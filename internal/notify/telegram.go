@@ -66,8 +66,10 @@ func (t *TelegramSender) Send(ctx context.Context, m Message) error {
 }
 
 // SendSkipping posts m to every chat not in done, also after one fails,
-// and returns the chats it reached. The error joins the failures; it is a
-// *RetryAfterError when Telegram asked to slow down.
+// and returns the chats it settled: those reached and those refused for
+// good, so a retry does not try them again. The error joins the failures;
+// it is a *RetryAfterError when Telegram asked to slow down, and a
+// *PermanentError when every failure was permanent.
 func (t *TelegramSender) SendSkipping(ctx context.Context, m Message, done []string) (reached, refs []string, err error) {
 	text := noMentions(m.Subject + "\n\n" + m.Body)
 	if utf8.RuneCountInString(text) > maxTGChars {
@@ -76,6 +78,7 @@ func (t *TelegramSender) SendSkipping(ctx context.Context, m Message, done []str
 	}
 	var errs []error
 	var wait time.Duration
+	temporary := false
 	for _, chat := range t.S.ChatIDs {
 		if slices.Contains(done, chat) {
 			continue
@@ -90,6 +93,14 @@ func (t *TelegramSender) SendSkipping(ctx context.Context, m Message, done []str
 		if errors.As(err, &ra) {
 			wait = max(wait, ra.After)
 		}
+		if perm := (*PermanentError)(nil); errors.As(err, &perm) {
+			// Settled; joined bare, so a permanent chat does not make a
+			// temporary failure of another one look permanent.
+			reached = append(reached, chat)
+			err = perm.Err
+		} else {
+			temporary = true
+		}
 		errs = append(errs, err)
 	}
 	err = errors.Join(errs...)
@@ -97,8 +108,11 @@ func (t *TelegramSender) SendSkipping(ctx context.Context, m Message, done []str
 		return reached, refs, nil
 	}
 	err = redactErr(err, t.S.Token, url.PathEscape(t.S.Token))
-	if wait > 0 {
+	switch {
+	case wait > 0:
 		err = &RetryAfterError{Err: err, After: wait}
+	case !temporary:
+		err = &PermanentError{Err: err}
 	}
 	return reached, refs, err
 }
@@ -149,7 +163,8 @@ func (t *TelegramSender) sendOne(ctx context.Context, chat, text string) (int64,
 		if r.Parameters.RetryAfter > 0 {
 			return 0, &RetryAfterError{Err: err, After: time.Duration(r.Parameters.RetryAfter) * time.Second}
 		}
-		return 0, err
+		// A chat that does not exist, a bot blocked or a token revoked.
+		return 0, failed(resp.StatusCode, err)
 	}
 	return r.Result.MessageID, nil
 }

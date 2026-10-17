@@ -147,13 +147,6 @@ func (s *SMTPSender) send(ctx context.Context, m Message, done []string) ([]stri
 	return reached, err
 }
 
-// PermanentError is a delivery error that a retry will not change, such
-// as a recipient the relay refuses for good: the alert fails at once.
-type PermanentError struct{ Err error }
-
-func (e *PermanentError) Error() string { return e.Err.Error() }
-func (e *PermanentError) Unwrap() error { return e.Err }
-
 // smtpErr wraps a relay reply; a 5xx reply is permanent.
 func smtpErr(what string, err error) error {
 	err = fmt.Errorf("%s: %w", what, err)

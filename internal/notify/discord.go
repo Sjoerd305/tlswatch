@@ -68,9 +68,9 @@ func (d *DiscordSender) SendRef(ctx context.Context, m Message) (string, error) 
 		}
 		_ = json.Unmarshal(resp, &e)
 		if e.Message != "" {
-			return "", d.redact(fmt.Errorf("discord: %d %s", status, e.Message))
+			return "", d.redact(failed(status, fmt.Errorf("discord: %d %s", status, e.Message)))
 		}
-		return "", d.redact(fmt.Errorf("discord: %w", statusError(strconv.Itoa(status)+" "+http.StatusText(status), resp)))
+		return "", d.redact(failed(status, fmt.Errorf("discord: %w", statusError(strconv.Itoa(status)+" "+http.StatusText(status), resp))))
 	}
 	var r struct {
 		ID string `json:"id"`

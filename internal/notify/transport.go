@@ -59,6 +59,14 @@ type RetryAfterError struct {
 func (e *RetryAfterError) Error() string { return e.Err.Error() }
 func (e *RetryAfterError) Unwrap() error { return e.Err }
 
+// PermanentError is a delivery error that a retry will not change, such
+// as a recipient the relay refuses for good or a webhook that is gone: the
+// alert fails at once.
+type PermanentError struct{ Err error }
+
+func (e *PermanentError) Error() string { return e.Err.Error() }
+func (e *PermanentError) Unwrap() error { return e.Err }
+
 // Redact replaces every non-empty secret in s with "[redacted]".
 func Redact(s string, secrets ...string) string {
 	for _, sec := range secrets {

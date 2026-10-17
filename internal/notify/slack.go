@@ -54,7 +54,7 @@ func (s *SlackSender) Send(ctx context.Context, m Message) error {
 		return s.redact(fmt.Errorf("slack: %w", err))
 	}
 	if status/100 != 2 {
-		return s.redact(fmt.Errorf("slack: %w", statusError(strconv.Itoa(status)+" "+http.StatusText(status), resp)))
+		return s.redact(failed(status, fmt.Errorf("slack: %w", statusError(strconv.Itoa(status)+" "+http.StatusText(status), resp))))
 	}
 	return nil
 }

@@ -75,6 +75,19 @@ func retryAfter(v string) time.Duration {
 	return time.Minute
 }
 
+// failed marks err, the outcome of a response with status, as permanent
+// when a retry cannot change it: a client error (a webhook deleted, a
+// token revoked, a message refused), except a timeout, a conflict and a
+// rate limit. A server error is temporary.
+func failed(status int, err error) error {
+	switch {
+	case status < 400 || status >= 500, status == http.StatusRequestTimeout, status == http.StatusConflict,
+		status == http.StatusTooEarly, status == http.StatusTooManyRequests:
+		return err
+	}
+	return &PermanentError{Err: err}
+}
+
 // statusError describes a failed response: the status line and, when the
 // body is short, the body too, since webhook APIs put the reason there.
 func statusError(status string, body []byte) error {

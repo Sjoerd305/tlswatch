@@ -94,9 +94,9 @@ func (n *NtfySender) SendRef(ctx context.Context, m Message) (string, error) {
 		}
 		_ = json.Unmarshal(resp, &e)
 		if e.Error != "" {
-			return "", redactErr(fmt.Errorf("ntfy: %d %s", status, e.Error), n.S.Token)
+			return "", redactErr(failed(status, fmt.Errorf("ntfy: %d %s", status, e.Error)), n.S.Token)
 		}
-		return "", redactErr(fmt.Errorf("ntfy: %w", statusError(strconv.Itoa(status)+" "+http.StatusText(status), resp)), n.S.Token)
+		return "", redactErr(failed(status, fmt.Errorf("ntfy: %w", statusError(strconv.Itoa(status)+" "+http.StatusText(status), resp))), n.S.Token)
 	}
 	var r struct {
 		ID string `json:"id"`

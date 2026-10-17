@@ -86,7 +86,7 @@ func (w *WebhookSender) SendRef(ctx context.Context, m Message) (string, error) 
 		return "", redactErr(fmt.Errorf("webhook: %w", err), w.S.Secret)
 	}
 	if status/100 != 2 {
-		return "", redactErr(fmt.Errorf("webhook: %w", statusError(strconv.Itoa(status)+" "+http.StatusText(status), resp)), w.S.Secret)
+		return "", redactErr(failed(status, fmt.Errorf("webhook: %w", statusError(strconv.Itoa(status)+" "+http.StatusText(status), resp))), w.S.Secret)
 	}
 	return ref, nil
 }
