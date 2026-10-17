@@ -26,7 +26,7 @@
  *            .grid-settings · .tiles · .stack · .row · .spacer · .divider
  *            .gap-sm · .between
  * Cards      .card · .card.pad · .card.crit-border / .warn-border
- *            .card.clip (overflow hidden for tables)
+ *            .card.clip (holds a table; scrolls sideways when it overflows)
  *            .sec (section head) + h2 + .meta · .li + .t (list item, time)
  *            .tile + .n + .l (stat tile) · .h-sec (uppercase card title)
  *            .h3 (14px card heading) · .notes (notes block in side column)
@@ -44,6 +44,9 @@
  *            .hide-1520 … .hide-960 .hide-890 (column dropped at or below
  *            that window width, above the phone cards, so a wide table
  *            keeps one-line rows instead of overflowing)
+ *            .cap + .w140 .w180 .w200 .w240 (cell content cut with an
+ *            ellipsis at that width; .tag.cap for a single tag) ·
+ *            th.act/td.act (row actions, pinned to the right edge)
  *            .detail-grid (label/value grid inside an expanded row)
  * Status     .st + .ok .warn .crit .off .info (dot + word) · .st.sm (12px)
  *            .pill + .ok .warn .crit .off .info · .tag (mono tag badge)
@@ -301,7 +304,7 @@ tr.muted a.ink{color:var(--muted)}
 
 /* ---------- Cards and sections ---------- */
 .card{background:var(--surface);border:1px solid var(--line);border-radius:6px;min-width:0}
-.card.clip{overflow:hidden}
+.card.clip{overflow-x:auto}
 .card.pad{padding:16px 18px;display:flex;flex-direction:column;gap:14px}
 .card.crit-border{border-color:var(--crit)}
 .card.warn-border{border-color:var(--warn)}
@@ -376,6 +379,16 @@ a.tile:hover{text-decoration:none;border-color:var(--input-line)}
 .tbl.nested td{background:transparent}
 .tbl .sub{color:var(--muted);font-size:12px}
 .tbl.compact td{padding:6px 10px}
+/* Long free text is cut so the usual table fits; the title has it whole. */
+.cap{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tag.cap{display:inline-block;line-height:18px;vertical-align:middle}
+.cap.w140{max-width:140px}
+.cap.w180{max-width:180px}
+.cap.w200{max-width:200px}
+.cap.w240{max-width:240px}
+/* Row actions stay in view when the table scrolls sideways. */
+.tbl th.act,.tbl td.act{position:sticky;right:0}
+.tbl td.act{background:var(--surface)}
 .detail-grid{display:grid;grid-template-columns:90px minmax(0,1fr);row-gap:8px;column-gap:12px;font-size:13px}
 .detail-grid>.k{color:var(--muted)}
 .detail-grid>*{min-width:0}
@@ -678,6 +691,8 @@ input[type="file"].input{padding:5px 8px;height:auto}
   .tbl.cards tr.detail td{display:block;padding:8px 0;text-align:left}
   .tbl.cards .bar{width:110px}
   .tbl.cards .tags.line{flex-wrap:wrap}
+  .tbl.cards td.act{position:static;background:transparent}
+  .tbl.cards .cap{max-width:none;white-space:normal}
   /* Compact cards: the main lists show a few cells per card and no labels.
      .m-lead cells form the first line (.m-end pushed right), .m-full takes
      a line of its own, .m-hide stays on wider screens. */

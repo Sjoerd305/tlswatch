@@ -45,7 +45,7 @@
       {{- template "th" (dict "S" $s "K" "grade" "L" "Grade" "C" "hide-1450")}}
       {{- template "th" (dict "S" $s "K" "tags" "L" "Tags" "C" "hide-890")}}
       {{- template "th" (dict "S" $s "K" "checked" "L" "Checked" "C" "hide-1520" "N" true)}}
-      <th><span class="sr-only">Actions</span></th>
+      <th class="act"><span class="sr-only">Actions</span></th>
     </tr></thead>
     {{- if $d.Group}}
     {{- range $d.Groups}}

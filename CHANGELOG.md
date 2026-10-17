@@ -4,6 +4,7 @@ Newest first, one line per change.
 
 ## Unreleased
 
+- Fix: on the targets list, long names, hosts, node names or several tags could push the Check button out of sight. Long text is cut with an ellipsis (whole on hover), and a table that still does not fit scrolls sideways with the Check button pinned to the right.
 - Security review of the whole codebase; everything it found is fixed in this release:
   - Nodes replace their binary only with a release whose `SHA256SUMS` is signed by the tlswatch release key (built into every binary; releases now publish `SHA256SUMS.sig`). A server, or anyone who could edit a GitHub release, can no longer hand a node a binary of its own. The server serves its own executable only when it is the released one and otherwise sends the node to the release asset. New node switches `-no-self-update` and `-allow-unsigned-update` (for development builds); a node on `-insecure` never updates. The manual install command verifies the checksum too.
   - `/metrics` requires a bearer token, generated when metrics are enabled and shown under Settings › General (or `TLSWATCH_METRICS_TOKEN`): the metrics name every target and its weak configurations.
