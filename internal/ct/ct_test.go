@@ -117,7 +117,7 @@ func TestCertSpotter(t *testing.T) {
 		t.Fatalf("log URL by SHA-256: %q", a.LogURL)
 	}
 	b := got[1]
-	if b.Serial != "CERTSPOTTER-102" || b.IssuerCN != "CN=Sectigo" || b.Names[0] != "admin.example.nl" || b.LogURL != "https://crt.sh/?q=admin.example.nl" {
+	if b.Serial != "CERTSPOTTER-102" || b.IssuerCN != "Sectigo" || b.Names[0] != "admin.example.nl" || b.LogURL != "https://crt.sh/?q=admin.example.nl" {
 		t.Fatalf("without a certificate: %+v", b)
 	}
 	if !strings.Contains(calls[0], "include_subdomains=true") || !strings.Contains(calls[0], "expand=cert") || !strings.HasSuffix(calls[0], "|Bearer k1") {
