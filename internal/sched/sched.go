@@ -86,6 +86,9 @@ type Scheduler struct {
 	once     sync.Once
 	paused   bool       // a restore runs: start no checks
 	hk       sync.Mutex // held by each housekeeping run, and by a pause
+	// digestWarned is the digest slot whose failure was logged, so a
+	// missing channel is logged once, not every minute of the catch-up.
+	digestWarned string
 
 	statMu    sync.Mutex
 	lastLoop  time.Time
@@ -717,7 +720,22 @@ func (s *Scheduler) prune(ctx context.Context) {
 	}
 }
 
-// digest sends the weekly digest once in the configured hour.
+// DigestCatchUp is how long after its slot a digest missed (the server
+// was down) is still sent; after that the week is skipped.
+const DigestCatchUp = 24 * time.Hour
+
+// digestSlot is the latest configured weekday and hour at or before now.
+func digestSlot(now time.Time, weekday, hour int) time.Time {
+	back := (int(now.Weekday()) - weekday + 7) % 7
+	slot := time.Date(now.Year(), now.Month(), now.Day()-back, hour, 0, 0, 0, now.Location())
+	if slot.After(now) {
+		slot = time.Date(now.Year(), now.Month(), now.Day()-back-7, hour, 0, 0, 0, now.Location())
+	}
+	return slot
+}
+
+// digest sends the weekly digest once per week: in the configured hour, or
+// as soon as possible within DigestCatchUp after it.
 func (s *Scheduler) digest(ctx context.Context) {
 	st := s.Core.CurrentSettings(ctx)
 	d := st.Defaults
@@ -725,10 +743,11 @@ func (s *Scheduler) digest(ctx context.Context) {
 		return
 	}
 	now := s.now().In(st.Location())
-	if int(now.Weekday()) != d.DigestWeekday || now.Hour() != d.DigestHour {
+	slot := digestSlot(now, d.DigestWeekday, d.DigestHour)
+	if now.Sub(slot) >= DigestCatchUp {
 		return
 	}
-	stamp := now.Format("2006-01-02")
+	stamp := slot.Format("2006-01-02")
 	var last string
 	err := s.Core.DB.R.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = 'digest.last'").Scan(&last)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -739,7 +758,10 @@ func (s *Scheduler) digest(ctx context.Context) {
 		return
 	}
 	if err := s.SendDigest(ctx); err != nil {
-		s.Log.Error("digest", "err", err)
+		if s.digestWarned != stamp {
+			s.digestWarned = stamp
+			s.Log.Error("digest", "err", err)
+		}
 		return
 	}
 	_, _ = s.Core.DB.W.ExecContext(ctx, "INSERT INTO settings(key, value) VALUES('digest.last', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", strconv.Quote(stamp))

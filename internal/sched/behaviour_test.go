@@ -193,11 +193,17 @@ func TestDigestOncePerWeekInConfiguredHour(t *testing.T) {
 		t.Fatalf("second week: %d digests", n)
 	}
 
-	// 08:xx UTC is not 08:xx in Amsterdam.
-	e.clock.Set(time.Date(2026, 11, 2, 8, 30, 0, 0, time.UTC))
+	// The hour is Amsterdam's: 07:30 UTC is 08:30 there, 06:30 UTC is not
+	// yet 08:00.
+	e.clock.Set(time.Date(2026, 11, 9, 6, 30, 0, 0, time.UTC))
 	e.s.digest(ctx)
 	if n := e.digestRows(t); n != 2 {
-		t.Fatal("digest sent in the UTC hour instead of the configured time zone")
+		t.Fatal("digest sent before the hour in the configured time zone")
+	}
+	e.clock.Set(time.Date(2026, 11, 9, 7, 30, 0, 0, time.UTC))
+	e.s.digest(ctx)
+	if n := e.digestRows(t); n != 3 {
+		t.Fatal("digest not sent in the hour of the configured time zone")
 	}
 
 	// Switched off: nothing.
@@ -205,10 +211,39 @@ func TestDigestOncePerWeekInConfiguredHour(t *testing.T) {
 	if err := e.c.Settings.SaveDefaults(ctx, d); err != nil {
 		t.Fatal(err)
 	}
-	e.clock.Set(start.AddDate(0, 0, 14))
+	e.clock.Set(start.AddDate(0, 0, 28))
 	e.s.digest(ctx)
-	if n := e.digestRows(t); n != 2 {
+	if n := e.digestRows(t); n != 3 {
 		t.Fatal("digest sent while switched off")
+	}
+}
+
+// A digest whose hour passed while the server was down goes out at the
+// first chance within a day; a week missed by more than that is skipped.
+func TestMissedDigestCatchesUpWithinADay(t *testing.T) {
+	start := time.Date(2026, 10, 19, 13, 0, 0, 0, time.UTC) // Monday, 5 hours after the slot
+	e := setupClocked(t, start)
+	ctx := context.Background()
+	e.channel(t, "mail", notify.KindSMTP, "warning")
+	d := e.c.CurrentSettings(ctx).Defaults
+	d.DigestEnabled, d.DigestWeekday, d.DigestHour = true, int(time.Monday), 8
+	if err := e.c.Settings.SaveDefaults(ctx, d); err != nil {
+		t.Fatal(err)
+	}
+	e.s.digest(ctx)
+	if n := e.digestRows(t); n != 1 {
+		t.Fatalf("missed digest 5 hours late: %d", n)
+	}
+	e.clock.Add(time.Hour)
+	e.s.digest(ctx)
+	if n := e.digestRows(t); n != 1 {
+		t.Fatalf("caught-up digest sent again: %d", n)
+	}
+	// The next week the server is down until Tuesday 09:00, 25 hours late.
+	e.clock.Set(time.Date(2026, 10, 27, 9, 0, 0, 0, time.UTC))
+	e.s.digest(ctx)
+	if n := e.digestRows(t); n != 1 {
+		t.Fatalf("digest more than a day late: %d", n)
 	}
 }
 
