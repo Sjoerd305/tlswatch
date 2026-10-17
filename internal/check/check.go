@@ -457,6 +457,10 @@ func (e *evaluation) nothingAnswered(r probe.Result) {
 		e.out.FailStreak, e.out.OkStreak = e.prev.FailStreak+1, 0
 		e.out.Error = strings.Join(failures, "; ")
 		details := summarise(failures)
+		if len(r.Addresses) == 0 && len(r.SkippedIPv6) > 0 {
+			e.out.Error = NoIPv6Route(r.SkippedIPv6)
+			details = e.out.Error
+		}
 		if hint := PortHint(r.Protocol, r.Port); hint != "" {
 			e.out.Error += ". " + hint
 			details += ". " + hint
@@ -843,6 +847,13 @@ func PortHint(p probe.Protocol, port int) string {
 		return fmt.Sprintf("Port %d normally starts in plain text; choose protocol %s", port, want)
 	}
 	return ""
+}
+
+// NoIPv6Route explains a name with only IPv6 addresses probed from a host
+// that has no IPv6 route: nothing was tried.
+func NoIPv6Route(skipped []string) string {
+	return fmt.Sprintf("the name has only IPv6 addresses (%s) and there is no IPv6 route from here; probe it from a node with IPv6",
+		summarise(skipped))
 }
 
 func summarise(failures []string) string {

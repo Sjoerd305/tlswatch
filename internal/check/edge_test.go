@@ -525,3 +525,16 @@ func TestSelfSignedLeafInBundle(t *testing.T) {
 		}
 	}
 }
+
+// An IPv6-only name probed from a host without an IPv6 route says so,
+// rather than "no address answered".
+func TestIPv6OnlyWithoutRoute(t *testing.T) {
+	r := probe.Result{SkippedIPv6: []string{"2001:db8::1", "2001:db8::2"}}
+	tg := manual
+	tg.Debounce = 1
+	o := Evaluate(tg, Previous{Open: open()}, r, now)
+	f, ok := find(o.Open, Unreachable)
+	if !ok || !strings.Contains(f.Details, "no IPv6 route") || !strings.Contains(o.Error, "2001:db8::2") {
+		t.Fatalf("open %+v, error %q", o.Open, o.Error)
+	}
+}
