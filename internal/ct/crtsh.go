@@ -100,22 +100,51 @@ func parseCrtShTime(s string) (time.Time, error) {
 }
 
 // dnParts picks the CN and O out of a distinguished name as crt.sh writes
-// it ("C=US, O=Let's Encrypt, CN=R11").
+// it ("C=US, O=Let's Encrypt, CN=R11"); a value holding a comma is quoted
+// (O="GoDaddy.com, Inc.") or escaped with a backslash.
 func dnParts(dn string) (cn, org string) {
-	for _, part := range strings.Split(dn, ",") {
+	for _, part := range splitDN(dn) {
 		k, v, ok := strings.Cut(strings.TrimSpace(part), "=")
 		if !ok {
 			continue
 		}
+		v = strings.TrimSpace(v)
+		if len(v) >= 2 && v[0] == '"' && v[len(v)-1] == '"' {
+			v = v[1 : len(v)-1]
+		}
 		switch strings.ToUpper(strings.TrimSpace(k)) {
 		case "CN":
-			cn = strings.TrimSpace(v)
+			cn = v
 		case "O":
-			org = strings.TrimSpace(v)
+			org = v
 		}
 	}
 	if cn == "" {
 		cn = org
 	}
 	return cn, org
+}
+
+// splitDN splits a distinguished name on the commas outside quotes, and
+// drops the backslash of an escaped character.
+func splitDN(dn string) []string {
+	var parts []string
+	var b strings.Builder
+	quoted := false
+	for i := 0; i < len(dn); i++ {
+		switch c := dn[i]; {
+		case c == '\\' && i+1 < len(dn):
+			i++
+			b.WriteByte(dn[i])
+		case c == '"':
+			quoted = !quoted
+			b.WriteByte(c)
+		case c == ',' && !quoted:
+			parts = append(parts, b.String())
+			b.Reset()
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return append(parts, b.String())
 }
