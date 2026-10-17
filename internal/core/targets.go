@@ -16,6 +16,7 @@ import (
 
 	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/probe"
+	"github.com/sjoerd305/tlswatch/internal/usererr"
 )
 
 const targetCols = `t.id, t.name, t.host, t.port, t.protocol, t.servername, t.trust_mode, COALESCE(t.bundle_id, 0), COALESCE(b.name, ''),
@@ -278,6 +279,15 @@ func (s *Service) SaveTarget(ctx context.Context, t Target, user string) (int64,
 			if err := assignableNodeTx(ctx, tx, t.NodeID); err != nil {
 				return 0, err
 			}
+		}
+	}
+	if t.BundleID != 0 {
+		var n int
+		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM ca_bundles WHERE id = ?", t.BundleID).Scan(&n); err != nil {
+			return 0, err
+		}
+		if n == 0 {
+			return 0, usererr.New("The chosen CA bundle no longer exists; choose another")
 		}
 	}
 	args := []any{t.Name, t.Host, t.Port, string(t.Protocol), t.ServerName, string(t.Trust), nullID(t.BundleID),

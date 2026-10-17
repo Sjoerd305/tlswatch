@@ -111,8 +111,12 @@ func (s *Service) SaveBundle(ctx context.Context, id int64, name, data string) (
 		}
 		id, _ = res.LastInsertId()
 	} else {
-		if _, err := s.DB.W.ExecContext(ctx, "UPDATE ca_bundles SET name=?, pem=?, fingerprints=?, updated_at=? WHERE id=?", name, buf.String(), string(fj), now, id); err != nil {
+		res, err := s.DB.W.ExecContext(ctx, "UPDATE ca_bundles SET name=?, pem=?, fingerprints=?, updated_at=? WHERE id=?", name, buf.String(), string(fj), now, id)
+		if err != nil {
 			return 0, uniqueBundle(err)
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return 0, usererr.New("This bundle no longer exists")
 		}
 	}
 	s.bundles.mu.Lock()

@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -112,6 +113,9 @@ func (s *Server) bulkAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	if f.T.NodeID != 0 && !hasNode(f.Nodes, f.T.NodeID) {
 		f.Errors["node_id"] = "Choose a confirmed node, or This server"
+	}
+	if f.T.Trust == probe.TrustBundle && f.T.BundleID != 0 && !slices.ContainsFunc(f.Bundles, func(b core.Bundle) bool { return b.ID == f.T.BundleID }) {
+		f.Errors["bundle_id"] = "Choose a CA bundle"
 	}
 	eps, lineErrs := parseEndpoints(f.Lines, f.T.Protocol)
 	st := info(r).settings
