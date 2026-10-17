@@ -2,6 +2,8 @@
 
 tlswatch watches the TLS certificates that are actually served on your hostnames and IP addresses. It checks expiry, the chain of trust, the hostname and signature strength, notices when a certificate changes or a server still accepts TLS 1.0, and alerts by e-mail, Telegram, Slack (or Mattermost and Rocket.Chat), Discord, ntfy or a webhook before something expires. It is one self-hosted Go binary with a web UI and a SQLite file; nothing else to run.
 
+**[Try the live demo](https://demo.tlswatch.nl/)**: read-only, no sign-in, watching public endpoints, including the badssl.com hosts that are broken on purpose. Website: [tlswatch.nl](https://tlswatch.nl/).
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/overview-dark.jpg">
   <img alt="The tlswatch overview: targets by state, the certificates expiring next and the open findings" src="docs/img/overview-light.jpg">
@@ -94,7 +96,7 @@ Everything an operator changes is in the UI. The process itself needs at most th
 | `TLSWATCH_LOG_JSON` | `true` |
 | `TLSWATCH_DEBUG` | `false` (debug logging) |
 | `TLSWATCH_ACCEPT_NEW_KEY` | unset: a missing key file next to a database with sealed credentials stops the start |
-| `TLSWATCH_DEMO` | unset: the path of a demo file runs a public, read-only demo without sign-in (see `demo/`) |
+| `TLSWATCH_DEMO` | unset: the path of a demo file runs a public, read-only demo without sign-in (see `demo/`; it runs [demo.tlswatch.nl](https://demo.tlswatch.nl/)) |
 
 Settings that can also be pinned by environment (for containers and GitOps) are shown read-only in the UI; an invalid value stops tlswatch at start with a message naming the variable. See [docs/operations.md](docs/operations.md) and the [specification](docs/specification.md).
 
