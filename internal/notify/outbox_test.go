@@ -232,6 +232,31 @@ func TestOutboxPermanentErrorFailsAtOnce(t *testing.T) {
 	}
 }
 
+// A recipient refused for good while another is retried stays named on
+// the alert after the retry succeeds, and on the channel's last delivery.
+func TestRefusalSurvivesSuccessfulRetry(t *testing.T) {
+	o := newOutbox(t)
+	ch := o.channel("ops")
+	o.setFail("ops", &PartialRefusal{Refused: "RCPT TO gone@example.nl: 550 no such user",
+		Err: errors.New("RCPT TO gone@example.nl: 550 no such user; RCPT TO ops@example.nl: 452 mailbox full")})
+	o.enqueue(ch, EventOpen, alertMsg("critical", "x"))
+	o.clock.Add(BatchDelay)
+	o.flush()
+	if r := o.rows(ch)[0]; r.state != "pending" {
+		t.Fatalf("after the temporary failure: %+v", r)
+	}
+	o.setFail("ops", nil)
+	o.clock.Add(time.Minute)
+	o.flush()
+	if r := o.rows(ch)[0]; r.state != "sent" || !strings.Contains(r.err, "not delivered to RCPT TO gone@example.nl: 550") {
+		t.Fatalf("after the retry: %+v", r)
+	}
+	cs, _ := o.chans.List(o.ctx)
+	if len(cs) != 1 || cs[0].LastState != "sent" || !strings.Contains(cs[0].LastError, "gone@example.nl") {
+		t.Fatalf("channel's last delivery: %+v", cs)
+	}
+}
+
 // A rate limit postpones the retry by at least the time asked, also when
 // that is longer than the backoff.
 func TestOutboxHonoursRetryAfter(t *testing.T) {

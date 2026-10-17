@@ -247,7 +247,7 @@ func (s *SMTPSender) transmit(c *smtp.Client, m Message, done []string) ([]strin
 		return nil, smtpErr("MAIL FROM", err)
 	}
 	var to, accepted, refused []string
-	var refusals []string
+	var refusals, permanent []string
 	temporary := false
 	for _, r := range s.S.Recipients {
 		a, _ := mail.ParseAddress(r)
@@ -256,9 +256,11 @@ func (s *SMTPSender) transmit(c *smtp.Client, m Message, done []string) ([]strin
 			continue
 		}
 		if err := c.Rcpt(a.Address); err != nil {
-			refusals = append(refusals, fmt.Sprintf("RCPT TO %s: %v", a.Address, err))
+			msg := fmt.Sprintf("RCPT TO %s: %v", a.Address, err)
+			refusals = append(refusals, msg)
 			if permanentReply(err) {
 				refused = append(refused, a.Address)
+				permanent = append(permanent, msg)
 			} else {
 				temporary = true
 			}
@@ -271,8 +273,11 @@ func (s *SMTPSender) transmit(c *smtp.Client, m Message, done []string) ([]strin
 			return nil
 		}
 		err := errors.New(strings.Join(refusals, "; "))
-		if !temporary {
+		switch {
+		case !temporary:
 			return &PermanentError{Err: err}
+		case len(permanent) > 0:
+			return &PartialRefusal{Refused: strings.Join(permanent, "; "), Err: err}
 		}
 		return err
 	}

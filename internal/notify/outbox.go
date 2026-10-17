@@ -179,6 +179,7 @@ type attempt struct {
 	delivered string // recipients reached so far (multi-recipient channels)
 	ref       string // the SMTP Message-ID, or "chat:message_id" per chat reached so far
 	wait      time.Duration
+	refused   string // recipients refused for good while others are retried
 }
 
 // deliver sends one batch to one channel and records the outcome on its
@@ -240,6 +241,9 @@ func (d *Dispatcher) send(ctx context.Context, c Channel, delivered string, ps [
 	if ra := (*RetryAfterError)(nil); errors.As(a.err, &ra) {
 		a.wait = ra.After
 	}
+	if pr := (*PartialRefusal)(nil); errors.As(a.err, &pr) {
+		a.refused = pr.Refused
+	}
 	return a
 }
 
@@ -252,7 +256,10 @@ func (d *Dispatcher) record(ctx context.Context, a attempt, ps []pending) (ids, 
 		ids = append(ids, p.id)
 		var err error
 		if a.err == nil {
-			_, err = d.DB.W.ExecContext(ctx, "UPDATE alerts SET state='sent', sent_at=?, attempts=attempts+1, error='', ref=? WHERE id=?", now.Unix(), a.ref, p.id)
+			// Recipients refused for good on an earlier attempt stay
+			// named on the alert, which went to the others.
+			_, err = d.DB.W.ExecContext(ctx, `UPDATE alerts SET state='sent', sent_at=?, attempts=attempts+1, ref=?,
+				error = CASE WHEN refused != '' THEN 'not delivered to ' || refused ELSE '' END WHERE id=?`, now.Unix(), a.ref, p.id)
 		} else {
 			n := p.attempts + 1
 			next := now.Add(max(backoff(n), a.wait))
@@ -262,8 +269,9 @@ func (d *Dispatcher) record(ctx context.Context, a attempt, ps []pending) (ids, 
 				state = "failed"
 				gaveUp = append(gaveUp, p.id)
 			}
-			_, err = d.DB.W.ExecContext(ctx, "UPDATE alerts SET state=?, attempts=?, next_attempt=?, error=?, delivered=?, ref=? WHERE id=?",
-				state, n, next.Unix(), a.err.Error(), a.delivered, a.ref, p.id)
+			_, err = d.DB.W.ExecContext(ctx, `UPDATE alerts SET state=?, attempts=?, next_attempt=?, error=?, delivered=?, ref=?,
+				refused = CASE WHEN ? = '' THEN refused WHEN refused = '' THEN ? ELSE refused || '; ' || ? END WHERE id=?`,
+				state, n, next.Unix(), a.err.Error(), a.delivered, a.ref, a.refused, a.refused, a.refused, p.id)
 		}
 		if err != nil {
 			d.Log.Error("update alert", "id", p.id, "err", err)

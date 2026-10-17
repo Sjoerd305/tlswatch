@@ -19,12 +19,12 @@
             <td data-label="Type">{{.KindLabel}}</td>
             <td data-label="Destination" class="mono small wrap-any">{{.Destination}}</td>
             <td data-label="Floor"><span class="pill {{sevClass .MinSeverity}}">{{sevShort .MinSeverity}}</span></td>
-            <td data-label="Last delivery">{{if eq .LastState "sent"}}<span class="st ok">ok</span> <span class="mono muted">{{whenTime $p.Loc $p.Now .LastAt}}</span>{{else if eq .LastState "failed"}}<span class="st crit">failed</span> <span class="mono muted" title="{{.LastError}}">{{whenTime $p.Loc $p.Now .LastAt}}</span>{{else if eq .LastState "retrying"}}<span class="st crit">failing</span> <span class="mono muted">retry {{whenTime $p.Loc $p.Now .NextAttempt}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+            <td data-label="Last delivery">{{if and (eq .LastState "sent") .LastError}}<span class="st warn">partly</span> <span class="mono muted" title="{{.LastError}}">{{whenTime $p.Loc $p.Now .LastAt}}</span>{{else if eq .LastState "sent"}}<span class="st ok">ok</span> <span class="mono muted">{{whenTime $p.Loc $p.Now .LastAt}}</span>{{else if eq .LastState "failed"}}<span class="st crit">failed</span> <span class="mono muted" title="{{.LastError}}">{{whenTime $p.Loc $p.Now .LastAt}}</span>{{else if eq .LastState "retrying"}}<span class="st crit">failing</span> <span class="mono muted">retry {{whenTime $p.Loc $p.Now .NextAttempt}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
             <td data-label="Sent, 30 d" class="num mono">{{.Sent30d}}</td>
             <td data-label=""><span class="btn-row"><form method="post" action="/settings/channels/{{.ID}}/test">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-xs">Test</button></form><a href="?edit={{.ID}}" class="btn btn-xs" data-row-link>Edit</a></span></td>
           </tr>
           {{- if .Unreadable}}<tr><td colspan="7" class="wrap small"><span class="st crit">{{.Name}}: {{.Unreadable}}.</span> Edit the channel and enter its credentials again.</td></tr>{{end}}
-          {{- if and .LastError (eq .LastState "failed" "retrying")}}<tr class="muted"><td colspan="7" class="wrap small">{{.Name}}: {{.LastError}}</td></tr>{{end}}
+          {{- if .LastError}}<tr class="muted"><td colspan="7" class="wrap small">{{.Name}}: {{.LastError}}</td></tr>{{end}}
         {{- end}}
         </tbody>
       </table>

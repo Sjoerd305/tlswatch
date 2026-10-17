@@ -67,6 +67,17 @@ type PermanentError struct{ Err error }
 func (e *PermanentError) Error() string { return e.Err.Error() }
 func (e *PermanentError) Unwrap() error { return e.Err }
 
+// PartialRefusal is a temporary failure of a delivery in which some
+// recipients were also refused for good. Refused names those with the
+// answer, so the alert still says so once a retry reaches the others.
+type PartialRefusal struct {
+	Refused string
+	Err     error
+}
+
+func (e *PartialRefusal) Error() string { return e.Err.Error() }
+func (e *PartialRefusal) Unwrap() error { return e.Err }
+
 // Redact replaces every non-empty secret in s with "[redacted]".
 func Redact(s string, secrets ...string) string {
 	for _, sec := range secrets {

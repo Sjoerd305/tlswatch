@@ -331,6 +331,16 @@ func TestSMTPPerRecipient(t *testing.T) {
 	if err == nil || errors.As(err, &perm) || !slices.Equal(reached, []string{"ops@example.nl"}) {
 		t.Fatalf("temporary refusal: reached %v, %v", reached, err)
 	}
+
+	// One refused for good, one for now: the permanent one is named apart.
+	srv = &scriptedSMTP{reply: map[string]string{"RCPT GONE@EXAMPLE.NL": "550 5.1.1 no such user", "RCPT FULL@EXAMPLE.NL": "452 4.2.2 mailbox full"}}
+	three := two(srv.serve(t, cert))
+	three.Recipients = append(three.Recipients, "full@example.nl")
+	_, _, err = (&SMTPSender{S: three, Timeout: 5 * time.Second}).SendSkipping(context.Background(), Message{Subject: "s", Body: "b"}, nil)
+	var pr *PartialRefusal
+	if !errors.As(err, &pr) || errors.As(err, &perm) || !strings.Contains(pr.Refused, "gone@example.nl") || strings.Contains(pr.Refused, "full@") {
+		t.Fatalf("mixed refusals: %v", err)
+	}
 	srv = &scriptedSMTP{}
 	snd = &SMTPSender{S: two(srv.serve(t, cert)), Timeout: 5 * time.Second}
 	if _, _, err := snd.SendSkipping(context.Background(), Message{Subject: "s", Body: "b"}, reached); err != nil {

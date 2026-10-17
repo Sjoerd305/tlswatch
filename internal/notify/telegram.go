@@ -76,7 +76,7 @@ func (t *TelegramSender) SendSkipping(ctx context.Context, m Message, done []str
 		r := []rune(text)
 		text = string(r[:maxTGChars-1]) + "…"
 	}
-	var errs []error
+	var errs, permanent []error
 	var wait time.Duration
 	temporary := false
 	for _, chat := range t.S.ChatIDs {
@@ -98,6 +98,7 @@ func (t *TelegramSender) SendSkipping(ctx context.Context, m Message, done []str
 			// temporary failure of another one look permanent.
 			reached = append(reached, chat)
 			err = perm.Err
+			permanent = append(permanent, err)
 		} else {
 			temporary = true
 		}
@@ -108,11 +109,15 @@ func (t *TelegramSender) SendSkipping(ctx context.Context, m Message, done []str
 		return reached, refs, nil
 	}
 	err = redactErr(err, t.S.Token, url.PathEscape(t.S.Token))
-	switch {
-	case wait > 0:
+	if !temporary {
+		return reached, refs, &PermanentError{Err: err}
+	}
+	if len(permanent) > 0 {
+		refused := redactErr(errors.Join(permanent...), t.S.Token, url.PathEscape(t.S.Token))
+		err = &PartialRefusal{Refused: strings.ReplaceAll(refused.Error(), "\n", "; "), Err: err}
+	}
+	if wait > 0 {
 		err = &RetryAfterError{Err: err, After: wait}
-	case !temporary:
-		err = &PermanentError{Err: err}
 	}
 	return reached, refs, err
 }
