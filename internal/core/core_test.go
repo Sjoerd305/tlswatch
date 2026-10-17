@@ -1303,3 +1303,23 @@ func TestFailingAddressesInOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestDigestExpiryUsesTargetThreshold(t *testing.T) {
+	now := time.Now()
+	def := config.DefaultSettings().Defaults
+	def.Manual.CritDays, def.Managed.CritDays = 7, 3
+	in := func(days int) int64 { return now.Add(time.Duration(days)*24*time.Hour + time.Hour).Unix() }
+	for name, c := range map[string]struct {
+		t    Target
+		want string
+	}{
+		"manual, 5 days":          {Target{NotAfter: in(5)}, "critical"},
+		"managed, 5 days":         {Target{NotAfter: in(5), RenewalManaged: true}, "warning"},
+		"own critical 10, 9 days": {Target{NotAfter: in(9), CritDays: intp(10)}, "critical"},
+		"managed, 2 days":         {Target{NotAfter: in(2), RenewalManaged: true}, "critical"},
+	} {
+		if got := digestExpiry(c.t, def, now, time.UTC).Tag; got != c.want {
+			t.Errorf("%s: %s, want %s", name, got, c.want)
+		}
+	}
+}

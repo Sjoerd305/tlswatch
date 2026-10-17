@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sjoerd305/tlswatch/internal/check"
+	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/notify"
 )
 
@@ -75,14 +76,21 @@ func (s *Service) Digest(ctx context.Context) (notify.Message, error) {
 	}
 	sort.Slice(exp, func(i, j int) bool { return exp[i].NotAfter < exp[j].NotAfter })
 	for _, t := range exp {
-		days := check.DaysLeft(time.Unix(t.NotAfter, 0), now)
-		e := notify.DigestExpiry{Date: time.Unix(t.NotAfter, 0).In(loc).Format("2006-01-02"), Days: days, Tag: "warning", Name: t.Name, HostPort: t.HostPort()}
-		if days < st.Defaults.Manual.CritDays {
-			e.Tag = "critical"
-		}
-		d.Expiring = append(d.Expiring, e)
+		d.Expiring = append(d.Expiring, digestExpiry(t, st.Defaults, now, loc))
 	}
 	return notify.RenderDigest(d, tag), nil
+}
+
+// digestExpiry is a target's line in the digest's expiring list, critical
+// by the target's own threshold: a managed or tuned one is not judged by
+// the manual default.
+func digestExpiry(t Target, def config.Defaults, now time.Time, loc *time.Location) notify.DigestExpiry {
+	days := check.DaysLeft(time.Unix(t.NotAfter, 0), now)
+	e := notify.DigestExpiry{Date: time.Unix(t.NotAfter, 0).In(loc).Format("2006-01-02"), Days: days, Tag: "warning", Name: t.Name, HostPort: t.HostPort()}
+	if days < t.Effective(def).Crit {
+		e.Tag = "critical"
+	}
+	return e
 }
 
 // gradeDropped reads a grade_changed event's "grade X → Y" and reports
