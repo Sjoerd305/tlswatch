@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net"
 	"slices"
 	"strings"
 	"time"
@@ -458,7 +459,7 @@ func (e *evaluation) nothingAnswered(r probe.Result) {
 		e.out.Error = strings.Join(failures, "; ")
 		details := summarise(failures)
 		if len(r.Addresses) == 0 && len(r.SkippedIPv6) > 0 {
-			e.out.Error = NoIPv6Route(r.SkippedIPv6)
+			e.out.Error = NoIPv6Route(r.Host, r.SkippedIPv6)
 			details = e.out.Error
 		}
 		if hint := PortHint(r.Protocol, r.Port); hint != "" {
@@ -859,9 +860,12 @@ func PortHint(p probe.Protocol, port int) string {
 	return ""
 }
 
-// NoIPv6Route explains a name with only IPv6 addresses probed from a host
-// that has no IPv6 route: nothing was tried.
-func NoIPv6Route(skipped []string) string {
+// NoIPv6Route explains a name with only IPv6 addresses, or an IPv6
+// address, probed from a host that has no IPv6 route: nothing was tried.
+func NoIPv6Route(host string, skipped []string) string {
+	if net.ParseIP(strings.Trim(host, "[]")) != nil {
+		return "this address is IPv6 and there is no IPv6 route from here; probe it from a node with IPv6"
+	}
 	return fmt.Sprintf("the name has only IPv6 addresses (%s) and there is no IPv6 route from here; probe it from a node with IPv6",
 		summarise(skipped))
 }

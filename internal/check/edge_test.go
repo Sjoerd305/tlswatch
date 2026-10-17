@@ -537,6 +537,12 @@ func TestIPv6OnlyWithoutRoute(t *testing.T) {
 	if !ok || !strings.Contains(f.Details, "no IPv6 route") || !strings.Contains(o.Error, "2001:db8::2") {
 		t.Fatalf("open %+v, error %q", o.Open, o.Error)
 	}
+	// An IPv6 address as the target is an address, not a name.
+	r.Host, r.SkippedIPv6 = "2001:db8::1", []string{"2001:db8::1"}
+	o = Evaluate(tg, Previous{Open: open()}, r, now)
+	if !strings.HasPrefix(o.Error, "this address is IPv6 and there is no IPv6 route") {
+		t.Fatalf("IPv6 literal: %q", o.Error)
+	}
 }
 
 // An old chain that ends in a root from the store which expired before the
