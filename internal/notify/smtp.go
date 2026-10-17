@@ -125,7 +125,10 @@ func (s *SMTPSender) send(ctx context.Context, m Message) error {
 	if err := s.transmit(c, m); err != nil {
 		return err
 	}
-	return c.Quit()
+	// The relay has taken the mail: a QUIT that fails changes nothing, and
+	// reporting it would send the mail again on every retry.
+	_ = c.Quit()
+	return nil
 }
 
 // dial connects to the relay, with TLS from the first byte for implicit
