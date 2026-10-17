@@ -1068,6 +1068,10 @@ func TestDomainPagesAndPermissions(t *testing.T) {
 	if !strings.Contains(body, fmt.Sprintf(`<a href="/domains/%d" class="ink strong">domain example.nl</a>`, id)) {
 		t.Error("findings page does not link the domain")
 	}
+	// The issuance must belong to the watch the path names.
+	if rec := hs.do(authz.Operator, "POST", fmt.Sprintf("/domains/%d/issuances/%d/ack", id+1, iid), nil, true); rec.Code != http.StatusNotFound {
+		t.Fatalf("ack under another domain id: %d", rec.Code)
+	}
 	// Acknowledging through the issuance resolves the finding and marks it.
 	rec = hs.do(authz.Operator, "POST", fmt.Sprintf("/domains/%d/issuances/%d/ack", id, iid), url.Values{"comment": {"staging"}}, true)
 	if rec.Code != http.StatusSeeOther {

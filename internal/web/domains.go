@@ -369,9 +369,8 @@ func (s *Server) domainDelete(w http.ResponseWriter, r *http.Request) {
 
 // issuanceUnexpected marks an issuance unexpected by hand.
 func (s *Server) issuanceUnexpected(w http.ResponseWriter, r *http.Request) {
-	iid, err := strconv.ParseInt(r.PathValue("iid"), 10, 64)
-	if err != nil {
-		s.fail(w, r, http.StatusNotFound, "No such issuance.")
+	iid, ok := s.issuanceOf(w, r)
+	if !ok {
 		return
 	}
 	i, err := s.Core.MarkUnexpected(r.Context(), iid)
@@ -383,11 +382,24 @@ func (s *Server) issuanceUnexpected(w http.ResponseWriter, r *http.Request) {
 	s.back(w, r, fmt.Sprintf("/domains/%d", i.DomainID), "Marked unexpected; a finding is open.", "ok")
 }
 
+// issuanceOf returns the issuance named by the path, which must belong to
+// the domain watch the path names; otherwise it answers 404.
+func (s *Server) issuanceOf(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	did, err1 := pathID(r)
+	iid, err2 := strconv.ParseInt(r.PathValue("iid"), 10, 64)
+	if err1 == nil && err2 == nil {
+		if i, err := s.Core.Issuance(r.Context(), iid); err == nil && i.DomainID == did {
+			return iid, true
+		}
+	}
+	s.fail(w, r, http.StatusNotFound, "No such issuance.")
+	return 0, false
+}
+
 // issuanceAck acknowledges an unexpected issuance.
 func (s *Server) issuanceAck(w http.ResponseWriter, r *http.Request) {
-	iid, err := strconv.ParseInt(r.PathValue("iid"), 10, 64)
-	if err != nil {
-		s.fail(w, r, http.StatusNotFound, "No such issuance.")
+	iid, ok := s.issuanceOf(w, r)
+	if !ok {
 		return
 	}
 	comment := r.PostFormValue("comment")
