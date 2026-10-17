@@ -2,8 +2,11 @@ package notify
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -221,7 +224,7 @@ func (d *Dispatcher) send(ctx context.Context, c Channel, delivered string, ps [
 		link = d.Link(ctx)
 	}
 	m := Combine(msgs, link)
-	m.Ref = NewRef()
+	m.Ref = batchRef(ps)
 	sctx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
 	a := attempt{delivered: delivered}
@@ -245,6 +248,19 @@ func (d *Dispatcher) send(ctx context.Context, c Channel, delivered string, ps [
 		a.refused = pr.Refused
 	}
 	return a
+}
+
+// batchRef is the delivery reference of a batch: the same on every
+// attempt at the same alerts, so a receiver that got a message whose
+// answer was lost (a timeout) can tell the retry is the same one. The
+// creation time keeps it apart from alerts with the same IDs after a
+// restore.
+func batchRef(ps []pending) string {
+	h := sha256.New()
+	for _, p := range ps {
+		fmt.Fprintf(h, "%d:%d,", p.id, p.createdAt)
+	}
+	return hex.EncodeToString(h.Sum(nil)[:12])
 }
 
 // record stores the attempt on every alert of the batch: sent, or pending

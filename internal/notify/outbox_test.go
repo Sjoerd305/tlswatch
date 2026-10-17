@@ -556,3 +556,34 @@ func TestChannelSenderByKind(t *testing.T) {
 }
 
 func typeName(v any) string { return fmt.Sprintf("%T", v) }
+
+// A retry carries the reference of the first attempt, so a receiver that
+// got the message while its answer was lost can drop the repeat; another
+// alert gets another reference.
+func TestRetryKeepsTheReference(t *testing.T) {
+	o := newOutbox(t)
+	ch := o.channel("ops")
+	var refs []string
+	fail := true
+	o.d.Senders = func(Channel) Sender {
+		return senderFunc(func(m Message) error {
+			refs = append(refs, m.Ref)
+			if fail {
+				return errors.New("timeout")
+			}
+			return nil
+		})
+	}
+	o.enqueue(ch, EventOpen, alertMsg("critical", "x"))
+	o.clock.Add(BatchDelay)
+	o.flush()
+	fail = false
+	o.clock.Add(time.Minute)
+	o.flush()
+	o.enqueue(ch, EventOpen, alertMsg("critical", "y"))
+	o.clock.Add(BatchDelay)
+	o.flush()
+	if len(refs) != 3 || refs[0] == "" || refs[0] != refs[1] || refs[2] == refs[0] {
+		t.Fatalf("references %q", refs)
+	}
+}
