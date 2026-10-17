@@ -153,20 +153,26 @@ func (s *Server) bulkAdd(w http.ResponseWriter, r *http.Request) {
 		s.renderStatus(w, r, http.StatusBadRequest, "targets-bulk-add", &Page{Title: "Add targets", Nav: "targets", Data: f})
 		return
 	}
+	// All or nothing: one transaction for every line.
 	u := user(r)
+	ids, i, err := s.Core.AddTargets(ctx, targets, u.Email)
+	if err != nil {
+		if msg, ok := usererr.Message(err); ok {
+			f.LineErrs = []string{fmt.Sprintf("%s: %s", targets[i].HostPort(), msg)}
+			s.renderStatus(w, r, http.StatusBadRequest, "targets-bulk-add", &Page{Title: "Add targets", Nav: "targets", Data: f})
+			return
+		}
+		s.serverError(w, r, err)
+		return
+	}
 	added, existed := 0, 0
-	for _, t := range targets {
-		id, err := s.Core.SaveTarget(ctx, t, u.Email)
-		if errors.Is(err, core.ErrTargetExists) {
+	for i, id := range ids {
+		if id == 0 {
 			existed++
 			continue
 		}
-		if err != nil {
-			s.serverError(w, r, err)
-			return
-		}
 		added++
-		s.Core.Audit(ctx, u.Email, "target.create", fmt.Sprintf("target %d %s", id, t.HostPort()), targetAuditDetails(t)+" bulk=true")
+		s.Core.Audit(ctx, u.Email, "target.create", fmt.Sprintf("target %d %s", id, targets[i].HostPort()), targetAuditDetails(targets[i])+" bulk=true")
 		s.Sched.CheckSoon(id)
 	}
 	s.Sched.Reload()

@@ -297,6 +297,32 @@ func (s *Service) SaveTargets(ctx context.Context, ts []Target, enable *bool, us
 	return 0, tx.Commit()
 }
 
+// AddTargets creates several targets in one transaction, all or none, as
+// Add many does; one that exists already is skipped. It returns the IDs of
+// those added (0 for a skipped one), or on an error the index of the
+// target that failed.
+func (s *Service) AddTargets(ctx context.Context, ts []Target, user string) ([]int64, int, error) {
+	def := s.CurrentSettings(ctx).Defaults
+	tx, err := s.DB.W.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer tx.Rollback()
+	ids := make([]int64, len(ts))
+	for i, t := range ts {
+		t.ID = 0
+		id, err := s.saveTargetTx(ctx, tx, t, def, user)
+		if errors.Is(err, ErrTargetExists) {
+			continue // a failed statement leaves the transaction as it was
+		}
+		if err != nil {
+			return nil, i, err
+		}
+		ids[i] = id
+	}
+	return ids, 0, tx.Commit()
+}
+
 func (s *Service) saveTargetTx(ctx context.Context, tx *sql.Tx, t Target, def config.Defaults, user string) (int64, error) {
 	now := s.now().Unix()
 	// Only a new assignment needs a confirmed node: a target stays editable

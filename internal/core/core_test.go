@@ -1268,3 +1268,25 @@ func TestShorterIntervalPullsNextCheckForward(t *testing.T) {
 		t.Fatalf("next check %v after lowering the interval to an hour", time.Unix(next, 0).Sub(e.clock.Now()))
 	}
 }
+
+// Add many adds every line or none; a host that exists is skipped, also
+// inside the transaction.
+func TestAddTargetsAllOrNothing(t *testing.T) {
+	e := newEnv(t)
+	existing := e.target(nil)
+	mk := func(host string) Target {
+		return Target{Name: host, Host: host, Port: 443, Protocol: probe.TLS, ServerName: host, Trust: probe.TrustSystem, AllChannels: true, Enabled: true}
+	}
+	bad := mk("b.example.nl")
+	bad.NodeID = 4242
+	if _, i, err := e.svc.AddTargets(e.ctx, []Target{mk("a.example.nl"), existing, bad}, "test"); err == nil || i != 2 {
+		t.Fatalf("index %d, err %v", i, err)
+	}
+	if n := e.count("SELECT COUNT(*) FROM targets"); n != 1 {
+		t.Fatalf("%d targets after a failed Add many", n)
+	}
+	ids, _, err := e.svc.AddTargets(e.ctx, []Target{mk("a.example.nl"), existing, mk("c.example.nl")}, "test")
+	if err != nil || ids[0] == 0 || ids[1] != 0 || ids[2] == 0 || e.count("SELECT COUNT(*) FROM targets") != 3 {
+		t.Fatalf("ids %v, err %v", ids, err)
+	}
+}
