@@ -370,3 +370,30 @@ func TestFailedUpdateClearsOnAnotherVersion(t *testing.T) {
 		t.Fatalf("still update failed on v0.0.5: %q", n.UpdateFailed)
 	}
 }
+
+// A link-local address that comes and goes is not a move worth an audit
+// entry every hour; a changed routable address is.
+func TestNodeFactsAuditIgnoresLinkLocal(t *testing.T) {
+	e := newEnv(t)
+	n := e.confirmedNode("edge")
+	facts := func(addrs ...string) NodeFacts {
+		return NodeFacts{Hostname: "edge", Interfaces: []NodeInterface{{Name: "eth0", Addrs: addrs}}}
+	}
+	report := func(f NodeFacts) {
+		n, _ = e.svc.Node(e.ctx, n.ID)
+		if err := e.svc.SaveNodeFacts(e.ctx, n, f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report(facts("192.168.1.157/24", "fe80::1/64"))
+	before := e.count("SELECT COUNT(*) FROM audit WHERE action = 'node.facts'")
+	report(facts("192.168.1.157/24", "fe80::1/64", "fe80::2/64"))
+	report(facts("192.168.1.157/24", "fe80::1/64"))
+	if n := e.count("SELECT COUNT(*) FROM audit WHERE action = 'node.facts'"); n != before {
+		t.Fatalf("%d audit entries for link-local addresses coming and going", n-before)
+	}
+	report(facts("192.168.1.158/24", "fe80::1/64"))
+	if n := e.count("SELECT COUNT(*) FROM audit WHERE action = 'node.facts'"); n != before+1 {
+		t.Fatalf("a changed routable address: %d entries", n-before)
+	}
+}

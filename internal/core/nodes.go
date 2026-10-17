@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"slices"
 	"strings"
 	"time"
@@ -119,11 +120,20 @@ func (f NodeFacts) Clipped() NodeFacts {
 	return f
 }
 
-// addrSet is every address of the interfaces, sorted, for change detection.
+// addrSet is every address of the interfaces but the link-local ones,
+// sorted, for change detection.
 func (f NodeFacts) addrSet() []string {
 	var out []string
 	for _, i := range f.Interfaces {
-		out = append(out, i.Addrs...)
+		for _, a := range i.Addrs {
+			// Link-local addresses come and go with interfaces (container
+			// veths, privacy addresses) and say nothing about where the
+			// node is.
+			if p, err := netip.ParsePrefix(a); err == nil && p.Addr().IsLinkLocalUnicast() {
+				continue
+			}
+			out = append(out, a)
+		}
 	}
 	slices.Sort(out)
 	return out
