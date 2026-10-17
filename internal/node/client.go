@@ -201,6 +201,7 @@ func (c *Client) Run(ctx context.Context) error {
 	c.Log.Info("node started", "server", c.Server, "version", c.Version, "workers", c.workers(), "allow", c.Allow)
 
 	backoff := time.Second
+	stuck := time.Second // wait after an update reply that changed nothing
 	var factsAt time.Time
 	for {
 		select {
@@ -252,8 +253,20 @@ func (c *Client) Run(ctx context.Context) error {
 				return err
 			}
 			rollback = readRollback(c.Data) // set when the update went nowhere
+			// The binary was not replaced (a container, -no-self-update, a
+			// failed download): a server that only answers "update" is not
+			// polled in a tight loop.
+			select {
+			case <-ctx.Done():
+				return nil
+			case err := <-restart:
+				return err
+			case <-time.After(stuck):
+			}
+			stuck = min(stuck*2, time.Minute)
 			continue
 		}
+		stuck = time.Second
 		for _, j := range resp.Jobs {
 			switch j.Kind {
 			case KindProbe:
