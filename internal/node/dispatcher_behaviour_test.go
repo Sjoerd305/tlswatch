@@ -481,10 +481,27 @@ func TestCancelledProbeSendsCancelJob(t *testing.T) {
 	if len(next) != 1 || next[0].Kind != KindCancel || next[0].Cancel != jobs[0].ID {
 		t.Fatalf("no cancel job for the node: %+v", next)
 	}
+	// Until the node answers, the cancelled probe keeps its slot: a pool of
+	// one takes no new job meanwhile.
+	res2 := e.probeAsync(context.Background(), n.ID, nodeReq)
+	time.Sleep(50 * time.Millisecond)
+	if got := e.disp.lease(n.ID, 1); len(got) != 0 {
+		t.Fatalf("a new job leased while the cancelled one still runs: %+v", got)
+	}
 	e.call(t, http.MethodPost, Prefix+"/jobs/"+jobs[0].ID+"/result", c.cred, resultJSON(Result{Probe: &ProbeResult{}}), nil)
-	if st := e.disp.Status(n.ID); st.Completed != 0 || st.Failed != 0 || st.Running != 0 {
+	if st := e.disp.Status(n.ID); st.Completed != 0 || st.Failed != 0 {
 		t.Fatalf("status after a cancelled job: %+v", st)
 	}
+	// Its answer freed the slot.
+	if got := e.disp.lease(n.ID, 1); len(got) != 1 || got[0].Kind != KindProbe {
+		t.Fatalf("after the cancelled probe answered: %+v", got)
+	}
+	e.disp.mu.Lock()
+	for _, j := range e.disp.jobs {
+		e.disp.finishLocked(j, outcome{err: context.Canceled})
+	}
+	e.disp.mu.Unlock()
+	<-res2
 }
 
 // A node that goes away mid-job: the leased job is re-queued once at its

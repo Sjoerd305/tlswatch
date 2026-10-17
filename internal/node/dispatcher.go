@@ -81,6 +81,9 @@ type job struct {
 	leasedAt time.Time
 	attempts int
 	done     chan outcome
+	// cancelled: its waiter gave up while the node runs it; it keeps the
+	// node's slot until the node answers or the timeout passes.
+	cancelled bool
 }
 
 type outcome struct {
@@ -255,10 +258,11 @@ func (d *Dispatcher) Probe(ctx context.Context, nodeID int64, req probe.Request)
 				d.finishLocked(j, outcome{err: ctx.Err()})
 			} else {
 				// Tell the node to stop; its slot frees when the
-				// cancelled probe returns, or at the job timeout.
+				// cancelled probe returns, or at the job timeout, so
+				// the node never runs more probes than its pool.
 				ns.control = append(ns.control, Job{ID: newID(), Kind: KindCancel, Cancel: j.id})
 				signal(ns.wake)
-				d.finishLocked(j, outcome{err: ctx.Err()})
+				j.cancelled = true
 			}
 		}
 		d.mu.Unlock()
@@ -338,6 +342,11 @@ func (d *Dispatcher) complete(nodeID int64, id string, res Result) {
 	defer d.mu.Unlock()
 	if cur, ok := d.jobs[id]; !ok || cur != j || j.leasedAt != leasedAt {
 		return // expired or re-leased meanwhile
+	}
+	if j.cancelled {
+		// Nobody waits for it: the answer only frees the slot.
+		d.finishLocked(j, outcome{err: context.Canceled})
+		return
 	}
 	if o.err == nil {
 		d.state(nodeID).completed++
@@ -487,6 +496,10 @@ func (d *Dispatcher) expireJobs() {
 			continue
 		}
 		ns := d.state(j.node)
+		if j.cancelled {
+			d.finishLocked(j, outcome{err: context.Canceled})
+			continue
+		}
 		if !d.onlineLocked(j.node) {
 			d.finishLocked(j, outcome{err: core.ErrNodeOffline})
 			continue
