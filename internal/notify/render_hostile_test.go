@@ -167,7 +167,7 @@ func TestDiscordHostileAndLong(t *testing.T) {
 
 // Telegram: the text goes as plain text (no parse_mode), so characters
 // that MarkdownV2 or HTML would reserve arrive as they are and cannot make
-// the API refuse the message; a long message is cut on a character
+// the API refuse the message; only mentions are broken up; a long message is cut on a character
 // boundary.
 func TestTelegramHostileTextIsPlain(t *testing.T) {
 	var c capture
@@ -181,8 +181,8 @@ func TestTelegramHostileTextIsPlain(t *testing.T) {
 	if pm := f.Get("parse_mode"); pm != "" {
 		t.Fatalf("parse_mode %q: the text would need escaping", pm)
 	}
-	if f.Get("text") != m.Subject+"\n\n"+m.Body {
-		t.Fatalf("text changed on the way: %q", f.Get("text"))
+	if f.Get("text") != noMentions(m.Subject+"\n\n"+m.Body) || strings.Contains(f.Get("text"), " @everyone") {
+		t.Fatalf("text changed on the way, or a mention left in: %q", f.Get("text"))
 	}
 	a := hostile()
 	a.Details = strings.Repeat("😀", 5000)

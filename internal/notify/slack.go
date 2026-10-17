@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -75,9 +76,22 @@ func secretPath(raw string) string {
 	return u.Path
 }
 
-// slackEscape escapes the characters Slack's message format reserves.
+// slackEscape escapes the characters Slack's message format reserves, and
+// the mentions Mattermost and Rocket.Chat act on in plain text.
 func slackEscape(s string) string {
 	s = strings.ReplaceAll(s, "&", "&amp;")
 	s = strings.ReplaceAll(s, "<", "&lt;")
-	return strings.ReplaceAll(s, ">", "&gt;")
+	return noMentions(strings.ReplaceAll(s, ">", "&gt;"))
+}
+
+// mentionRe is an @ at the start of a word followed by a name: a mention
+// in chat services that read plain text (@channel, @all, @here, @user).
+// An e-mail address has a letter before its @ and is left alone.
+var mentionRe = regexp.MustCompile(`(^|[^\pL\pN_.@-])@([\pL\pN_])`)
+
+// noMentions puts a word joiner after every mention's @: the text reads
+// the same, but no service pings anyone because a target is named
+// "@channel".
+func noMentions(s string) string {
+	return mentionRe.ReplaceAllString(s, "${1}@\u2060${2}")
 }

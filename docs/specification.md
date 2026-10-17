@@ -306,7 +306,7 @@ Alerts fire on state transitions, not on every check, so a daily check never pro
 | --- | --- | --- |
 | SMTP | Go standard library over STARTTLS or implicit TLS, with optional PLAIN/LOGIN auth | host, port, user, password, from, recipients, minimum severity |
 | Telegram | HTTPS call to `api.telegram.org/bot<token>/sendMessage`, no library | bot token, chat IDs, minimum severity |
-| Slack | JSON `{"text"}` POST to an incoming webhook; `&`, `<`, `>` escaped. Mattermost and Rocket.Chat incoming webhooks take the same message | webhook URL (the credential), minimum severity |
+| Slack | JSON `{"text"}` POST to an incoming webhook; `&`, `<`, `>` escaped. Mattermost and Rocket.Chat incoming webhooks take the same message; since they act on a bare `@channel`, `@all` or `@user`, a word joiner follows the `@` of every mention, as in Telegram messages, so a target name never pings anyone | webhook URL (the credential), minimum severity |
 | Discord | JSON `{"content"}` POST to a channel webhook with `wait=true`, so Discord returns the message ID; messages cut at 2000 characters | webhook URL (the credential), minimum severity |
 | ntfy | JSON POST to the server root: topic, title (the subject without its tag), message (cut at 4000 characters), priority 5/4/3 for critical/warning/other, one tag per severity; optional bearer token | server (default `https://ntfy.sh`), topic, access token, minimum severity |
 | Webhook | JSON POST `{source, ref, severity, subject, text, sent_at}` with `X-TLSWatch-Ref` and `X-TLSWatch-Severity` headers; with a secret, `X-TLSWatch-Signature: sha256=<hex HMAC-SHA256 of the body>` | URL, signing secret, minimum severity |

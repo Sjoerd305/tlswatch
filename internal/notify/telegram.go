@@ -69,7 +69,7 @@ func (t *TelegramSender) Send(ctx context.Context, m Message) error {
 // and returns the chats it reached. The error joins the failures; it is a
 // *RetryAfterError when Telegram asked to slow down.
 func (t *TelegramSender) SendSkipping(ctx context.Context, m Message, done []string) (reached, refs []string, err error) {
-	text := m.Subject + "\n\n" + m.Body
+	text := noMentions(m.Subject + "\n\n" + m.Body)
 	if utf8.RuneCountInString(text) > maxTGChars {
 		r := []rune(text)
 		text = string(r[:maxTGChars-1]) + "…"

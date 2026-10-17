@@ -59,3 +59,22 @@ func TestSlackErrorsHideURL(t *testing.T) {
 		t.Fatalf("connection error leaks the URL or is nil: %v", err)
 	}
 }
+
+// A target named "@channel" must not ping a Mattermost or Rocket.Chat
+// channel, nor a Telegram user; e-mail addresses stay as they are.
+func TestNoMentions(t *testing.T) {
+	for in, want := range map[string]string{
+		"@channel expires":         "@⁠channel expires",
+		"see @all, (@here)":        "see @⁠all, (@⁠here)",
+		"by ops@example.nl":        "by ops@example.nl",
+		"@everyone\n@Ops_team now": "@⁠everyone\n@⁠Ops_team now",
+		"a @ b":                    "a @ b",
+	} {
+		if got := noMentions(in); got != want {
+			t.Errorf("%q: %q, want %q", in, got, want)
+		}
+	}
+	if got := slackEscape("<@channel>"); got != "&lt;@⁠channel&gt;" {
+		t.Errorf("slack: %q", got)
+	}
+}
