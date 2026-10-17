@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -66,11 +65,7 @@ func (c *CertSpotter) Issuances(ctx context.Context, domain string, subdomains b
 			return out, cursor, err
 		}
 		for _, e := range entries {
-			i, err := c.issuance(e)
-			if err != nil {
-				return out, cursor, err
-			}
-			out = append(out, i)
+			out = append(out, c.issuance(e))
 			cursor = e.ID
 		}
 		if len(entries) < 100 {
@@ -80,7 +75,22 @@ func (c *CertSpotter) Issuances(ctx context.Context, domain string, subdomains b
 	return out, cursor, nil
 }
 
-func (c *CertSpotter) issuance(e certSpotterEntry) (Issuance, error) {
+func parseEntryCert(data string) *x509.Certificate {
+	if data == "" {
+		return nil
+	}
+	der, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		return nil
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		return nil
+	}
+	return cert
+}
+
+func (c *CertSpotter) issuance(e certSpotterEntry) Issuance {
 	// Cert Spotter has no page per entry, so the link opens the certificate
 	// on crt.sh by its SHA-256 (which finds a precertificate as well), or the
 	// domain's listing there when no certificate came with the entry.
@@ -88,27 +98,23 @@ func (c *CertSpotter) issuance(e certSpotterEntry) (Issuance, error) {
 	if len(e.DNSNames) > 0 {
 		i.LogURL = "https://crt.sh/?q=" + url.QueryEscape(e.DNSNames[0])
 	}
-	if e.Cert.Data != "" {
-		der, err := base64.StdEncoding.DecodeString(e.Cert.Data)
-		if err != nil {
-			return i, fmt.Errorf("entry %s: %w", e.ID, err)
-		}
-		cert, err := x509.ParseCertificate(der)
-		if err != nil {
-			return i, fmt.Errorf("entry %s: %w", e.ID, err)
-		}
+	// Certificate data that does not parse (a precertificate Go refuses,
+	// say) leaves the entry's own fields: one odd entry must not stop the
+	// poll for good.
+	if cert := parseEntryCert(e.Cert.Data); cert != nil {
+		der := cert.Raw
 		parsed := fromCertificate(cert)
 		sum := sha256.Sum256(der)
 		parsed.ID, parsed.LogURL = i.ID, "https://crt.sh/?q="+strings.ToUpper(hex.EncodeToString(sum[:]))
 		if len(parsed.Names) == 0 {
 			parsed.Names = i.Names
 		}
-		return parsed, nil
+		return parsed
 	}
 	if i.Serial == "" {
 		// Without the certificate there is no serial; the id stands in, so
 		// the entry is still unique and visible.
 		i.Serial = "CERTSPOTTER-" + e.ID
 	}
-	return i, nil
+	return i
 }

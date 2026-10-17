@@ -176,3 +176,21 @@ func TestCrtSh(t *testing.T) {
 		t.Fatalf("after the cursor: %v %d %q", err, len(got), cursor)
 	}
 }
+
+// Certificate data that does not parse keeps the entry by its own fields;
+// it does not fail every poll from then on.
+func TestCertSpotterUnparsableCertificate(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `[{"id":"201","dns_names":["a.example.nl"],"issuer":{"name":"CN=R11"},"not_before":"2026-10-14T09:12:00Z","not_after":"2027-01-12T09:12:00Z","cert":{"type":"cert","data":"bm90IGEgY2VydA=="}},
+			{"id":"202","dns_names":["b.example.nl"],"issuer":{"name":"CN=R11"},"not_before":"2026-10-14T09:12:00Z","not_after":"2027-01-12T09:12:00Z","cert":{"type":"cert","data":"%%%"}}]`)
+	}))
+	defer srv.Close()
+	src := &CertSpotter{Client: srv.Client(), BaseURL: srv.URL}
+	got, cursor, err := src.Issuances(context.Background(), "example.nl", true, "")
+	if err != nil || cursor != "202" || len(got) != 2 {
+		t.Fatalf("err %v, cursor %q, %d issuances", err, cursor, len(got))
+	}
+	if got[0].Serial != "CERTSPOTTER-201" || got[0].Names[0] != "a.example.nl" {
+		t.Fatalf("entry kept by its fields: %+v", got[0])
+	}
+}
