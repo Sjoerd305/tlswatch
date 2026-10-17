@@ -677,7 +677,7 @@ func someNames(names []string) string {
 // may have brought in meanwhile.
 func (s *Service) SweepIssuances(ctx context.Context) error {
 	now := s.now()
-	rows, err := s.DB.R.QueryContext(ctx, "SELECT "+issuanceCols+issuanceFrom+" WHERE i.state IN ('pending', 'unexpected')")
+	rows, err := s.DB.R.QueryContext(ctx, "SELECT "+issuanceCols+issuanceFrom+" WHERE i.state IN ('pending', 'unexpected') AND NOT i.marked")
 	if err != nil {
 		return err
 	}
@@ -742,7 +742,7 @@ func (s *Service) MatchIssuances(ctx context.Context, fp string) error {
 		}
 		return err
 	}
-	rows, err := s.DB.R.QueryContext(ctx, "SELECT "+issuanceCols+issuanceFrom+" WHERE i.serial = ? AND i.issuer_cn = ? COLLATE NOCASE AND i.state IN ('pending', 'unexpected')", c.Serial, c.IssuerCN)
+	rows, err := s.DB.R.QueryContext(ctx, "SELECT "+issuanceCols+issuanceFrom+" WHERE i.serial = ? AND i.issuer_cn = ? COLLATE NOCASE AND i.state IN ('pending', 'unexpected') AND NOT i.marked", c.Serial, c.IssuerCN)
 	if err != nil {
 		return err
 	}
@@ -787,7 +787,8 @@ func (s *Service) issuanceServed(ctx context.Context, i Issuance, fp string, st 
 }
 
 // MarkUnexpected makes a known (or backlog) issuance unexpected by hand and
-// opens its finding.
+// opens its finding. The mark stands until it is acknowledged: a target
+// serving the certificate does not undo it.
 func (s *Service) MarkUnexpected(ctx context.Context, id int64) (Issuance, error) {
 	i, err := s.Issuance(ctx, id)
 	if err != nil {
@@ -800,7 +801,7 @@ func (s *Service) MarkUnexpected(ctx context.Context, id int64) (Issuance, error
 	if err != nil {
 		return i, err
 	}
-	if _, err := s.DB.W.ExecContext(ctx, "UPDATE issuances SET state = ?, matched_fp = '', ack_by = '', ack_at = 0, ack_comment = '' WHERE id = ?", IssuanceUnexpected, i.ID); err != nil {
+	if _, err := s.DB.W.ExecContext(ctx, "UPDATE issuances SET state = ?, marked = 1, matched_fp = '', ack_by = '', ack_at = 0, ack_comment = '' WHERE id = ?", IssuanceUnexpected, i.ID); err != nil {
 		return i, err
 	}
 	if err := s.openDomainFinding(ctx, d, unexpectedFinding(i, "was marked unexpected", s.CurrentSettings(ctx).Location()), strconv.FormatInt(i.ID, 10)); err != nil {
