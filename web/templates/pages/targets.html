@@ -4,6 +4,7 @@
   {{- if $p.Can "targets.edit"}}
   <div class="actions row">
     {{- if $d.Targets}}<form method="post" action="/targets/check-all" data-api="/api/v1/targets/check-all">{{template "csrf" $p.CSRF}}<input type="hidden" name="next" value="/targets"><button type="submit" class="btn">Check all</button></form>{{end}}
+    <a href="/targets/discover" class="btn">Discover</a>
     <a href="/targets/bulk-add" class="btn">Add many</a>
     <a href="/targets/new" class="btn btn-primary">Add target</a>
   </div>

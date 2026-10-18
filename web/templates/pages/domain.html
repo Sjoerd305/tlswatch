@@ -38,7 +38,7 @@
             <td data-label="Issuer" class="wrap">{{.Issuer}}</td>
             <td data-label="Valid" class="mono muted hide-1140">{{if .NotBefore}}{{date $p.Loc .NotBefore}} → {{date $p.Loc .NotAfter}}{{else}}—{{end}}</td>
             <td data-label="Served by">{{if .TargetID}}<a href="/targets/{{.TargetID}}" class="ink">{{.TargetName}}</a>{{else if .MatchedFP}}<a href="/certificates?open={{short .MatchedFP}}&amp;all=1" class="ink">in the inventory</a>{{else if eq .State "acknowledged"}}<span class="muted">{{.AckBy}}{{if .AckComment}} · {{.AckComment}}{{end}}</span>{{else}}<span class="muted">not served</span>{{end}}</td>
-            <td data-label="" class="m-end">{{if $edit}}{{if eq .State "unexpected"}}{{if $p.Can "findings.ack"}}<form method="post" action="/domains/{{$dm.ID}}/issuances/{{.ID}}/ack" class="row"><input type="text" name="comment" class="input w150" placeholder="why it is fine" aria-label="Comment">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-xs">Acknowledge</button></form>{{end}}{{else if or (eq .State "known") (eq .State "acknowledged")}}{{if not .TargetID}}<form method="post" action="/domains/{{$dm.ID}}/issuances/{{.ID}}/unexpected">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-xs">Mark unexpected</button></form>{{end}}{{end}}{{end}}</td>
+            <td data-label="" class="m-end">{{if $edit}}{{if eq .State "unexpected"}}{{if $p.Can "findings.ack"}}<form method="post" action="/domains/{{$dm.ID}}/issuances/{{.ID}}/ack" class="row"><input type="text" name="comment" class="input w150" placeholder="why it is fine" aria-label="Comment">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-xs">Acknowledge</button>{{with .TargetNames $dm}}<a href="{{addTargets .}}" class="btn btn-xs">Add as target</a>{{end}}</form>{{else}}{{with .TargetNames $dm}}<a href="{{addTargets .}}" class="btn btn-xs">Add as target</a>{{end}}{{end}}{{else if or (eq .State "known") (eq .State "acknowledged")}}{{if not .TargetID}}<form method="post" action="/domains/{{$dm.ID}}/issuances/{{.ID}}/unexpected">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-xs">Mark unexpected</button></form>{{end}}{{end}}{{end}}</td>
           </tr>
         {{- end}}
         </tbody>
@@ -48,6 +48,28 @@
       <div class="empty"><span class="h3">No issuances recorded</span><span>{{if $dm.PolledOK}}The logs hold no unexpired certificate for this domain.{{else}}They appear after the first poll.{{end}}</span></div>
       {{- end}}
     </section>
+    {{- if $d.Untargeted}}
+    <section class="card clip">
+      <div class="sec"><h2>Names without a target</h2><span class="meta">in known certificates of the last 90 days</span></div>
+      <form method="post" action="/targets/bulk-add">
+        {{template "csrf" $p.CSRF}}<input type="hidden" name="prefill" value="1">
+        <table class="tbl cards compact" id="untargeted">
+          <thead><tr>{{if $edit}}<th class="chk"><span class="sr-only">Select</span></th>{{end}}<th>Name</th><th>Issuer</th><th>Last issued</th></tr></thead>
+          <tbody>
+          {{- range $d.Untargeted}}
+            <tr>
+              {{- if $edit}}<td class="chk m-lead" data-label="">{{if not .Wildcard}}<label class="rowcheck"><input type="checkbox" name="hosts" value="{{.Name}}" aria-label="Select {{.Name}}"></label>{{end}}</td>{{end}}
+              <td data-label="Name" class="mono m-lead">{{.Name}}{{if .Wildcard}} <span class="tag" title="A wildcard is not a host; add the names under it">wildcard</span>{{end}}</td>
+              <td data-label="Issuer">{{.Issuer}}</td>
+              <td data-label="Last issued" class="mono">{{date $p.Loc .Issued}}</td>
+            </tr>
+          {{- end}}
+          </tbody>
+        </table>
+        {{- if $edit}}<div class="form-foot pad-x"><button type="submit" class="btn">Add selected…</button><span class="help">Opens Add many with these names.</span></div>{{end}}
+      </form>
+    </section>
+    {{- end}}
     {{- if $d.Findings}}
     <section class="card clip">
       <div class="sec"><h2>Findings on this domain</h2><span class="meta">open first, then the last 8 resolved</span></div>

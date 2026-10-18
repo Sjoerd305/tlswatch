@@ -58,6 +58,9 @@ type NodeFacts struct {
 	Version    string          `json:"version"`
 	Interfaces []NodeInterface `json:"interfaces"`
 	IPv6Route  bool            `json:"ipv6_route"`
+	// Kinds are the job kinds the node runs; empty for nodes from before
+	// the list, which run probe, cancel and update.
+	Kinds []string `json:"kinds,omitempty"`
 	// ClockOffsetMS is the node's clock minus the server's, computed by
 	// the server when the facts arrive.
 	ClockOffsetMS int64 `json:"clock_offset_ms"`
@@ -117,6 +120,12 @@ func (f NodeFacts) Clipped() NodeFacts {
 		out = append(out, i)
 	}
 	f.Interfaces = out
+	if len(f.Kinds) > interfacesMax {
+		f.Kinds = f.Kinds[:interfacesMax]
+	}
+	for i, k := range f.Kinds {
+		f.Kinds[i] = Clip(k, ShortMax)
+	}
 	return f
 }
 

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1083,3 +1084,79 @@ func (s *Service) IssuanceStats(ctx context.Context) (map[string]int, []Domain, 
 // ctClient is the HTTP client a source uses; nil means a default with a
 // timeout. Tests point CTBase at a stub server.
 var _ = http.DefaultClient
+
+// DiscoveryWindow is how far back the domain page looks for names without
+// a target.
+const DiscoveryWindow = 90 * 24 * time.Hour
+
+// UntargetedName is a name in a recent known or acknowledged issuance that
+// no enabled target covers.
+type UntargetedName struct {
+	Name     string
+	Wildcard bool // listed, but not added as a target directly
+	Issuer   string
+	Issued   int64 // the latest issuance that names it
+}
+
+// UntargetedNames lists, for a domain watch, every name under it in a
+// known or acknowledged issuance of the last DiscoveryWindow that no
+// enabled target covers by its host or server name. A wildcard is covered
+// by a target on a name it covers.
+func (s *Service) UntargetedNames(ctx context.Context, d Domain) ([]UntargetedName, error) {
+	since := s.now().Add(-DiscoveryWindow).Unix()
+	is, err := s.Issuances(ctx, d.ID, 0)
+	if err != nil {
+		return nil, err
+	}
+	ts, err := s.queryTargets(ctx, "t.enabled = 1", 0)
+	if err != nil {
+		return nil, err
+	}
+	covered := func(name string) bool {
+		for _, t := range ts {
+			if ct.Covers(name, t.Host) || t.ServerName != "" && ct.Covers(name, t.ServerName) {
+				return true
+			}
+		}
+		return false
+	}
+	found := map[string]UntargetedName{}
+	for _, i := range is {
+		issued := i.NotBefore
+		if issued == 0 {
+			issued = i.FirstSeen
+		}
+		if issued < since || i.State != IssuanceKnown && i.State != IssuanceAcknowledged {
+			continue
+		}
+		for _, n := range i.Names {
+			n = strings.ToLower(strings.TrimSuffix(n, "."))
+			if !ct.Under(n, d.Name, d.Subdomains) || covered(n) {
+				continue
+			}
+			if old, ok := found[n]; ok && old.Issued >= issued {
+				continue
+			}
+			found[n] = UntargetedName{Name: n, Wildcard: strings.HasPrefix(n, "*."), Issuer: i.Issuer(), Issued: issued}
+		}
+	}
+	out := make([]UntargetedName, 0, len(found))
+	for _, u := range found {
+		out = append(out, u)
+	}
+	slices.SortFunc(out, func(a, b UntargetedName) int { return strings.Compare(a.Name, b.Name) })
+	return out, nil
+}
+
+// TargetNames are the names of an issuance that can become targets: those
+// under the watched domain, without wildcards.
+func (i Issuance) TargetNames(d Domain) []string {
+	var out []string
+	for _, n := range i.Names {
+		n = strings.ToLower(strings.TrimSuffix(n, "."))
+		if !strings.HasPrefix(n, "*.") && ct.Under(n, d.Name, d.Subdomains) && !slices.Contains(out, n) {
+			out = append(out, n)
+		}
+	}
+	return out
+}

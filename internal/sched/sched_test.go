@@ -311,6 +311,14 @@ func (f *fakeNodes) Probe(_ context.Context, _ int64, req probe.Request) (probe.
 		Addresses: []probe.Address{{IP: "10.0.0.1", ErrorKind: probe.ErrConnect, Error: "refused"}}}, nil
 }
 
+func (f *fakeNodes) Scan(_ context.Context, _ int64, req probe.ScanRequest) (probe.ScanResult, error) {
+	if !f.online.Load() {
+		return probe.ScanResult{}, core.ErrNodeOffline
+	}
+	f.calls.Add(1)
+	return probe.ScanResult{Probed: len(req.Addresses) * len(req.Ports)}, nil
+}
+
 func TestNodeTargetsHeldWhileOffline(t *testing.T) {
 	s, c, local := setup(t, 1)
 	ctx := context.Background()

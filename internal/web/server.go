@@ -52,6 +52,9 @@ type Server struct {
 	// Demo is demo mode (TLSWATCH_DEMO): nobody signs in, every visitor
 	// is the demo role, which views the data and changes nothing.
 	Demo bool
+	// LookupHost resolves names for Discover's server name guess; nil is
+	// the system resolver. Tests replace it.
+	LookupHost func(ctx context.Context, name string) ([]string, error)
 
 	pages     map[string]*template.Template
 	static    http.Handler

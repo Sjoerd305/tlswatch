@@ -45,11 +45,12 @@ var commonZones = []string{"UTC", "Europe/Amsterdam", "Europe/London", "Europe/B
 
 func (s *Server) settingsGeneralSave(w http.ResponseWriter, r *http.Request) {
 	g := config.General{
-		BaseURL:     strings.TrimSpace(r.PostFormValue("base_url")),
-		BehindProxy: r.PostFormValue("behind_proxy") == "1",
-		AllowLocal:  r.PostFormValue("allow_local") == "1",
-		TimeZone:    strings.TrimSpace(r.PostFormValue("time_zone")),
-		Metrics:     r.PostFormValue("metrics") == "1",
+		BaseURL:         strings.TrimSpace(r.PostFormValue("base_url")),
+		BehindProxy:     r.PostFormValue("behind_proxy") == "1",
+		AllowLocal:      r.PostFormValue("allow_local") == "1",
+		PublicDiscovery: r.PostFormValue("public_discovery") == "1",
+		TimeZone:        strings.TrimSpace(r.PostFormValue("time_zone")),
+		Metrics:         r.PostFormValue("metrics") == "1",
 	}
 	// The token stays unless the admin asks for a new one; SaveGeneral
 	// makes the first.
@@ -62,7 +63,7 @@ func (s *Server) settingsGeneralSave(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	s.Core.Audit(r.Context(), user(r).Email, "settings.general", "general", fmt.Sprintf("base_url=%s behind_proxy=%v allow_local=%v time_zone=%s metrics=%v metrics_token=%s", g.BaseURL, g.BehindProxy, g.AllowLocal, g.TimeZone, g.Metrics, map[bool]string{true: "rotated", false: "kept"}[r.PostFormValue("metrics_rotate") == "1"]))
+	s.Core.Audit(r.Context(), user(r).Email, "settings.general", "general", fmt.Sprintf("base_url=%s behind_proxy=%v allow_local=%v public_discovery=%v time_zone=%s metrics=%v metrics_token=%s", g.BaseURL, g.BehindProxy, g.AllowLocal, g.PublicDiscovery, g.TimeZone, g.Metrics, map[bool]string{true: "rotated", false: "kept"}[r.PostFormValue("metrics_rotate") == "1"]))
 	s.back(w, r, "/settings/general", "General settings saved.", "ok")
 }
 

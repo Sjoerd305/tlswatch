@@ -40,6 +40,8 @@ type NodeProber interface {
 	// Probe runs a probe on the node and waits for its result; it fails
 	// with core.ErrNodeOffline when the node is offline.
 	Probe(ctx context.Context, nodeID int64, req probe.Request) (probe.Result, error)
+	// Scan runs one chunk of a discovery scan on the node.
+	Scan(ctx context.Context, nodeID int64, req probe.ScanRequest) (probe.ScanResult, error)
 }
 
 type queue []*item
@@ -61,8 +63,9 @@ type Scheduler struct {
 	Core *core.Service
 	Log  *slog.Logger
 	Now  func() time.Time
-	// Probe is replaceable in tests.
+	// Probe and Scan are replaceable in tests.
 	Probe func(ctx context.Context, req probe.Request) probe.Result
+	Scan  func(ctx context.Context, req probe.ScanRequest) (probe.ScanResult, error)
 	// PruneSessions removes expired sessions and tokens; run hourly with
 	// the retention.
 	PruneSessions func(ctx context.Context) error
@@ -89,6 +92,8 @@ type Scheduler struct {
 	// digestWarned is the digest slot whose failure was logged, so a
 	// missing channel is logged once, not every minute of the catch-up.
 	digestWarned string
+
+	base context.Context // Run's context: scans end with it
 
 	statMu    sync.Mutex
 	lastLoop  time.Time
@@ -203,6 +208,12 @@ func (s *Scheduler) load(ctx context.Context, startup bool) error {
 func (s *Scheduler) Run(ctx context.Context) {
 	s.init()
 	defer s.wg.Wait()
+	s.mu.Lock()
+	s.base = ctx
+	s.mu.Unlock()
+	if err := s.Core.FailRunningScans(ctx); err != nil {
+		s.Log.Error("end interrupted scans", "err", err)
+	}
 	if err := s.load(ctx, true); err != nil {
 		s.Log.Error("load schedule", "err", err)
 	}

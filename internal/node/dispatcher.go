@@ -87,8 +87,9 @@ type job struct {
 }
 
 type outcome struct {
-	res probe.Result
-	err error
+	res  probe.Result
+	scan probe.ScanResult
+	err  error
 }
 
 func (d *Dispatcher) init() {
@@ -228,17 +229,40 @@ func (d *Dispatcher) Status(id int64) Status {
 // more and then given up with core.ErrNodeNoResult.
 func (d *Dispatcher) Probe(ctx context.Context, nodeID int64, req probe.Request) (probe.Result, error) {
 	d.init()
-	if !d.Online(nodeID) {
-		return probe.Result{}, core.ErrNodeOffline
-	}
 	started := d.now()
 	j := &job{id: newID(), node: nodeID, req: req, done: make(chan outcome, 1)}
 	j.wire = Job{ID: j.id, Kind: KindProbe, Probe: NewProbeJob(req, started)}
 	j.timeout = j.wire.Probe.Timeout()
+	o := d.run(ctx, j)
+	if o.err == nil && o.res.StartedAt.IsZero() {
+		o.res.StartedAt = started
+	}
+	return o.res, o.err
+}
+
+// Scan runs one chunk of a discovery scan on a node, as Probe runs a
+// probe: queued for the node's next poll, given up when the node goes
+// offline or does not answer within the chunk's timeout.
+func (d *Dispatcher) Scan(ctx context.Context, nodeID int64, req probe.ScanRequest) (probe.ScanResult, error) {
+	d.init()
+	j := &job{id: newID(), node: nodeID, done: make(chan outcome, 1)}
+	j.wire = Job{ID: j.id, Kind: KindScan, Scan: NewScanJob(req)}
+	j.timeout = j.wire.Scan.Timeout()
+	o := d.run(ctx, j)
+	return o.scan, o.err
+}
+
+// run queues j for its node and waits for the outcome. A waiter that gives
+// up takes a queued job back; a leased one is cancelled on the node.
+func (d *Dispatcher) run(ctx context.Context, j *job) outcome {
+	nodeID := j.node
+	if !d.Online(nodeID) {
+		return outcome{err: core.ErrNodeOffline}
+	}
 	d.mu.Lock()
 	if d.paused {
 		d.mu.Unlock()
-		return probe.Result{}, core.ErrNodesPaused
+		return outcome{err: core.ErrNodesPaused}
 	}
 	ns := d.state(nodeID)
 	ns.queue = append(ns.queue, j)
@@ -247,10 +271,7 @@ func (d *Dispatcher) Probe(ctx context.Context, nodeID int64, req probe.Request)
 	d.mu.Unlock()
 	select {
 	case o := <-j.done:
-		if o.err == nil && o.res.StartedAt.IsZero() {
-			o.res.StartedAt = started
-		}
-		return o.res, o.err
+		return o
 	case <-ctx.Done():
 		d.mu.Lock()
 		if _, ok := d.jobs[j.id]; ok {
@@ -266,7 +287,7 @@ func (d *Dispatcher) Probe(ctx context.Context, nodeID int64, req probe.Request)
 			}
 		}
 		d.mu.Unlock()
-		return probe.Result{}, ctx.Err()
+		return outcome{err: ctx.Err()}
 	}
 }
 
@@ -327,7 +348,7 @@ func (d *Dispatcher) complete(nodeID int64, id string, res Result) {
 		d.mu.Unlock()
 		return
 	}
-	req, leasedAt := j.req, j.leasedAt
+	req, leasedAt, scan := j.req, j.leasedAt, j.wire.Scan
 	d.mu.Unlock()
 	// The certificates are parsed outside the lock: a result is up to a
 	// few megabytes of DER, and every poll waits on the lock.
@@ -335,7 +356,9 @@ func (d *Dispatcher) complete(nodeID int64, id string, res Result) {
 	switch {
 	case res.Error != "":
 		o.err = &nodeError{msg: core.Clip(res.Error, core.TextMax)}
-	case res.Probe != nil:
+	case scan != nil && res.Scan != nil:
+		o.scan, o.err = res.Scan.Decode(*scan)
+	case scan == nil && res.Probe != nil:
 		o.res, o.err = res.Probe.Decode(req, leasedAt)
 	}
 	d.mu.Lock()

@@ -28,16 +28,18 @@ type bulkAddForm struct {
 
 // endpoint is one parsed line of the hosts list.
 type endpoint struct {
-	Line int
-	Host string
-	Port int
-	Name string
+	Line       int
+	Host       string
+	Port       int
+	Name       string
+	Protocol   probe.Protocol // "" follows the form
+	ServerName string         // "" follows the host
 }
 
 // parseEndpoints reads one endpoint per line: a host, host:port or URL,
-// followed by an optional name. Empty lines and lines starting with # are
-// skipped; a port left out is the protocol's default. Problems come back
-// as "Line N: ..." messages.
+// then optionally protocol=P and sni=NAME, then an optional name. Empty
+// lines and lines starting with # are skipped; a port left out is the
+// protocol's default. Problems come back as "Line N: ..." messages.
 func parseEndpoints(text string, proto probe.Protocol) ([]endpoint, []string) {
 	var eps []endpoint
 	var errs []string
@@ -49,14 +51,43 @@ func parseEndpoints(text string, proto probe.Protocol) ([]endpoint, []string) {
 			continue
 		}
 		fields := strings.Fields(line)
-		ep, name := fields[0], strings.Join(fields[1:], " ")
+		ep, rest := fields[0], fields[1:]
+		var lineProto probe.Protocol
+		var sni string
+		bad := false
+		for len(rest) > 0 {
+			k, v, ok := strings.Cut(rest[0], "=")
+			if !ok || k != "protocol" && k != "sni" {
+				break
+			}
+			rest = rest[1:]
+			if k == "sni" {
+				if sni, _ = core.CanonicalHost(v); sni == "" || isIP(sni) {
+					errs, bad = append(errs, fmt.Sprintf("Line %d: sni= takes a DNS name", n)), true
+				}
+				continue
+			}
+			p, err := probe.ParseProtocol(v)
+			if err != nil {
+				errs, bad = append(errs, fmt.Sprintf("Line %d: %v", n, err)), true
+			}
+			lineProto = p
+		}
+		if bad {
+			continue
+		}
+		name := strings.Join(rest, " ")
+		defProto := proto
+		if lineProto != "" {
+			defProto = lineProto
+		}
 		if j := strings.Index(ep, "://"); j >= 0 {
 			ep = ep[j+3:]
 		}
 		if j := strings.IndexAny(ep, "/?#"); j >= 0 {
 			ep = ep[:j]
 		}
-		host, port := ep, probe.DefaultPort(proto)
+		host, port := ep, probe.DefaultPort(defProto)
 		if h, p, err := net.SplitHostPort(ep); err == nil {
 			host = h
 			if port, err = strconv.Atoi(p); err != nil || port < 1 || port > 65535 {
@@ -75,7 +106,7 @@ func parseEndpoints(text string, proto probe.Protocol) ([]endpoint, []string) {
 			continue
 		}
 		seen[key] = n
-		eps = append(eps, endpoint{Line: n, Host: host, Port: port, Name: name})
+		eps = append(eps, endpoint{Line: n, Host: host, Port: port, Name: name, Protocol: lineProto, ServerName: sni})
 	}
 	return eps, errs
 }
@@ -90,12 +121,24 @@ func hasNode(nodes []core.Node, id int64) bool {
 	return false
 }
 
+// bulkAddPage shows the Add many form, empty or pre-filled with hosts
+// (one per line) and a node, as Discover and the domain page hand them
+// over: by query on a GET, or posted with prefill=1 for a longer list.
 func (s *Server) bulkAddPage(w http.ResponseWriter, r *http.Request) {
 	f := bulkAddForm{targetForm: formFromTarget(core.Target{Port: 443, Protocol: probe.TLS, Trust: probe.TrustSystem, AllAddresses: true, AllChannels: true, Enabled: true})}
 	f.New = true
+	v := r.URL.Query()
+	if r.Method == http.MethodPost {
+		v = r.PostForm
+	}
+	f.Lines = strings.Join(v["hosts"], "\n")
+	f.T.NodeID, _ = strconv.ParseInt(v.Get("node_id"), 10, 64)
 	if err := s.formData(r.Context(), &f.targetForm); err != nil {
 		s.serverError(w, r, err)
 		return
+	}
+	if !hasNode(f.Nodes, f.T.NodeID) {
+		f.T.NodeID = 0
 	}
 	s.render(w, r, "targets-bulk-add", &Page{Title: "Add targets", Nav: "targets", Data: f})
 }
@@ -105,6 +148,10 @@ func (s *Server) bulkAddPage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) bulkAdd(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	_ = r.ParseForm()
+	if r.PostFormValue("prefill") == "1" {
+		s.bulkAddPage(w, r)
+		return
+	}
 	f := bulkAddForm{targetForm: readTargetForm(r.PostForm, nil), Lines: r.PostFormValue("hosts")}
 	f.New = true
 	if err := s.formData(ctx, &f.targetForm); err != nil {
@@ -122,8 +169,11 @@ func (s *Server) bulkAdd(w http.ResponseWriter, r *http.Request) {
 	var targets []core.Target
 	for _, ep := range eps {
 		t := f.T
-		t.Host, t.Port, t.Name, t.ServerName = ep.Host, ep.Port, ep.Name, ""
-		if !isIP(t.Host) {
+		t.Host, t.Port, t.Name, t.ServerName = ep.Host, ep.Port, ep.Name, ep.ServerName
+		if ep.Protocol != "" {
+			t.Protocol = ep.Protocol
+		}
+		if t.ServerName == "" && !isIP(t.Host) {
 			t.ServerName = t.Host
 		}
 		errs := t.Validate(st)

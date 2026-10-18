@@ -380,6 +380,8 @@ type findingPanel struct {
 	Error   string
 	Until   string
 	Comment string
+	// AddHosts are the names an unexpected_certificate offers as targets.
+	AddHosts []string
 }
 
 // maxResolved caps the resolved findings listed on the findings page.
@@ -525,6 +527,16 @@ func (s *Server) findingPanel(r *http.Request, id int64) (findingPanel, error) {
 		p.Until = time.Unix(f.AckUntil, 0).In(info(r).settings.Location()).Format("2006-01-02")
 	}
 	p.Comment = f.AckComment
+	// The finding carries its issuance's ID; its names can become targets.
+	if f.Kind == check.UnexpectedCertificate && f.Open() && s.can(r, authz.EditTargets) {
+		if iid, err := strconv.ParseInt(f.Fingerprint, 10, 64); err == nil {
+			if is, err := s.Core.Issuance(r.Context(), iid); err == nil {
+				if d, err := s.Core.Domain(r.Context(), is.DomainID); err == nil {
+					p.AddHosts = is.TargetNames(d)
+				}
+			}
+		}
+	}
 	return p, nil
 }
 

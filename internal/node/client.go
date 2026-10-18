@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sjoerd305/tlswatch/internal/core"
 	"github.com/sjoerd305/tlswatch/internal/probe"
 )
 
@@ -54,8 +55,9 @@ type Client struct {
 	// Executable is the running binary that a self-update replaces; nil
 	// means os.Executable.
 	Executable func() (string, error)
-	// Probe is replaceable in tests.
+	// Probe and Scan are replaceable in tests.
 	Probe func(context.Context, probe.Request) probe.Result
+	Scan  func(context.Context, probe.ScanRequest) (probe.ScanResult, error)
 
 	cred    string
 	gzip    atomic.Bool // the server accepts gzipped bodies (Accept-Encoding on its last poll answer)
@@ -278,6 +280,10 @@ func (c *Client) Run(ctx context.Context) error {
 				if j.Probe != nil {
 					c.start(jobCtx, j)
 				}
+			case KindScan:
+				if j.Scan != nil {
+					c.startScan(jobCtx, j)
+				}
 			case KindCancel:
 				c.mu.Lock()
 				if cancel, ok := c.cancels[j.Cancel]; ok {
@@ -294,7 +300,14 @@ func (c *Client) Run(ctx context.Context) error {
 				}
 				rollback = readRollback(c.Data)
 			default:
+				// Answered at once, so the server need not wait for the job's
+				// timeout to learn that this node is too old for it.
 				c.Log.Warn("unknown job kind; this node may be older than the server", "kind", j.Kind)
+				c.running.Add(1)
+				go func() {
+					defer c.running.Done()
+					c.deliver(j.ID, Result{Error: ErrUnsupported + " " + core.Clip(j.Kind, core.ShortMax)})
+				}()
 			}
 		}
 	}
@@ -424,16 +437,63 @@ func (c *Client) start(ctx context.Context, j Job) {
 		}
 		c.Log.Info("probed", "job", j.ID, "endpoint", endpoint(req), "addresses", len(r.Addresses), "answered", ok,
 			"dns_error", r.DNSError, "ms", r.Duration.Milliseconds())
-		body, _ := json.Marshal(Result{Probe: EncodeResult(r)})
-		pctx, pcancel := context.WithTimeout(context.Background(), ClientTimeout)
-		defer pcancel()
-		resp, err := c.do(pctx, http.MethodPost, c.Server+Prefix+"/jobs/"+j.ID+"/result", body, nil)
+		c.deliver(j.ID, Result{Probe: EncodeResult(r)})
+	}()
+}
+
+// startScan runs a scan chunk in the background. The node's allowlist and
+// its local-address switch bound it as they bound a probe.
+func (c *Client) startScan(ctx context.Context, j Job) {
+	jctx, cancel := context.WithCancel(ctx)
+	c.mu.Lock()
+	c.cancels[j.ID] = cancel
+	c.mu.Unlock()
+	c.running.Add(1)
+	go func() {
+		defer c.running.Done()
+		defer func() {
+			cancel()
+			c.mu.Lock()
+			delete(c.cancels, j.ID)
+			c.mu.Unlock()
+		}()
+		req, err := j.Scan.Request()
 		if err != nil {
-			c.Log.Warn("result not delivered", "job", j.ID, "err", err)
+			c.deliver(j.ID, Result{Error: err.Error()})
 			return
 		}
-		resp.Body.Close()
+		req.AllowLocal = req.AllowLocal && c.AllowLocal
+		req.Allow = c.allow
+		sf := probe.Scan
+		if c.Scan != nil {
+			sf = c.Scan
+		}
+		r, err := sf(jctx, req)
+		if jctx.Err() != nil {
+			c.Log.Info("job cancelled", "job", j.ID)
+			return
+		}
+		if err != nil {
+			c.deliver(j.ID, Result{Error: err.Error()})
+			return
+		}
+		c.Log.Info("scanned", "job", j.ID, "addresses", len(req.Addresses), "ports", len(req.Ports), "connects", r.Probed,
+			"refused", r.Refused, "found", len(r.Hits))
+		c.deliver(j.ID, Result{Scan: EncodeScan(r)})
 	}()
+}
+
+// deliver posts a job's result to the server.
+func (c *Client) deliver(id string, res Result) {
+	body, _ := json.Marshal(res)
+	pctx, pcancel := context.WithTimeout(context.Background(), ClientTimeout)
+	defer pcancel()
+	resp, err := c.do(pctx, http.MethodPost, c.Server+Prefix+"/jobs/"+id+"/result", body, nil)
+	if err != nil {
+		c.Log.Warn("result not delivered", "job", id, "err", err)
+		return
+	}
+	resp.Body.Close()
 }
 
 func endpoint(r probe.Request) string {

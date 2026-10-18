@@ -51,6 +51,9 @@ func (s *Service) Prune(ctx context.Context) error {
 			}
 		}
 	}
+	if err := s.pruneScans(ctx); err != nil {
+		return fmt.Errorf("prune scans: %w", err)
+	}
 	if err := s.pruneCertificates(ctx, cut); err != nil {
 		return fmt.Errorf("prune certificates: %w", err)
 	}

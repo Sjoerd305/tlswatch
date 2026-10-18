@@ -43,12 +43,13 @@ func (s *Service) Nav(ctx context.Context) NavCounts {
 
 // Stamp summarises everything the live pages show; it changes when a check
 // lands, a target or finding changes, or an alert is queued or delivered
-// (triggers bump the changes counter). Pending is the number of enabled
-// targets that were never checked.
+// (triggers bump the changes counter), or a scan moves. Pending counts
+// the work under way that the pages follow closely: enabled targets never
+// checked, and running scans.
 func (s *Service) Stamp(ctx context.Context) (stamp string, pending int, err error) {
 	var n int64
 	err = s.DB.R.QueryRowContext(ctx, `SELECT (SELECT n FROM changes),
-		(SELECT COUNT(*) FROM targets WHERE enabled = 1 AND last_check = 0)`).Scan(&n, &pending)
+		(SELECT COUNT(*) FROM targets WHERE enabled = 1 AND last_check = 0) + (SELECT COUNT(*) FROM scans WHERE state = 'running')`).Scan(&n, &pending)
 	if err != nil {
 		return "", 0, err
 	}

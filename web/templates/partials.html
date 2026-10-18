@@ -108,7 +108,7 @@
     <div class="field"><label class="label" for="ack-until">Until</label><input id="ack-until" name="until" class="input mono w150" type="date" value="{{$d.Until}}" placeholder="YYYY-MM-DD"><span class="help">Reminders resume after this date if still open. Leave empty for until resolved.</span></div>
     {{- end}}
     <div class="field"><label class="label" for="ack-comment">Comment</label><textarea id="ack-comment" name="comment" class="input" rows="3" maxlength="2000">{{$d.Comment}}</textarea></div>
-    <div class="form-foot end"><a href="{{$d.Next}}" class="btn" data-panel-close>Cancel</a><button type="submit" class="btn btn-primary">{{if $f.Kind.AckResolves}}Confirm{{else if $f.AckAt}}Update{{else}}Acknowledge{{end}}</button></div>
+    <div class="form-foot end">{{if $d.AddHosts}}<a href="{{addTargets $d.AddHosts}}" class="btn">Add as target</a>{{end}}<a href="{{$d.Next}}" class="btn" data-panel-close>Cancel</a><button type="submit" class="btn btn-primary">{{if $f.Kind.AckResolves}}Confirm{{else if $f.AckAt}}Update{{else}}Acknowledge{{end}}</button></div>
   </form>
   {{- if $f.AckAt}}{{if not $f.Kind.AckResolves}}
   <form method="post" action="/findings/{{$f.ID}}/unack">{{template "csrf" $p.CSRF}}<input type="hidden" name="next" value="{{$d.Next}}"><button type="submit" class="btn-link">Remove acknowledgement by {{$f.AckBy}}</button></form>

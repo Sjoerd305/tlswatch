@@ -1,0 +1,41 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}{{$sc := $d.S}}
+<div class="crumbs"><a href="/targets">Targets</a><span>/</span><a href="/targets/discover">Discover</a><span>/</span><span>Scan {{whenTime $p.Loc $p.Now $sc.CreatedAt}}</span></div>
+<div class="page-head">
+  <div><h1>Scan of {{join $sc.Ranges ", "}}</h1><span class="summary">From {{if $sc.NodeName}}node {{$sc.NodeName}}{{else}}this server{{end}} · ports {{range $i, $n := $sc.Ports}}{{if $i}}, {{end}}{{$n}}{{end}} · {{$sc.Rate}} connects per second · by {{$sc.CreatedBy}}</span></div>
+</div>
+{{- if eq $sc.State "running"}}
+<div class="notice info" role="status">{{template "notice-icon" "info"}}<div>Scanning: {{$sc.Percent}}% done, {{$sc.Found}} {{plural $sc.Found "endpoint" "endpoints"}} found so far. This page follows the scan.</div></div>
+{{- else if eq $sc.State "failed"}}
+<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>The scan stopped: {{$sc.Error}}. What it found before that is listed below.</div></div>
+{{- end}}
+<span class="table-foot">{{$sc.Probed}} {{plural $sc.Probed "connect" "connects"}}{{if $sc.Refused}}, {{$sc.Refused}} {{plural $sc.Refused "address" "addresses"}} refused without one (local, or outside the node's allowlist){{end}} · {{len $d.Results}} TLS {{plural (len $d.Results) "endpoint" "endpoints"}}, {{$d.New}} without a target</span>
+{{- if $d.Results}}
+<form method="post" action="/scans/{{$sc.ID}}/add">
+  {{template "csrf" $p.CSRF}}
+  <div class="card clip">
+    <table class="tbl cards compact" id="scan">
+      <thead><tr><th class="chk"><input type="checkbox" data-select-all="#scan" aria-label="Select all endpoints"></th><th>Address</th><th>Subject</th><th class="hide-1140">SANs</th><th>Issuer</th><th>Expires</th><th class="hide-890">TLS</th><th>Target</th></tr></thead>
+      <tbody>
+      {{- range $d.Results}}
+        <tr{{if .TargetID}} class="muted"{{end}}>
+          <td class="chk m-lead" data-label="">{{if not .TargetID}}<label class="rowcheck"><input type="checkbox" name="id" value="{{.ID}}" aria-label="Select {{.Address}}:{{.Port}}"></label>{{end}}</td>
+          <td data-label="Address" class="mono m-lead">{{.HostPort}}{{if ne (print .Protocol) "tls"}} <span class="tag">{{.Protocol}}</span>{{end}}</td>
+          <td data-label="Subject" class="strong wrap-any">{{if .SubjectCN}}{{.SubjectCN}}{{else}}—{{end}}{{if .SelfSigned}} <span class="pill off ml">self-signed</span>{{end}}</td>
+          <td data-label="SANs" class="mono small hide-1140 wrap-any">{{if .SANs}}{{join .SANs ", "}}{{else}}—{{end}}</td>
+          <td data-label="Issuer">{{.Issuer}}</td>
+          <td data-label="Expires" class="mono">{{$dl := days $p.Now .NotAfter}}{{if lt $dl 0}}<span class="crit-t">expired</span>{{else}}{{date $p.Loc .NotAfter}}{{end}}</td>
+          <td data-label="TLS" class="mono small hide-890">{{.TLSVersion}}</td>
+          <td data-label="Target">{{if .TargetID}}<a href="/targets/{{.TargetID}}">{{.TargetName}}</a>{{else}}<span class="muted">—</span>{{end}}</td>
+        </tr>
+      {{- end}}
+      </tbody>
+    </table>
+  </div>
+  {{- if $d.New}}
+  <div class="form-foot"><button type="submit" class="btn btn-primary">Add selected…</button><span class="help" data-bulk-count>0 selected</span><span class="help">Opens Add many with these endpoints; the first name in a certificate becomes the server name when it resolves to the address.</span></div>
+  {{- end}}
+</form>
+{{- else if ne $sc.State "running"}}
+<section class="card"><div class="empty"><span class="h3">No TLS endpoints found</span><span>Nothing in these ranges answered with TLS on these ports{{if $sc.NodeName}} from node {{$sc.NodeName}}{{end}}.</span></div></section>
+{{- end}}
+{{end}}

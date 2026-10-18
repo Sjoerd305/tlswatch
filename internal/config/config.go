@@ -103,7 +103,10 @@ type General struct {
 	BaseURL     string `json:"base_url"`
 	BehindProxy bool   `json:"behind_proxy"`
 	AllowLocal  bool   `json:"allow_local"`
-	TimeZone    string `json:"time_zone"`
+	// PublicDiscovery lets a discovery scan cover public address ranges;
+	// off, a scan takes private ranges only.
+	PublicDiscovery bool   `json:"public_discovery"`
+	TimeZone        string `json:"time_zone"`
 	// Metrics serves /metrics in the Prometheus text format; it names
 	// every target, so a request must carry MetricsToken as a bearer token.
 	Metrics      bool   `json:"metrics"`

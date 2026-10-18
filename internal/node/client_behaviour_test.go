@@ -391,7 +391,7 @@ func TestFixedUpdateReplyDoesNotSpin(t *testing.T) {
 // Kinds a later server may send are skipped, a cancel for a job the node
 // does not run is ignored, and the probe jobs beside them still run, with
 // the node's own local-address rule applied.
-func TestClientSkipsUnknownJobsAndRunsTheRest(t *testing.T) {
+func TestClientAnswersUnknownJobsAndRunsTheRest(t *testing.T) {
 	f := newFakeServer(t, "v1.2.0", nil)
 	var polls atomic.Int32
 	f.set(&f.poll, func(w http.ResponseWriter, r *http.Request) {
@@ -408,7 +408,9 @@ func TestClientSkipsUnknownJobsAndRunsTheRest(t *testing.T) {
 	})
 	results := make(chan string, 4)
 	f.set(&f.result, func(w http.ResponseWriter, r *http.Request) {
-		results <- r.URL.Path
+		var res Result
+		_ = json.NewDecoder(r.Body).Decode(&res)
+		results <- r.URL.Path + " " + res.Error
 		w.WriteHeader(http.StatusNoContent)
 	})
 	c, _ := nodeAt(t, f, "v1.2.0")
@@ -422,13 +424,19 @@ func TestClientSkipsUnknownJobsAndRunsTheRest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
-	select {
-	case p := <-results:
-		if p != Prefix+"/jobs/j4/result" {
-			t.Fatalf("result for %s", p)
+	// The unknown kind is answered at once, so the server does not wait
+	// for its timeout; the probe beside it runs.
+	got := map[string]bool{}
+	for range 2 {
+		select {
+		case p := <-results:
+			got[p] = true
+		case <-time.After(3 * time.Second):
+			t.Fatalf("results: %v", got)
 		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("the probe job beside unknown kinds did not run")
+	}
+	if !got[Prefix+"/jobs/j1/result unsupported kind refresh"] || !got[Prefix+"/jobs/j4/result "] {
+		t.Fatalf("results: %v", got)
 	}
 	cancel()
 	if err := <-done; err != nil {

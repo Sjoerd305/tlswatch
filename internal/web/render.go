@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -217,6 +218,8 @@ func (s *Server) funcs() template.FuncMap {
 			return fmt.Sprintf("%d d and %d %%", days, pct)
 		},
 		"renewalPoint": func() int { return check.DefaultRenewalPoint },
+		// addTargets is the Add many form pre-filled with these hosts.
+		"addTargets": func(hosts []string) string { return "/targets/bulk-add?" + url.Values{"hosts": hosts}.Encode() },
 		"daysPtr": func(p *int) string {
 			if p == nil {
 				return "—"

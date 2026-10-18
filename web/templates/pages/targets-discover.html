@@ -1,0 +1,50 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}
+<div class="crumbs"><a href="/targets">Targets</a><span>/</span><span>Discover</span></div>
+<div class="page-head"><div><h1>Discover</h1><span class="summary">Scan address ranges for TLS endpoints, from this server or from a node inside the network. A scan finds; nothing is monitored until you add it.</span></div></div>
+{{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
+<form class="card form" method="post" action="/targets/discover" novalidate>
+  {{template "csrf" $p.CSRF}}
+  <div class="field"><label class="label" for="ranges">Ranges</label>
+    <textarea id="ranges" name="ranges" class="input mono" rows="3" required spellcheck="false" placeholder="10.20.0.0/24
+192.168.10.5">{{$d.In.Ranges}}</textarea>
+    <span class="help">CIDRs or single addresses, at most 4,096 addresses (a /20) per scan. {{if $d.Public}}Public ranges are allowed by Settings › General.{{else}}Private ranges only (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7){{if $p.Can "settings.manage"}}; public ones need <a href="/settings/general">Settings › General</a>{{end}}.{{end}} A node's own allowlist applies on top.</span></div>
+  <div class="fgrid c3">
+    <div class="field"><label class="label" for="ports">Ports</label><input id="ports" name="ports" class="input mono" value="{{$d.In.Ports}}" placeholder="443, 8443, 636, 993, 995, 465, 587, 5061">
+      <span class="help">At most 16. STARTTLS on 25 and 587, TLS from the first byte on the others.</span></div>
+    <div class="field"><label class="label" for="rate">Rate, connects per second</label><input id="rate" name="rate" class="input mono" value="{{$d.Rate}}" inputmode="numeric" placeholder="50">
+      <span class="help">1 to 200; low on purpose, so a scan does not trip an intrusion alarm.</span></div>
+    <div class="field"><label class="label" for="node">Probe from</label>
+      <select id="node" name="node_id" class="input">
+        <option value="0">This server</option>
+        {{- range $d.Nodes}}<option value="{{.ID}}"{{if eq .ID $d.In.NodeID}} selected{{end}}{{if not .CanScan}} disabled{{end}}>Node {{.Label}}{{if not .CanScan}} (update it to scan){{end}}</option>{{end}}
+      </select></div>
+  </div>
+  <div class="form-foot">
+    <button type="submit" class="btn btn-primary">Start scan</button>
+    <a href="/targets" class="cancel">Cancel</a>
+    <span class="help">One scan at a time per node and from this server. Every scan is in the audit log.</span>
+  </div>
+</form>
+{{- if $d.Scans}}
+<section class="card clip">
+  <div class="sec"><h2>Recent scans</h2><span class="meta">kept for 7 days</span></div>
+  <table class="tbl cards compact">
+    <thead><tr><th>Started</th><th>Ranges</th><th>From</th><th>Progress</th><th class="num">Found</th><th class="hide-890">By</th></tr></thead>
+    <tbody>
+    {{- range $d.Scans}}
+      <tr>
+        <td data-label="Started" class="mono m-lead"><a href="/scans/{{.ID}}" class="ink" data-row-link>{{whenTime $p.Loc $p.Now .CreatedAt}}</a></td>
+        <td data-label="Ranges" class="mono wrap">{{join .Ranges ", "}}</td>
+        <td data-label="From">{{if .NodeName}}Node {{.NodeName}}{{else}}This server{{end}}</td>
+        <td data-label="Progress">{{template "scan-state" .}}</td>
+        <td data-label="Found" class="num mono">{{.Found}}</td>
+        <td data-label="By" class="muted hide-890">{{.CreatedBy}}</td>
+      </tr>
+    {{- end}}
+    </tbody>
+  </table>
+</section>
+{{- end}}
+{{end}}
+
+{{define "scan-state"}}{{if eq .State "running"}}<span class="st sm info">running · {{.Percent}}%</span>{{else if eq .State "failed"}}<span class="st sm crit" title="{{.Error}}">failed</span>{{else}}<span class="st sm ok">done</span>{{end}}{{end}}

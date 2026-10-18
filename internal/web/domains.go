@@ -116,6 +116,8 @@ type domainDetail struct {
 	Channels  []string
 	Source    string
 	Interval  int
+	// Untargeted are the names of recent known issuances no target covers.
+	Untargeted []core.UntargetedName
 }
 
 func (s *Server) domainDetail(w http.ResponseWriter, r *http.Request) {
@@ -133,6 +135,10 @@ func (s *Server) domainDetail(w http.ResponseWriter, r *http.Request) {
 	st := info(r).settings
 	d := domainDetail{D: dm, Source: ct.Label(st.CT.Source), Interval: st.CT.IntervalS, State: r.URL.Query().Get("state")}
 	if d.Issuances, err = s.Core.Issuances(ctx, id, 0); err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	if d.Untargeted, err = s.Core.UntargetedNames(ctx, dm); err != nil {
 		s.serverError(w, r, err)
 		return
 	}

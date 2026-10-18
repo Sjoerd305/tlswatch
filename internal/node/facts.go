@@ -33,7 +33,7 @@ func InContainer() bool {
 func GatherFacts(version string, container bool) Facts {
 	host, _ := os.Hostname()
 	f := core.NodeFacts{Hostname: host, OS: osName(), Kernel: kernel(), Arch: runtime.GOOS + "/" + runtime.GOARCH,
-		Container: container, Version: version, IPv6Route: probe.HasIPv6Route()}
+		Container: container, Version: version, IPv6Route: probe.HasIPv6Route(), Kinds: Kinds}
 	ifaces, _ := net.Interfaces()
 	for _, i := range ifaces {
 		if i.Flags&net.FlagLoopback != 0 || i.Flags&net.FlagUp == 0 {

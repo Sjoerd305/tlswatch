@@ -18,7 +18,8 @@ func TestParseEndpoints(t *testing.T) {
 	if len(errs) != 3 || !strings.HasPrefix(errs[0], "Line 8: repeats line 1") || !strings.HasPrefix(errs[1], "Line 9: port") || !strings.HasPrefix(errs[2], "Line 10: port") {
 		t.Fatalf("errors: %q", errs)
 	}
-	want := []endpoint{{1, "portal.example.nl", 443, ""}, {2, "mail.example.nl", 587, "Mail server"}, {3, "shop.example.nl", 443, ""}, {6, "2001:db8::1", 8443, ""}, {7, "2001:db8::2", 443, ""}}
+	want := []endpoint{{Line: 1, Host: "portal.example.nl", Port: 443}, {Line: 2, Host: "mail.example.nl", Port: 587, Name: "Mail server"},
+		{Line: 3, Host: "shop.example.nl", Port: 443}, {Line: 6, Host: "2001:db8::1", Port: 8443}, {Line: 7, Host: "2001:db8::2", Port: 443}}
 	if len(eps) != len(want) {
 		t.Fatalf("endpoints: %+v", eps)
 	}
@@ -26,6 +27,15 @@ func TestParseEndpoints(t *testing.T) {
 		if eps[i] != want[i] {
 			t.Errorf("line %d: got %+v, want %+v", want[i].Line, eps[i], want[i])
 		}
+	}
+	// protocol= and sni= after the host: the port defaults from the line's
+	// protocol; anything else is the name.
+	eps, errs = parseEndpoints("10.0.0.5 protocol=smtp sni=Mail.Example.nl Mail\n10.0.0.6 sni=10.0.0.7\n10.0.0.8 protocol=gopher\n10.0.0.9 x=1", probe.TLS)
+	if len(errs) != 2 || !strings.HasPrefix(errs[0], "Line 2: sni=") || !strings.HasPrefix(errs[1], "Line 3:") {
+		t.Fatalf("errors: %q", errs)
+	}
+	if len(eps) != 2 || eps[0] != (endpoint{Line: 1, Host: "10.0.0.5", Port: 587, Name: "Mail", Protocol: probe.SMTP, ServerName: "mail.example.nl"}) || eps[1].Name != "x=1" {
+		t.Fatalf("endpoints: %+v", eps)
 	}
 	if _, errs := parseEndpoints("  \n#x\n", probe.SMTP); len(errs) != 0 {
 		t.Fatalf("blank list: %q", errs)

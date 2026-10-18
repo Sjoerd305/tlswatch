@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -857,5 +858,55 @@ func TestReadJSONCapsInflatedBody(t *testing.T) {
 	r.Header.Set("Content-Encoding", "br")
 	if err := readJSON(httptest.NewRecorder(), r, &v); err == nil {
 		t.Fatal("an unknown encoding was accepted")
+	}
+}
+
+// A scan chunk goes to the node, runs with the node's allowlist, and comes
+// back; facts tell the server the node can scan. A hit the chunk did not
+// ask for is refused.
+func TestScanOnNode(t *testing.T) {
+	e := setup(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cert := selfSigned(t, "app.internal.example")
+	c := e.client(t, "v1.2.0")
+	var seen atomic.Value
+	stray := atomic.Bool{}
+	c.Scan = func(_ context.Context, req probe.ScanRequest) (probe.ScanResult, error) {
+		seen.Store(req)
+		ip := req.Addresses[0].String()
+		if stray.Load() {
+			ip = "10.9.9.9"
+		}
+		return probe.ScanResult{Probed: len(req.Addresses) * len(req.Ports), Refused: 1,
+			Hits: []probe.ScanHit{{IP: ip, Port: 443, Protocol: probe.TLS, TLSVersion: "TLS 1.3", Chain: []*x509.Certificate{cert}}}}, nil
+	}
+	n := e.enrolled(t, c)
+	if !n.CanScan() {
+		t.Fatalf("facts do not list the scan kind: %+v", n.Facts.Kinds)
+	}
+	done := make(chan error, 1)
+	go func() { done <- c.Run(ctx) }()
+
+	req := probe.ScanRequest{Addresses: []netip.Addr{netip.MustParseAddr("10.0.3.5"), netip.MustParseAddr("10.0.3.6")}, Ports: []int{443, 8443}, Rate: 50, Timeout: time.Second}
+	sctx, scancel := context.WithTimeout(ctx, 10*time.Second)
+	defer scancel()
+	res, err := e.disp.Scan(sctx, n.ID, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Probed != 4 || res.Refused != 1 || len(res.Hits) != 1 || res.Hits[0].IP != "10.0.3.5" || probe.Fingerprint(res.Hits[0].Chain[0]) != probe.Fingerprint(cert) {
+		t.Fatalf("result: %+v", res)
+	}
+	if got := seen.Load().(probe.ScanRequest); got.Allow == nil || len(got.Addresses) != 2 || got.Rate != 50 {
+		t.Fatalf("node request: %+v", got)
+	}
+	stray.Store(true)
+	if _, err := e.disp.Scan(sctx, n.ID, req); err == nil || !strings.Contains(err.Error(), "not asked for") {
+		t.Fatalf("stray hit: %v", err)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

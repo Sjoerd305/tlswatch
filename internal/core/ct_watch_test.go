@@ -378,3 +378,45 @@ func TestCTReenableReopensUnexpected(t *testing.T) {
 		t.Fatal("the unexpected issuance has no open finding after enabling the watch again")
 	}
 }
+
+// The domain page lists the names of recent known certificates that no
+// enabled target covers; a wildcard is listed when no target is under it,
+// names outside the watch are not, and the list ages out with the window.
+func TestCTUntargetedNames(t *testing.T) {
+	e, stub := ctEnv(t)
+	now := e.clock.Now()
+	nb, na := now.Add(-time.Hour), now.Add(days(90))
+	stub.entry(60, "portal.example.nl", []string{"portal.example.nl", "api.example.nl", "*.example.nl", "*.dev.example.nl", "shop.example.com"},
+		"C=US, O=Let's Encrypt, CN=R10", "6001", nb, na)
+	e.target(nil) // portal.example.nl, enabled
+	e.target(func(t *Target) {
+		t.Host, t.ServerName, t.Port, t.Enabled = "api.example.nl", "api.example.nl", 8443, false
+	})
+	d := e.watch("example.nl")
+	if err := e.svc.PollDomains(e.ctx); err != nil {
+		t.Fatal(err)
+	}
+	names, err := e.svc.UntargetedNames(e.ctx, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, n := range names {
+		got = append(got, n.Name)
+		if n.Issuer != "Let's Encrypt" || n.Wildcard != strings.HasPrefix(n.Name, "*.") {
+			t.Errorf("%+v", n)
+		}
+	}
+	// portal is targeted, *.example.nl covers it; api's target is disabled.
+	if strings.Join(got, ",") != "*.dev.example.nl,api.example.nl" {
+		t.Fatalf("names: %v", got)
+	}
+	iss, _ := e.svc.Issuances(e.ctx, d.ID, 0)
+	if tn := iss[0].TargetNames(d); strings.Join(tn, ",") != "portal.example.nl,api.example.nl" {
+		t.Fatalf("target names: %v", tn)
+	}
+	e.clock.Add(days(91))
+	if names, _ = e.svc.UntargetedNames(e.ctx, d); len(names) != 0 {
+		t.Fatalf("past the window: %+v", names)
+	}
+}

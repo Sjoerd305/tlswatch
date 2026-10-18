@@ -10,6 +10,8 @@ package node
 import (
 	"crypto/x509"
 	"fmt"
+	"net/netip"
+	"slices"
 	"time"
 
 	"github.com/sjoerd305/tlswatch/internal/core"
@@ -34,7 +36,16 @@ const (
 	KindProbe  = "probe"
 	KindCancel = "cancel"
 	KindUpdate = "update"
+	KindScan   = core.KindScan
 )
+
+// Kinds are the job kinds this version runs, reported in the facts so the
+// server sends a node nothing it cannot do. Every node runs the first
+// three; an older node, whose facts list none, runs no others.
+var Kinds = []string{KindProbe, KindCancel, KindUpdate, KindScan}
+
+// ErrUnsupported is the answer of a node to a job kind it does not know.
+const ErrUnsupported = "unsupported kind"
 
 // Timing of the protocol (see the specification's table).
 const (
@@ -83,6 +94,89 @@ type Job struct {
 	Probe  *ProbeJob  `json:"probe,omitempty"`
 	Cancel string     `json:"cancel,omitempty"` // KindCancel: the job to stop
 	Update *UpdateJob `json:"update,omitempty"`
+	Scan   *ScanJob   `json:"scan,omitempty"`
+}
+
+// ScanJob is one chunk of a discovery scan.
+type ScanJob struct {
+	Addresses  []string `json:"addresses"`
+	Ports      []int    `json:"ports"`
+	Rate       int      `json:"rate"`
+	TimeoutMS  int64    `json:"timeout_ms"`
+	AllowLocal bool     `json:"allow_local,omitempty"`
+}
+
+// NewScanJob converts a scan request for the wire.
+func NewScanJob(req probe.ScanRequest) *ScanJob {
+	j := &ScanJob{Ports: req.Ports, Rate: req.Rate, TimeoutMS: req.Timeout.Milliseconds(), AllowLocal: req.AllowLocal}
+	for _, a := range req.Addresses {
+		j.Addresses = append(j.Addresses, a.String())
+	}
+	return j
+}
+
+// Request is the scan request a node runs for the job; an address that
+// does not parse is refused.
+func (j ScanJob) Request() (probe.ScanRequest, error) {
+	req := probe.ScanRequest{Ports: j.Ports, Rate: j.Rate, Timeout: time.Duration(j.TimeoutMS) * time.Millisecond, AllowLocal: j.AllowLocal}
+	for _, s := range j.Addresses {
+		a, err := netip.ParseAddr(s)
+		if err != nil {
+			return req, fmt.Errorf("address %q: %w", s, err)
+		}
+		req.Addresses = append(req.Addresses, a)
+	}
+	return req, nil
+}
+
+// Timeout is how long the server waits for a leased scan chunk: its
+// connects at the rate, the last one's timeout, and slack.
+func (j ScanJob) Timeout() time.Duration {
+	rate := max(j.Rate, 1)
+	n := len(j.Addresses) * len(j.Ports)
+	return time.Duration(n)*time.Second/time.Duration(rate) + time.Duration(j.TimeoutMS)*time.Millisecond + 30*time.Second
+}
+
+// ScanResult is a node's answer to a scan chunk, the chains as DER.
+type ScanResult struct {
+	Hits    []ScanHit `json:"hits"`
+	Probed  int       `json:"probed"`
+	Refused int       `json:"refused"`
+}
+
+// ScanHit is one endpoint that answered with TLS.
+type ScanHit struct {
+	IP         string         `json:"ip"`
+	Port       int            `json:"port"`
+	Protocol   probe.Protocol `json:"protocol"`
+	TLSVersion string         `json:"tls_version"`
+	Chain      [][]byte       `json:"chain"`
+}
+
+// EncodeScan converts a scan result for the wire.
+func EncodeScan(r probe.ScanResult) *ScanResult {
+	out := &ScanResult{Probed: r.Probed, Refused: r.Refused, Hits: []ScanHit{}}
+	for _, h := range r.Hits {
+		out.Hits = append(out.Hits, ScanHit{IP: h.IP, Port: h.Port, Protocol: h.Protocol, TLSVersion: h.TLSVersion, Chain: der(h.Chain)})
+	}
+	return out
+}
+
+// Decode turns a wire scan result back, refusing a hit without a
+// certificate or on an address or port the chunk did not ask for.
+func (s ScanResult) Decode(j ScanJob) (probe.ScanResult, error) {
+	out := probe.ScanResult{Probed: s.Probed, Refused: s.Refused}
+	for _, h := range s.Hits {
+		if !slices.Contains(j.Addresses, h.IP) || !slices.Contains(j.Ports, h.Port) {
+			return out, fmt.Errorf("hit %s:%d was not asked for", h.IP, h.Port)
+		}
+		chain, err := parseChain(h.Chain)
+		if err != nil || len(chain) == 0 {
+			return out, fmt.Errorf("hit %s:%d: no usable chain", h.IP, h.Port)
+		}
+		out.Hits = append(out.Hits, probe.ScanHit{IP: h.IP, Port: h.Port, Protocol: probe.ScanProtocol(h.Port), TLSVersion: core.Clip(h.TLSVersion, core.ShortMax), Chain: chain})
+	}
+	return out, nil
 }
 
 // UpdateJob asks the node to replace its binary with the server's.
@@ -141,6 +235,7 @@ func (j ProbeJob) Timeout() time.Duration {
 type Result struct {
 	Error string       `json:"error,omitempty"` // the job could not run at all
 	Probe *ProbeResult `json:"probe,omitempty"`
+	Scan  *ScanResult  `json:"scan,omitempty"`
 }
 
 // ProbeResult is a probe result with the chains as DER (base64 in JSON).

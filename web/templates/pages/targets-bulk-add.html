@@ -8,8 +8,9 @@
     <textarea id="hosts" name="hosts" class="input tall{{if $f.LineErrs}} invalid{{end}}" rows="8" required spellcheck="false" placeholder="portal.example.nl
 mail.example.nl:587 Mail server
 https://shop.example.nl/
+10.20.0.5:443 sni=intranet.example.nl Intranet
 # lines starting with # are skipped">{{$f.Lines}}</textarea>
-    <span class="help">A host, <span class="mono">host:port</span> or URL, followed by an optional name. Without a port the protocol's default is used; the name defaults to the host and the server name follows a DNS host.</span>
+    <span class="help">A host, <span class="mono">host:port</span> or URL, followed by an optional name. Without a port the protocol's default is used; the name defaults to the host and the server name follows a DNS host. <span class="mono">sni=NAME</span> after the host sets the server name of an address, and <span class="mono">protocol=smtp</span> (or imap, pop3, ftp, postgres, tls) the protocol of that line.</span>
     {{- if $f.LineErrs}}<ul class="err-list">{{range $f.LineErrs}}<li class="err">{{.}}</li>{{end}}</ul>{{end}}
   </div>
   <div class="fgrid c2">
