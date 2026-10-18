@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sjoerd305/tlswatch/internal/caa"
 	"github.com/sjoerd305/tlswatch/internal/check"
 	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/db"
@@ -365,6 +366,8 @@ type Service struct {
 	CTBase   string
 	// CRLClient fetches CRLs from this server; nil builds the real one.
 	CRLClient *http.Client
+	// CAAResolver answers CAA queries; nil asks the system's name servers.
+	CAAResolver caa.Resolver
 
 	bundles bundleCache
 	crls    crlLocks

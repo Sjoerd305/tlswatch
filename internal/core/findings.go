@@ -223,6 +223,11 @@ func (s *Service) Acknowledge(ctx context.Context, id int64, user string, until 
 	if err := tx.Commit(); err != nil {
 		return f, err
 	}
+	if f.DomainID != 0 && f.Kind == check.CAAViolation {
+		if _, err := s.DB.W.ExecContext(ctx, "UPDATE issuances SET caa = ? WHERE id = ? AND domain_id = ?", CAAAcknowledged, f.Fingerprint, f.DomainID); err != nil {
+			return f, err
+		}
+	}
 	if f.DomainID != 0 && f.Kind == check.UnexpectedCertificate {
 		if iid, err := strconv.ParseInt(f.Fingerprint, 10, 64); err == nil {
 			if err := s.ackIssuanceRow(ctx, iid, user, comment); err != nil {

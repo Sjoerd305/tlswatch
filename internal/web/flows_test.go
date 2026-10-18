@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/sjoerd305/tlswatch/internal/authz"
+	"github.com/sjoerd305/tlswatch/internal/caa"
 	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/core"
 	"github.com/sjoerd305/tlswatch/internal/db"
@@ -172,12 +173,17 @@ func TestDomainFormEnableAndPoll(t *testing.T) {
 	if rec := hs.do(authz.Viewer, "POST", fmt.Sprintf("/domains/%d/poll", id), nil, true); rec.Code != http.StatusForbidden {
 		t.Fatalf("viewer polls: %d", rec.Code)
 	}
+	hs.srv.Core.CAAResolver = caa.Static{"watched.example": {{Tag: "issue", Value: "letsencrypt.org"}}}
 	before := hits.Load()
 	if rec := hs.do(authz.Operator, "POST", fmt.Sprintf("/domains/%d/poll", id), nil, true); rec.Code != http.StatusSeeOther {
 		t.Fatalf("poll: %d", rec.Code)
 	}
 	if hits.Load() == before || hs.count(fmt.Sprintf("SELECT COUNT(*) FROM issuances WHERE domain_id = %d", id)) != 1 {
 		t.Fatal("Poll now did not record the issuance")
+	}
+	// The poll looked up CAA; the page shows the record.
+	if page := hs.do(authz.Viewer, "GET", fmt.Sprintf("/domains/%d", id), nil, false).Body.String(); !strings.Contains(page, `0 issue &#34;letsencrypt.org&#34;`) {
+		t.Fatal("CAA record not on the domain page")
 	}
 	// Disable, then Enable through the form, with a next that stays here.
 	if rec := hs.do(authz.Operator, "POST", fmt.Sprintf("/domains/%d/disable", id), nil, true); rec.Code != http.StatusSeeOther {

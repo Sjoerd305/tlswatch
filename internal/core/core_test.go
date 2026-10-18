@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sjoerd305/tlswatch/internal/caa"
 	"github.com/sjoerd305/tlswatch/internal/check"
 	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/db"
@@ -129,7 +130,7 @@ func newEnv(t *testing.T) *env {
 	e := &env{t: t, ctx: context.Background(), clock: c, sent: map[string][]notify.Message{}}
 	e.disp = &notify.Dispatcher{DB: d, Channels: chans, Now: c.Now, Log: log}
 	e.disp.Senders = func(ch notify.Channel) notify.Sender { return fakeSender{e, ch.Name} }
-	e.svc = &Service{DB: d, Settings: config.NewStore(d, key), Channels: chans, Dispatcher: e.disp, Now: c.Now, Log: log}
+	e.svc = &Service{DB: d, Settings: config.NewStore(d, key), Channels: chans, Dispatcher: e.disp, Now: c.Now, Log: log, CAAResolver: caa.Static{}}
 	e.chW, err = chans.Save(e.ctx, notify.Channel{Name: "mail", Kind: notify.KindSMTP, MinSeverity: "warning", Enabled: true,
 		SMTP: notify.SMTPSettings{Host: "smtp.example.nl", Port: 587, From: "tlswatch@example.nl", Recipients: []string{"ops@example.nl"}}})
 	if err != nil {

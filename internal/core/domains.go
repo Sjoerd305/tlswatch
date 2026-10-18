@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sjoerd305/tlswatch/internal/caa"
 	"github.com/sjoerd305/tlswatch/internal/check"
 	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/ct"
@@ -45,11 +46,17 @@ type Domain struct {
 	CreatedAt   int64
 	CreatedBy   string
 	UpdatedAt   int64
+	// CAA is the relevant CAA record set as last looked up, CAACheckedAt
+	// when (0: never), CAAError why the last lookup failed.
+	CAA          caa.Set
+	CAACheckedAt int64
+	CAAError     string
 
 	// Joined for the list.
 	Recent       int // issuances first seen in the last 30 days
 	OpenFindings int
 	Unexpected   int // open unexpected_certificate findings
+	CAAOpen      int // open caa_violation findings
 }
 
 // Status is the watch's state for the list: disabled, failing, pending
@@ -58,9 +65,9 @@ func (d Domain) Status() string {
 	switch {
 	case !d.Enabled:
 		return StatusDisabled
-	case d.FailSince > 0 && d.PolledOK == 0, d.OpenFindings > d.Unexpected:
+	case d.FailSince > 0 && d.PolledOK == 0, d.OpenFindings > d.Unexpected+d.CAAOpen:
 		return StatusUnreachable
-	case d.Unexpected > 0:
+	case d.Unexpected > 0, d.CAAOpen > 0:
 		return StatusWarning
 	case d.PolledOK == 0:
 		return StatusPending
@@ -97,6 +104,10 @@ type Issuance struct {
 	AckBy      string
 	AckAt      int64
 	AckComment string
+	// CAA is the verdict of the CAA check ("" when not judged) and
+	// CAADetail why a violation is one.
+	CAA       string
+	CAADetail string
 
 	// Joined for display: the target serving the matched certificate.
 	TargetID   int64
@@ -151,18 +162,22 @@ const (
 var ErrDomainExists = usererr.New("A watch for this domain already exists")
 
 const domainCols = `d.id, d.name, d.subdomains, d.tags, d.notes, d.all_channels, d.enabled, d.cursor, d.polled_at, d.polled_ok, d.poll_error, d.fail_since,
-	d.created_at, d.created_by, d.updated_at,
+	d.created_at, d.created_by, d.updated_at, d.caa, d.caa_checked_at, d.caa_error,
 	(SELECT COUNT(*) FROM issuances i WHERE i.domain_id = d.id AND i.first_seen >= ?1),
 	(SELECT COUNT(*) FROM findings f WHERE f.domain_id = d.id AND f.resolved_at = 0),
-	(SELECT COUNT(*) FROM findings f WHERE f.domain_id = d.id AND f.resolved_at = 0 AND f.kind = 'unexpected_certificate')`
+	(SELECT COUNT(*) FROM findings f WHERE f.domain_id = d.id AND f.resolved_at = 0 AND f.kind = 'unexpected_certificate'),
+	(SELECT COUNT(*) FROM findings f WHERE f.domain_id = d.id AND f.resolved_at = 0 AND f.kind = 'caa_violation')`
 
 func scanDomain(r interface{ Scan(...any) error }) (Domain, error) {
 	var d Domain
-	var tags string
+	var tags, caaSet string
 	err := r.Scan(&d.ID, &d.Name, &d.Subdomains, &tags, &d.Notes, &d.AllChannels, &d.Enabled, &d.Cursor, &d.PolledAt, &d.PolledOK, &d.PollError, &d.FailSince,
-		&d.CreatedAt, &d.CreatedBy, &d.UpdatedAt, &d.Recent, &d.OpenFindings, &d.Unexpected)
+		&d.CreatedAt, &d.CreatedBy, &d.UpdatedAt, &caaSet, &d.CAACheckedAt, &d.CAAError, &d.Recent, &d.OpenFindings, &d.Unexpected, &d.CAAOpen)
 	if err != nil {
 		return d, err
+	}
+	if caaSet != "" {
+		_ = json.Unmarshal([]byte(caaSet), &d.CAA)
 	}
 	if tags != "" {
 		d.Tags = strings.Split(tags, ",")
@@ -335,7 +350,7 @@ func (s *Service) reopenUnexpected(ctx context.Context, id int64) error {
 			return err
 		}
 	}
-	return nil
+	return s.reopenCAA(ctx, d, list)
 }
 
 // DomainDeleteImpact returns what deleting a watch removes.
@@ -371,7 +386,7 @@ func (s *Service) DomainLink(st config.Settings, id int64) string {
 }
 
 const issuanceCols = `i.id, i.domain_id, i.source_id, i.issuer_cn, i.issuer_org, i.serial, i.names, i.not_before, i.not_after, i.log_url, i.first_seen, i.state,
-	i.matched_fp, i.ack_by, i.ack_at, i.ack_comment, COALESCE(t.id, 0), COALESCE(t.name, ''), d.name`
+	i.matched_fp, i.ack_by, i.ack_at, i.ack_comment, i.caa, i.caa_detail, COALESCE(t.id, 0), COALESCE(t.name, ''), d.name`
 
 // issuanceFrom joins the watch and the target serving the matched
 // certificate (one of them, by id).
@@ -382,7 +397,7 @@ func scanIssuance(r interface{ Scan(...any) error }) (Issuance, error) {
 	var i Issuance
 	var names string
 	err := r.Scan(&i.ID, &i.DomainID, &i.SourceID, &i.IssuerCN, &i.IssuerOrg, &i.Serial, &names, &i.NotBefore, &i.NotAfter, &i.LogURL, &i.FirstSeen, &i.State,
-		&i.MatchedFP, &i.AckBy, &i.AckAt, &i.AckComment, &i.TargetID, &i.TargetName, &i.DomainName)
+		&i.MatchedFP, &i.AckBy, &i.AckAt, &i.AckComment, &i.CAA, &i.CAADetail, &i.TargetID, &i.TargetName, &i.DomainName)
 	if err != nil {
 		return i, err
 	}
@@ -528,7 +543,9 @@ func (s *Service) PollDomain(ctx context.Context, id int64) error {
 		return s.pollFailed(ctx, d, now, err)
 	}
 	backlog := d.Cursor == "" && d.PolledOK == 0
-	if err := s.recordIssuances(ctx, d, found, backlog, now); err != nil {
+	// The CAA records as they are now judge this poll's new issuances.
+	set := s.refreshCAA(ctx, d)
+	if err := s.recordIssuances(ctx, d, found, backlog, set, now); err != nil {
 		return err
 	}
 	if _, err := s.DB.W.ExecContext(ctx, "UPDATE domains SET cursor = ?, polled_at = ?, polled_ok = ?, poll_error = '', fail_since = 0 WHERE id = ?",
@@ -593,11 +610,13 @@ func (s *Service) pollFailed(ctx context.Context, d Domain, now time.Time, cause
 // recordIssuances stores issuances the source returned that are new to
 // the watch, in the state the matching rules give them. A first poll's
 // backlog is recorded as known, within the backlog window, and opens no
-// finding.
-func (s *Service) recordIssuances(ctx context.Context, d Domain, found []ct.Issuance, backlog bool, now time.Time) error {
+// finding. Each new issuance is judged against set, the watch's CAA
+// records (nil: the lookup failed), and a violation opens caa_violation.
+func (s *Service) recordIssuances(ctx context.Context, d Domain, found []ct.Issuance, backlog bool, set *caa.Set, now time.Time) error {
 	if len(found) == 0 {
 		return nil
 	}
+	caaCache := map[string]caa.Set{}
 	ts, err := s.Targets(ctx)
 	if err != nil {
 		return err
@@ -633,6 +652,15 @@ func (s *Service) recordIssuances(ctx context.Context, d Domain, found []ct.Issu
 			return err
 		}
 		id, _ := res.LastInsertId()
+		if !backlog && (in.NotAfter.IsZero() || in.NotAfter.After(now)) {
+			verdict, why := CAALookupFailed, d.CAAError
+			if set != nil {
+				verdict, why = s.judgeCAA(ctx, d, *set, in, caaCache)
+			}
+			if err := s.recordCAA(ctx, d, id, verdict, why); err != nil {
+				return err
+			}
+		}
 		if state == IssuanceUnexpected {
 			i := Issuance{ID: id, DomainID: d.ID, IssuerCN: in.IssuerCN, IssuerOrg: in.IssuerOrg, Names: in.Names, NotBefore: unixOrZero(in.NotBefore), LogURL: in.LogURL}
 			if err := s.openDomainFinding(ctx, d, unexpectedFinding(i, "no target serves it", s.CurrentSettings(ctx).Location()), strconv.FormatInt(id, 10)); err != nil {
@@ -763,6 +791,9 @@ func (s *Service) SweepIssuances(ctx context.Context) error {
 			// becomes unexpected, an unexpected one's finding closes
 			// without a notice; the issuance keeps its state as history.
 			if err := s.resolveDomainFinding(ctx, d, check.UnexpectedCertificate, false, strconv.FormatInt(i.ID, 10)); err != nil {
+				return err
+			}
+			if err := s.resolveDomainFinding(ctx, d, check.CAAViolation, false, strconv.FormatInt(i.ID, 10)); err != nil {
 				return err
 			}
 		case i.State == IssuancePending && now.Sub(time.Unix(i.FirstSeen, 0)) >= PendingHold:

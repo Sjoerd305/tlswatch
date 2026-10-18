@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sjoerd305/tlswatch/internal/caa"
 	"github.com/sjoerd305/tlswatch/internal/check"
 	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/core"
@@ -61,7 +62,7 @@ func setupClocked(t *testing.T, start time.Time) *clocked {
 			return nil
 		})
 	}
-	e.c = &core.Service{DB: d, Settings: config.NewStore(d, key), Channels: chans, Dispatcher: disp, Log: log, Now: clock.Now}
+	e.c = &core.Service{DB: d, Settings: config.NewStore(d, key), Channels: chans, Dispatcher: disp, Log: log, Now: clock.Now, CAAResolver: caa.Static{}}
 	var calls int64
 	e.calls = &calls
 	e.s = &Scheduler{Core: e.c, Log: log, Now: clock.Now, Probe: func(_ context.Context, req probe.Request) probe.Result {

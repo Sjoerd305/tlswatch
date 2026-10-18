@@ -102,6 +102,8 @@ func phrase(a AlertData) string {
 		return "Certificate Transparency source not answering"
 	case "certificate_issued":
 		return "certificate issued"
+	case "caa_violation":
+		return "certificate issued against the CAA record"
 	}
 	return a.Kind
 }

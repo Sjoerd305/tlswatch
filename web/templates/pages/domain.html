@@ -2,7 +2,7 @@
 <div class="crumbs"><a href="/domains">Domains</a><span>/</span><span>{{$dm.Name}}</span></div>
 <div class="page-head top-align">
   <div>
-    <div class="title-row"><h1 class="mono">{{$dm.Name}}</h1>{{$st := $dm.Status}}{{if eq $st "warning"}}<span class="st warn">Unexpected certificate</span>{{else if eq $st "unreachable"}}<span class="st crit">Source failing</span>{{else if eq $st "pending"}}<span class="st off">Not polled yet</span>{{else if eq $st "disabled"}}<span class="st off">Disabled</span>{{else}}<span class="st ok">Healthy</span>{{end}}</div>
+    <div class="title-row"><h1 class="mono">{{$dm.Name}}</h1>{{$st := $dm.Status}}{{if eq $st "warning"}}<span class="st warn">{{if $dm.Unexpected}}Unexpected certificate{{else}}CAA violation{{end}}</span>{{else if eq $st "unreachable"}}<span class="st crit">Source failing</span>{{else if eq $st "pending"}}<span class="st off">Not polled yet</span>{{else if eq $st "disabled"}}<span class="st off">Disabled</span>{{else}}<span class="st ok">Healthy</span>{{end}}</div>
     <div class="sub-row">{{if $dm.Subdomains}}<span class="tag">+ subdomains</span>{{end}}{{range $dm.Tags}}<a class="tag" href="/domains?tag={{.}}">{{.}}</a>{{end}}</div>
   </div>
   {{- if $edit}}
@@ -35,7 +35,7 @@
           <tr data-state="{{.State}}"{{if and $d.State (ne $d.State .State)}} hidden{{end}}>
             <td data-label="State" class="m-lead"><span class="pill {{.StateClass}}">{{.State}}</span></td>
             <td data-label="Names" class="mono wrap m-lead">{{join .Names ", "}}{{if .LogURL}} <a class="small" href="{{.LogURL}}" rel="noopener noreferrer">log entry</a>{{else if .Names}} <a class="small" href="https://crt.sh/?q={{index .Names 0}}" rel="noopener noreferrer">crt.sh</a>{{end}}</td>
-            <td data-label="Issuer" class="wrap">{{.Issuer}}</td>
+            <td data-label="Issuer" class="wrap">{{.Issuer}}{{if eq .CAA "violation"}} <span class="pill warn" title="{{.CAADetail}}">against CAA</span>{{else if eq .CAA "acknowledged"}} <span class="pill off" title="{{.CAADetail}}">against CAA, acknowledged</span>{{else if eq .CAA "unknown_issuer"}} <span class="muted small" title="The issuer is not in tlswatch's table of CAA identifiers">CAA not evaluated</span>{{else if eq .CAA "lookup_failed"}} <span class="muted small" title="{{.CAADetail}}">CAA lookup failed</span>{{end}}</td>
             <td data-label="Valid" class="mono muted hide-1140">{{if .NotBefore}}{{date $p.Loc .NotBefore}} → {{date $p.Loc .NotAfter}}{{else}}—{{end}}</td>
             <td data-label="Served by">{{if .TargetID}}<a href="/targets/{{.TargetID}}" class="ink">{{.TargetName}}</a>{{else if .MatchedFP}}<a href="/certificates?open={{short .MatchedFP}}&amp;all=1" class="ink">in the inventory</a>{{else if eq .State "acknowledged"}}<span class="muted">{{.AckBy}}{{if .AckComment}} · {{.AckComment}}{{end}}</span>{{else}}<span class="muted">not served</span>{{end}}</td>
             <td data-label="" class="m-end">{{if $edit}}{{if eq .State "unexpected"}}{{if $p.Can "findings.ack"}}<form method="post" action="/domains/{{$dm.ID}}/issuances/{{.ID}}/ack" class="row"><input type="text" name="comment" class="input w150" placeholder="why it is fine" aria-label="Comment">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-xs">Acknowledge</button>{{with .TargetNames $dm}}<a href="{{addTargets .}}" class="btn btn-xs">Add as target</a>{{end}}</form>{{else}}{{with .TargetNames $dm}}<a href="{{addTargets .}}" class="btn btn-xs">Add as target</a>{{end}}{{end}}{{else if or (eq .State "known") (eq .State "acknowledged")}}{{if not .TargetID}}<form method="post" action="/domains/{{$dm.ID}}/issuances/{{.ID}}/unexpected">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-xs">Mark unexpected</button></form>{{end}}{{end}}{{end}}</td>
@@ -92,6 +92,18 @@
         <dt>Added</dt><dd>{{date $p.Loc $dm.CreatedAt}}{{if $dm.CreatedBy}} by {{$dm.CreatedBy}}{{end}}</dd>
         {{- if $dm.Notes}}<dt>Notes</dt><dd class="wrap">{{$dm.Notes}}</dd>{{end}}
       </dl>
+    </section>
+    <section class="card pad">
+      <h2 class="h-sec">CAA</h2>
+      {{- if not $dm.CAACheckedAt}}
+      <p class="muted small">{{if $dm.CAAError}}The CAA lookup failed: {{$dm.CAAError}}{{else}}Looked up on the next poll.{{end}}</p>
+      {{- else if $dm.CAA.Empty}}
+      <p class="muted small">No CAA record: any CA may issue for {{$dm.Name}}.</p>
+      {{- else}}
+      <p class="muted small">{{if ne $dm.CAA.Name $dm.Name}}Inherited from <span class="mono">{{$dm.CAA.Name}}</span>. {{end}}Issuances by a CA it does not allow open a finding.</p>
+      {{- range $dm.CAA.Lines}}<div class="mono small wrap-any">{{.}}</div>{{end}}
+      {{- end}}
+      {{- if $dm.CAACheckedAt}}<p class="muted small">Looked up {{when $p.Loc $p.Now $dm.CAACheckedAt}}{{if $dm.CAAError}}; the last lookup failed: {{$dm.CAAError}}{{end}}.</p>{{end}}
     </section>
     <section class="card pad">
       <h2 class="h-sec">How it is judged</h2>

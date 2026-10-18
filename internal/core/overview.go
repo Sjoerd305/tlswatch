@@ -158,7 +158,7 @@ type RunSummary struct {
 // moment, newest first.
 func (s *Service) RecentChanges(ctx context.Context, since int64, limit int) ([]Finding, error) {
 	rows, err := s.DB.R.QueryContext(ctx, "SELECT "+findingCols+", "+findingSubject+" FROM findings f"+findingJoins+`
-		WHERE (f.kind IN ('certificate_changed', 'grade_changed', 'certificate_issued') AND f.opened_at >= ?) OR (f.resolved_at >= ? AND f.severity != 'info' AND f.resolved_at > f.opened_at)
+		WHERE (f.kind IN ('certificate_changed', 'grade_changed', 'certificate_issued', 'caa_changed') AND f.opened_at >= ?) OR (f.resolved_at >= ? AND f.severity != 'info' AND f.resolved_at > f.opened_at)
 		ORDER BY MAX(f.opened_at, f.resolved_at) DESC LIMIT ?`, since, since, limit)
 	if err != nil {
 		return nil, err

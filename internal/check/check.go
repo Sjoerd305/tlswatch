@@ -54,10 +54,15 @@ const (
 	// CertificateIssued is an event (info, recorded as resolved) on a
 	// domain watch: an expected issuance is now served by a target.
 	CertificateIssued Kind = "certificate_issued"
+	// CAAViolation is opened on a domain watch for an issuance its CAA
+	// record does not permit; CAAChanged is an event (info, recorded as
+	// resolved) when the watch's CAA record set changed.
+	CAAViolation Kind = "caa_violation"
+	CAAChanged   Kind = "caa_changed"
 )
 
 // Kinds lists every kind, for filters.
-var Kinds = []Kind{Expiring, RenewalOverdue, DistrustedCA, Revoked, RevocationUnknown, Expired, NotYetValid, ChainUntrusted, SelfSigned, HostnameMismatch, WeakSignature, LegacyProtocol, WeakConfiguration, CertificateChanged, IssuerChanged, GradeChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed, NodeOffline, UnexpectedCertificate, CTSourceFailed, CertificateIssued}
+var Kinds = []Kind{Expiring, RenewalOverdue, DistrustedCA, Revoked, RevocationUnknown, Expired, NotYetValid, ChainUntrusted, SelfSigned, HostnameMismatch, WeakSignature, LegacyProtocol, WeakConfiguration, CertificateChanged, IssuerChanged, GradeChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed, NodeOffline, UnexpectedCertificate, CTSourceFailed, CertificateIssued, CAAViolation, CAAChanged}
 
 // Label is the human name of a kind.
 func (k Kind) Label() string {
@@ -100,6 +105,10 @@ func (k Kind) Label() string {
 		return "CT source failed"
 	case CertificateIssued:
 		return "Certificate issued"
+	case CAAViolation:
+		return "CAA violation"
+	case CAAChanged:
+		return "CAA changed"
 	}
 	s := string(k)
 	if s == "" {
@@ -149,13 +158,15 @@ func (k Kind) Short() string {
 		return "ct source"
 	case CertificateIssued:
 		return "issued"
+	case CAAViolation, CAAChanged:
+		return "caa"
 	}
 	return string(k)
 }
 
 // AckResolves reports whether acknowledging a finding of this kind resolves it.
 func (k Kind) AckResolves() bool {
-	return k == CertificateChanged || k == IssuerChanged || k == UnexpectedCertificate
+	return k == CertificateChanged || k == IssuerChanged || k == UnexpectedCertificate || k == CAAViolation
 }
 
 // Silent reports whether a finding of the kind is never alerted, whatever

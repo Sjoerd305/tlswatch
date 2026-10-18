@@ -21,6 +21,7 @@ import (
 
 	"github.com/sjoerd305/tlswatch/internal/auth"
 	"github.com/sjoerd305/tlswatch/internal/authz"
+	"github.com/sjoerd305/tlswatch/internal/caa"
 	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/core"
 	"github.com/sjoerd305/tlswatch/internal/db"
@@ -63,7 +64,7 @@ func newHarnessUsers(t *testing.T, withUsers bool) *harness {
 	st := config.NewStore(d, key)
 	chans := &notify.Channels{DB: d, Key: key}
 	disp := &notify.Dispatcher{DB: d, Channels: chans, Log: log}
-	c := &core.Service{DB: d, Settings: st, Channels: chans, Dispatcher: disp, Log: log}
+	c := &core.Service{DB: d, Settings: st, Channels: chans, Dispatcher: disp, Log: log, CAAResolver: caa.Static{}}
 	// A local CT source with nothing issued: adding a domain polls in the
 	// background, and a test must not wait on, or race, the real service.
 	ctSrc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("[]")) }))
