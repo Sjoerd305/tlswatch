@@ -1,8 +1,10 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"slices"
 	"strconv"
 	"time"
 )
@@ -128,6 +130,7 @@ func (s *Service) Overview(ctx context.Context) (Overview, error) {
 	if o.Targets, err = s.queryTargets(ctx, "t.enabled = 1 AND t.current_fp IN (SELECT fingerprint FROM certificates)", 0); err != nil {
 		return o, err
 	}
+	SortExpiring(o.Targets, now)
 	if o.Open, err = s.Findings(ctx, FindingFilter{Limit: 8}); err != nil {
 		return o, err
 	}
@@ -197,4 +200,28 @@ func (s *Service) Summary(ctx context.Context, from, to int64) (RunSummary, erro
 		r.From = from
 	}
 	return r, nil
+}
+
+// SortExpiring orders targets by expiry, soonest first. When the lifetimes
+// of their leaves differ by more than a factor of four it orders by the
+// share of the lifetime remaining instead, so a 1-year certificate with 20
+// days (5 %) left ranks above a 6-day certificate with two days (33 %)
+// left, which is on its normal cycle.
+func SortExpiring(ts []Target, now time.Time) {
+	var shortest, longest int64
+	for _, t := range ts {
+		if t.Cert == nil || t.Cert.NotAfter <= t.Cert.NotBefore {
+			continue
+		}
+		l := t.Cert.NotAfter - t.Cert.NotBefore
+		if shortest == 0 || l < shortest {
+			shortest = l
+		}
+		longest = max(longest, l)
+	}
+	if shortest > 0 && longest > 4*shortest {
+		slices.SortStableFunc(ts, func(a, b Target) int { return cmp.Compare(a.ShareLeft(now), b.ShareLeft(now)) })
+		return
+	}
+	slices.SortStableFunc(ts, func(a, b Target) int { return cmp.Compare(a.NotAfter, b.NotAfter) })
 }

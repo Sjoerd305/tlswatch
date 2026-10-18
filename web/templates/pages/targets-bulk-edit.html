@@ -68,13 +68,16 @@
 
   <p class="form-sec">Thresholds and schedule</p>
   <div class="fgrid c2">
-    <div class="field opt">{{template "change" (dict "C" $c "K" "thresholds" "L" "Warning and critical, days")}}
+    <div class="field opt">{{template "change" (dict "C" $c "K" "thresholds" "L" "Warning and critical, renewal point")}}
       <div class="bulk-value">
         <div class="fgrid c2">
-          <input id="warn" name="warn_days" class="input mono{{if $e.warn_days}} invalid{{end}}" value="{{$f.Warn}}" inputmode="numeric" placeholder="warning, {{$d.Manual.WarnDays}}" aria-label="Warning, days">
-          <input id="crit" name="crit_days" class="input mono{{if $e.crit_days}} invalid{{end}}" value="{{$f.Crit}}" inputmode="numeric" placeholder="critical, {{$d.Manual.CritDays}}" aria-label="Critical, days">
+          <input id="warn" name="warn_days" class="input mono{{if $e.warn_days}} invalid{{end}}" value="{{$f.Warn}}" inputmode="numeric" placeholder="warning, {{$d.Manual.WarnDays}} d" aria-label="Warning, days">
+          <input id="warnpct" name="warn_pct" class="input mono{{if $e.warn_pct}} invalid{{end}}" value="{{$f.WarnPct}}" inputmode="numeric" placeholder="warning, {{pct $d.Manual.WarnPct}}" aria-label="Warning, % of lifetime left">
+          <input id="crit" name="crit_days" class="input mono{{if $e.crit_days}} invalid{{end}}" value="{{$f.Crit}}" inputmode="numeric" placeholder="critical, {{$d.Manual.CritDays}} d" aria-label="Critical, days">
+          <input id="critpct" name="crit_pct" class="input mono{{if $e.crit_pct}} invalid{{end}}" value="{{$f.CritPct}}" inputmode="numeric" placeholder="critical, {{pct $d.Manual.CritPct}}" aria-label="Critical, % of lifetime left">
+          <input id="renewalpct" name="renewal_pct" class="input mono{{if $e.renewal_pct}} invalid{{end}}" value="{{$f.RenewalPt}}" inputmode="numeric" placeholder="renewal point, {{renewalPoint}} %" aria-label="Renewal point, % of lifetime">
         </div>
-        <span class="help">Empty follows Settings › Defaults: {{$d.Manual.WarnDays}} and {{$d.Manual.CritDays}} days for manual renewal, {{$d.Managed.WarnDays}} and {{$d.Managed.CritDays}} for renewal managed.</span>{{template "err" $e.warn_days}}{{template "err" $e.crit_days}}
+        <span class="help">Days or a share of the lifetime left, whichever fires first. Empty follows Settings › Defaults: warning {{threshold $d.Manual.WarnDays $d.Manual.WarnPct}} and critical {{threshold $d.Manual.CritDays $d.Manual.CritPct}} for manual renewal, {{threshold $d.Managed.WarnDays $d.Managed.WarnPct}} and {{threshold $d.Managed.CritDays $d.Managed.CritPct}} for renewal managed; a percentage of 0 means days only. The renewal point (50 to 95 %) is for renewal-managed targets.</span>{{template "err" $e.warn_days}}{{template "err" $e.crit_days}}{{template "err" $e.warn_pct}}{{template "err" $e.crit_pct}}{{template "err" $e.renewal_pct}}
       </div>
     </div>
     <div class="field opt">{{template "change" (dict "C" $c "K" "interval_s" "L" "Interval")}}

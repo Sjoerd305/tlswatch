@@ -61,6 +61,10 @@ func (a *alerter) data(f Finding, event string) notify.AlertData {
 	d := a.base
 	d.Event, d.Severity, d.Kind, d.KindLabel = event, string(f.Severity), string(f.Kind), f.Kind.Label()
 	d.Details, d.DaysLeft, d.OpenedAt = f.Details, f.DaysLeft, time.Unix(f.OpenedAt, 0)
+	if f.DaysLeft != nil && *f.DaysLeft >= 0 && *f.DaysLeft < check.HoursUnder && !d.NotAfter.IsZero() {
+		h := int(d.NotAfter.Sub(a.now) / time.Hour)
+		d.HoursLeft = &h
+	}
 	if f.Fingerprint != "" {
 		d.Fingerprint = f.Fingerprint
 	}

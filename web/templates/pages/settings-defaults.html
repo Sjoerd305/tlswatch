@@ -7,14 +7,18 @@
     {{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
     <form class="card form" method="post" action="/settings/defaults">
       {{template "csrf" $p.CSRF}}
-      <p class="form-sec">Expiry thresholds, days before expiry</p>
+      <p class="form-sec">Expiry thresholds, days or share of the lifetime left</p>
       <div class="fgrid c4">
-        <div class="field"><label class="label" for="mw">Manual · warning</label><input id="mw" name="manual_warn" class="input mono" value="{{$x.Manual.WarnDays}}" inputmode="numeric"></div>
-        <div class="field"><label class="label" for="mc">Manual · critical</label><input id="mc" name="manual_crit" class="input mono" value="{{$x.Manual.CritDays}}" inputmode="numeric"></div>
-        <div class="field"><label class="label" for="aw">Renewal managed · warning</label><input id="aw" name="managed_warn" class="input mono" value="{{$x.Managed.WarnDays}}" inputmode="numeric"></div>
-        <div class="field"><label class="label" for="ac">Renewal managed · critical</label><input id="ac" name="managed_crit" class="input mono" value="{{$x.Managed.CritDays}}" inputmode="numeric"></div>
+        <div class="field"><label class="label" for="mw">Manual · warning, days</label><input id="mw" name="manual_warn" class="input mono" value="{{$x.Manual.WarnDays}}" inputmode="numeric"></div>
+        <div class="field"><label class="label" for="mwp">Manual · warning, %</label><input id="mwp" name="manual_warn_pct" class="input mono" value="{{if $x.Manual.WarnPct}}{{$x.Manual.WarnPct}}{{end}}" inputmode="numeric" placeholder="days only"></div>
+        <div class="field"><label class="label" for="mc">Manual · critical, days</label><input id="mc" name="manual_crit" class="input mono" value="{{$x.Manual.CritDays}}" inputmode="numeric"></div>
+        <div class="field"><label class="label" for="mcp">Manual · critical, %</label><input id="mcp" name="manual_crit_pct" class="input mono" value="{{if $x.Manual.CritPct}}{{$x.Manual.CritPct}}{{end}}" inputmode="numeric" placeholder="days only"></div>
+        <div class="field"><label class="label" for="aw">Renewal managed · warning, days</label><input id="aw" name="managed_warn" class="input mono" value="{{$x.Managed.WarnDays}}" inputmode="numeric"></div>
+        <div class="field"><label class="label" for="awp">Renewal managed · warning, %</label><input id="awp" name="managed_warn_pct" class="input mono" value="{{if $x.Managed.WarnPct}}{{$x.Managed.WarnPct}}{{end}}" inputmode="numeric" placeholder="days only"></div>
+        <div class="field"><label class="label" for="ac">Renewal managed · critical, days</label><input id="ac" name="managed_crit" class="input mono" value="{{$x.Managed.CritDays}}" inputmode="numeric"></div>
+        <div class="field"><label class="label" for="acp">Renewal managed · critical, %</label><input id="acp" name="managed_crit_pct" class="input mono" value="{{if $x.Managed.CritPct}}{{$x.Managed.CritPct}}{{end}}" inputmode="numeric" placeholder="days only"></div>
       </div>
-      <span class="help lift">A threshold fires when strictly fewer whole days remain: warning 30 alerts at 29 days. ACME clients renew at about two-thirds of the lifetime, so renewal-managed targets warn later.</span>
+      <span class="help lift">A threshold fires when strictly fewer whole days remain, or a smaller share of the leaf's lifetime: warning 30 days or 33 % alerts at 29 days, and on a 47-day certificate at 15 days. The one that fires first wins; an empty percentage means days only. ACME clients renew at about two-thirds of the lifetime, so renewal-managed targets warn later, and report renewal overdue once 75 % of the lifetime has passed.</span>
       <p class="form-sec">Probing</p>
       <div class="fgrid c4">
         <div class="field"><label class="label" for="iv">Interval</label><select id="iv" name="interval_s" class="input">{{range $v := (seq 0 5)}}{{$n := index (dict "0" 3600 "1" 21600 "2" 43200 "3" 86400 "4" 259200 "5" 604800) (print $v)}}<option value="{{$n}}"{{if eq (print $n) (print $x.IntervalS)}} selected{{end}}>{{duration $n}}</option>{{end}}</select></div>

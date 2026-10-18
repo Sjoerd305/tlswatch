@@ -79,13 +79,16 @@ func (s *Service) Evaluate(ctx context.Context, t Target, r probe.Result, st con
 	}
 	eff := t.Effective(st.Defaults)
 	ct := check.Target{
-		Trust: t.Trust, ServerName: t.ServerName, Warn: t.WarnDays, Crit: t.CritDays,
-		Manual:         check.Thresholds{Warn: st.Defaults.Manual.WarnDays, Crit: st.Defaults.Manual.CritDays},
-		Managed:        check.Thresholds{Warn: st.Defaults.Managed.WarnDays, Crit: st.Defaults.Managed.CritDays},
+		Trust: t.Trust, ServerName: t.ServerName, Warn: t.WarnDays, Crit: t.CritDays, WarnPct: t.WarnPct, CritPct: t.CritPct,
+		Manual: checkThresholds(st.Defaults.Manual), Managed: checkThresholds(st.Defaults.Managed), RenewalPoint: eff.RenewalPct,
 		RenewalManaged: t.RenewalManaged, RenewalSet: t.RenewalSet, ExpectedIssuer: t.ExpectedIssuer,
 		Debounce: eff.Debounce, PinnedFP: t.PinnedFP, SkipLegacy: t.SkipLegacy,
 	}
 	return check.Evaluate(ct, prev, r, s.now()), nil
+}
+
+func checkThresholds(th config.Thresholds) check.Thresholds {
+	return check.Thresholds{Warn: th.WarnDays, Crit: th.CritDays, WarnPct: th.WarnPct, CritPct: th.CritPct}
 }
 
 // RecentLeaves is how far back a leaf served at any address of a target
@@ -307,6 +310,9 @@ func applyFindingsTx(ctx context.Context, tx *sql.Tx, targetID int64, out check.
 		want[f.Kind] = true
 		expiredNow = expiredNow || f.Kind == check.Expired
 	}
+	// While renewal_overdue is open it speaks for a warning-level expiring:
+	// one alert, not two. Escalation to critical still alerts.
+	overdue := want[check.RenewalOverdue]
 	for _, cf := range out.Open {
 		if old, ok := open[cf.Kind]; ok {
 			if _, err := tx.ExecContext(ctx, "UPDATE findings SET severity=?, details=?, fingerprint=?, days_left=? WHERE id=?",
@@ -330,10 +336,13 @@ func applyFindingsTx(ctx context.Context, tx *sql.Tx, targetID int64, out check.
 		if err != nil {
 			return err
 		}
+		sum.Opened = append(sum.Opened, cf.Kind)
+		if overdue && cf.Kind == check.Expiring && cf.Severity == check.Warning {
+			continue
+		}
 		if err := al.send(ctx, nf, notify.EventOpen); err != nil {
 			return err
 		}
-		sum.Opened = append(sum.Opened, cf.Kind)
 	}
 	for kind, f := range open {
 		if want[kind] {

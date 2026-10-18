@@ -462,6 +462,9 @@ type targetForm struct {
 	Renewal   string // auto, managed, manual
 	Warn      string
 	Crit      string
+	WarnPct   string
+	CritPct   string
+	RenewalPt string // the renewal point, %
 	Interval  string
 	Timeout   string
 	Retries   string
@@ -508,7 +511,8 @@ func itoaPtr(p *int) string {
 }
 
 func formFromTarget(t core.Target) targetForm {
-	f := targetForm{T: t, Warn: itoaPtr(t.WarnDays), Crit: itoaPtr(t.CritDays), Interval: itoaPtr(t.IntervalS),
+	f := targetForm{T: t, Warn: itoaPtr(t.WarnDays), Crit: itoaPtr(t.CritDays), WarnPct: itoaPtr(t.WarnPct), CritPct: itoaPtr(t.CritPct),
+		RenewalPt: itoaPtr(t.RenewalPct), Interval: itoaPtr(t.IntervalS),
 		Timeout: itoaPtr(t.TimeoutS), Retries: itoaPtr(t.Retries), Debounce: itoaPtr(t.Debounce),
 		RemindW: itoaPtr(t.RemindWarnS), RemindC: itoaPtr(t.RemindCritS), TagsText: strings.Join(t.Tags, ", ")}
 	switch {
@@ -623,6 +627,10 @@ func readTargetForm(v url.Values, existing *core.Target) targetForm {
 	f.RemindW, f.RemindC = v.Get("remind_warn_s"), v.Get("remind_crit_s")
 	t.WarnDays = num("warn_days", f.Warn, 1)
 	t.CritDays = num("crit_days", f.Crit, 1)
+	f.WarnPct, f.CritPct, f.RenewalPt = trimPct(v.Get("warn_pct")), trimPct(v.Get("crit_pct")), trimPct(v.Get("renewal_pct"))
+	t.WarnPct = num("warn_pct", f.WarnPct, 1)
+	t.CritPct = num("crit_pct", f.CritPct, 1)
+	t.RenewalPct = num("renewal_pct", f.RenewalPt, 1)
 	t.IntervalS = num("interval_s", f.Interval, 1)
 	t.TimeoutS = num("timeout_s", f.Timeout, 1)
 	t.Retries = num("retries", f.Retries, 1)
@@ -647,6 +655,11 @@ func readTargetForm(v url.Values, existing *core.Target) targetForm {
 	t.Notes = strings.TrimSpace(strings.ReplaceAll(v.Get("notes"), "\r\n", "\n"))
 	f.T = t
 	return f
+}
+
+// trimPct accepts a percentage typed with its sign: "33 %" is 33.
+func trimPct(v string) string {
+	return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(v), "%"))
 }
 
 func isIP(h string) bool {

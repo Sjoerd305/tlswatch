@@ -146,7 +146,10 @@ func newEnv(t *testing.T) *env {
 func (e *env) target(mut func(*Target)) Target {
 	e.t.Helper()
 	t := Target{Name: "Portal", Host: "portal.example.nl", Port: 443, Protocol: probe.TLS, ServerName: "portal.example.nl",
-		Trust: probe.TrustSystem, AllAddresses: true, AllChannels: true, Enabled: true, RenewalSet: true}
+		Trust: probe.TrustSystem, AllAddresses: true, AllChannels: true, Enabled: true, RenewalSet: true,
+		// The fixtures are long-lived certificates judged in days; the
+		// lifetime tests set the percentages back to the defaults (nil).
+		WarnPct: intp(0), CritPct: intp(0)}
 	if mut != nil {
 		mut(&t)
 	}

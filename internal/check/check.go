@@ -21,6 +21,7 @@ type Kind string
 // The finding kinds from the specification.
 const (
 	Expiring           Kind = "expiring"
+	RenewalOverdue     Kind = "renewal_overdue"
 	Expired            Kind = "expired"
 	NotYetValid        Kind = "not_yet_valid"
 	ChainUntrusted     Kind = "chain_untrusted"
@@ -51,11 +52,13 @@ const (
 )
 
 // Kinds lists every kind, for filters.
-var Kinds = []Kind{Expiring, Expired, NotYetValid, ChainUntrusted, SelfSigned, HostnameMismatch, WeakSignature, LegacyProtocol, WeakConfiguration, CertificateChanged, IssuerChanged, GradeChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed, NodeOffline, UnexpectedCertificate, CTSourceFailed, CertificateIssued}
+var Kinds = []Kind{Expiring, RenewalOverdue, Expired, NotYetValid, ChainUntrusted, SelfSigned, HostnameMismatch, WeakSignature, LegacyProtocol, WeakConfiguration, CertificateChanged, IssuerChanged, GradeChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed, NodeOffline, UnexpectedCertificate, CTSourceFailed, CertificateIssued}
 
 // Label is the human name of a kind.
 func (k Kind) Label() string {
 	switch k {
+	case RenewalOverdue:
+		return "Renewal overdue"
 	case NotYetValid:
 		return "Not yet valid"
 	case ChainUntrusted:
@@ -103,6 +106,8 @@ func (k Kind) Short() string {
 		return "changed"
 	case IssuerChanged:
 		return "issuer"
+	case RenewalOverdue:
+		return "renewal"
 	case NotYetValid:
 		return "not yet valid"
 	case ChainUntrusted:
@@ -226,16 +231,29 @@ func IsACMEIssuer(org, cn string) bool {
 	return strings.HasPrefix(cn, "ZeroSSL")
 }
 
-// Thresholds are warning and critical days.
-type Thresholds struct{ Warn, Crit int }
+// Thresholds are warning and critical days, and the same as a share of
+// the leaf's lifetime remaining in percent (0: days only). The one that
+// fires first wins.
+type Thresholds struct{ Warn, Crit, WarnPct, CritPct int }
+
+// DefaultRenewalPoint is the share of its lifetime, in percent, after
+// which a renewal-managed leaf is overdue: past the two-thirds where ACME
+// clients renew, with margin.
+const DefaultRenewalPoint = 75
 
 // Target is the configuration the checks need.
 type Target struct {
-	Trust          probe.TrustMode
-	ServerName     string
-	Warn, Crit     *int // explicit per-target values; nil follows the default
-	Manual         Thresholds
-	Managed        Thresholds
+	Trust      probe.TrustMode
+	ServerName string
+	// Explicit per-target values; nil follows the default, a percentage
+	// of 0 means days only.
+	Warn, Crit       *int
+	WarnPct, CritPct *int
+	Manual           Thresholds
+	Managed          Thresholds
+	// RenewalPoint is the share of the lifetime after which renewal_overdue
+	// opens on a renewal-managed target; 0 is DefaultRenewalPoint.
+	RenewalPoint   int
 	RenewalManaged bool
 	RenewalSet     bool // false: derive RenewalManaged from the issuer
 	ExpectedIssuer string
@@ -323,6 +341,48 @@ func DaysLeft(notAfter, now time.Time) int {
 	return int(d / (24 * time.Hour))
 }
 
+// HoursUnder is the number of days below which time left is shown in
+// hours.
+const HoursUnder = 7
+
+// Span is a duration as the UI and alerts show it: whole days ("12 days",
+// "1 day"), or whole hours under HoursUnder days ("31 h"), truncated like
+// DaysLeft. A negative span is shown as its absolute value.
+func Span(d time.Duration) string {
+	if d < 0 {
+		d = -d
+	}
+	if d < HoursUnder*24*time.Hour {
+		return fmt.Sprintf("%d h", int(d/time.Hour))
+	}
+	if days := int(d / (24 * time.Hour)); days != 1 {
+		return fmt.Sprintf("%d days", days)
+	}
+	return "1 day"
+}
+
+// ShareLeft is the share of the lifetime from notBefore to notAfter that
+// remains at now, in percent, 0 to 100.
+func ShareLeft(notBefore, notAfter, now time.Time) float64 {
+	life := notAfter.Sub(notBefore)
+	if life <= 0 {
+		return 0
+	}
+	return min(max(float64(notAfter.Sub(now))*100/float64(life), 0), 100)
+}
+
+// Due reports which threshold th sets off with days whole days and share
+// percent of the leaf's lifetime left: Critical, Warning or "".
+func (th Thresholds) Due(days int, share float64) Severity {
+	switch {
+	case days < th.Crit || th.CritPct > 0 && share < float64(th.CritPct):
+		return Critical
+	case days < th.Warn || th.WarnPct > 0 && share < float64(th.WarnPct):
+		return Warning
+	}
+	return ""
+}
+
 // Evaluate applies every check to one probe result. The caller resolves
 // every open finding the outcome neither opens nor keeps.
 func Evaluate(t Target, prev Previous, r probe.Result, now time.Time) Outcome {
@@ -353,6 +413,7 @@ func Evaluate(t Target, prev Previous, r probe.Result, now time.Time) Outcome {
 
 	e.inconsistent(ok)
 	e.facts(ok)
+	e.renewal()
 	e.legacy(ok)
 	e.grade(ok)
 	e.expectedIssuer(info)
@@ -518,7 +579,36 @@ func thresholds(t Target, info probe.CertInfo) (bool, Thresholds) {
 	if t.Crit != nil {
 		th.Crit = *t.Crit
 	}
+	if t.WarnPct != nil {
+		th.WarnPct = *t.WarnPct
+	}
+	if t.CritPct != nil {
+		th.CritPct = *t.CritPct
+	}
 	return managed, th
+}
+
+// renewal opens renewal_overdue on a renewal-managed target whose current
+// leaf has used more than the renewal point of its lifetime: the ACME
+// client should have replaced it by now. An expired leaf has its own
+// finding.
+func (e *evaluation) renewal() {
+	leaf := e.out.Leaf
+	if !e.out.RenewalManaged || !e.now.Before(leaf.NotAfter) {
+		return
+	}
+	point := e.t.RenewalPoint
+	if point == 0 {
+		point = DefaultRenewalPoint
+	}
+	life := leaf.NotAfter.Sub(leaf.NotBefore)
+	due := leaf.NotBefore.Add(life * time.Duration(point) / 100)
+	if life <= 0 || !e.now.After(due) {
+		return
+	}
+	days := DaysLeft(leaf.NotAfter, e.now)
+	e.open(Finding{Kind: RenewalOverdue, Severity: Warning, Fingerprint: e.out.LeafFP, DaysLeft: &days,
+		Details: fmt.Sprintf("renewal was due %s ago; the certificate expires in %s", Span(e.now.Sub(due)), Span(leaf.NotAfter.Sub(e.now)))})
 }
 
 // inconsistent opens a finding when the addresses serve different leaves.
@@ -740,18 +830,25 @@ func addressFacts(t Target, a probe.Address, th Thresholds, now time.Time) ([]Fi
 		}
 	}
 	days := DaysLeft(earliest, now)
+	// The share is what remains until the earliest expiry, against the
+	// leaf's own lifetime.
+	share := 100.0
+	if life := leaf.NotAfter.Sub(leaf.NotBefore); life > 0 {
+		share = float64(earliest.Sub(now)) * 100 / float64(life)
+	}
 	if len(expired) > 0 {
 		d := days
 		fs = append(fs, Finding{Kind: Expired, Severity: Critical, Fingerprint: fp, DaysLeft: &d,
 			Details: fmt.Sprintf("%s expired %s", strings.Join(expired, ", "), earliest.UTC().Format("2006-01-02"))})
-	} else if days < th.Warn {
-		sev := Warning
-		if days < th.Crit {
-			sev = Critical
+	} else if sev := th.Due(days, share); sev != "" {
+		left := Span(earliest.Sub(now)) + " left"
+		// Name the share when it, not the days, set the severity.
+		if th.Due(days, 100) != sev {
+			left += fmt.Sprintf(", %d %% of its lifetime", int(share))
 		}
 		d := days
 		fs = append(fs, Finding{Kind: Expiring, Severity: sev, Fingerprint: fp, DaysLeft: &d,
-			Details: fmt.Sprintf("%d days left · %s", days, earliest.UTC().Format("2006-01-02"))})
+			Details: fmt.Sprintf("%s · %s", left, earliest.UTC().Format("2006-01-02"))})
 	}
 	if len(early) > 0 {
 		fs = append(fs, Finding{Kind: NotYetValid, Severity: Critical, Fingerprint: fp,

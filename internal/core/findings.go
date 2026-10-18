@@ -256,9 +256,20 @@ func (s *Service) Remind(ctx context.Context) (int, error) {
 	}
 	targets := map[int64]Target{}
 	recipients := map[int64][]notify.Channel{} // per target, listed once per run
+	// An open renewal_overdue speaks for a warning-level expiring, as when
+	// they opened.
+	overdue := map[int64]bool{}
+	for _, f := range findings {
+		if f.Kind == check.RenewalOverdue {
+			overdue[f.TargetID] = true
+		}
+	}
 	queued := 0
 	for _, f := range findings {
 		if f.Severity == check.Info || f.Acked(now) {
+			continue
+		}
+		if f.Kind == check.Expiring && f.Severity == check.Warning && overdue[f.TargetID] {
 			continue
 		}
 		if f.NodeID != 0 {

@@ -24,7 +24,7 @@ const targetCols = `t.id, t.name, t.host, t.port, t.protocol, t.servername, t.tr
 	t.remind_warn_s, t.remind_crit_s, t.all_addresses, t.all_channels, t.tags, t.notes, t.enabled, t.created_at, t.created_by, t.updated_at,
 	t.status, t.pinned_fp, t.current_fp, t.not_after, t.tls_version, t.address_count, t.last_check, t.last_error,
 	t.fail_streak, t.ok_streak, t.dns_fail_streak, t.dns_ok_streak, t.next_check, t.legacy_check, t.legacy_checked, t.legacy_accepted,
-	t.grade, t.grade_reasons, t.grade_rules, t.config_test,
+	t.grade, t.grade_reasons, t.grade_rules, t.config_test, t.warn_pct, t.crit_pct, t.renewal_pct,
 	COALESCE(t.node_id, 0), COALESCE(n.name, '')`
 
 const targetFrom = ` FROM targets t LEFT JOIN ca_bundles b ON b.id = t.bundle_id LEFT JOIN nodes n ON n.id = t.node_id `
@@ -33,13 +33,13 @@ func scanTarget(r interface{ Scan(...any) error }) (Target, error) {
 	var t Target
 	var proto, trust, tags, legacy, reasons, configTest string
 	var legacyCheck bool
-	var warn, crit, interval, timeout, retries, debounce, rw, rc sql.NullInt64
+	var warn, crit, interval, timeout, retries, debounce, rw, rc, warnPct, critPct, renewalPct sql.NullInt64
 	err := r.Scan(&t.ID, &t.Name, &t.Host, &t.Port, &proto, &t.ServerName, &trust, &t.BundleID, &t.BundleName,
 		&t.RenewalManaged, &t.RenewalSet, &t.ExpectedIssuer, &warn, &crit, &interval, &timeout, &retries, &debounce,
 		&rw, &rc, &t.AllAddresses, &t.AllChannels, &tags, &t.Notes, &t.Enabled, &t.CreatedAt, &t.CreatedBy, &t.UpdatedAt,
 		&t.Status, &t.PinnedFP, &t.CurrentFP, &t.NotAfter, &t.TLSVersion, &t.AddressCount, &t.LastCheck, &t.LastError,
 		&t.FailStreak, &t.OkStreak, &t.DNSFail, &t.DNSOk, &t.NextCheck, &legacyCheck, &t.LegacyChecked, &legacy,
-		&t.Grade, &reasons, &t.GradeRules, &configTest,
+		&t.Grade, &reasons, &t.GradeRules, &configTest, &warnPct, &critPct, &renewalPct,
 		&t.NodeID, &t.NodeName)
 	if err != nil {
 		return t, err
@@ -47,6 +47,7 @@ func scanTarget(r interface{ Scan(...any) error }) (Target, error) {
 	t.Protocol, t.Trust = probe.Protocol(proto), probe.TrustMode(trust)
 	t.WarnDays, t.CritDays, t.IntervalS, t.TimeoutS = intPtr(warn), intPtr(crit), intPtr(interval), intPtr(timeout)
 	t.Retries, t.Debounce, t.RemindWarnS, t.RemindCritS = intPtr(retries), intPtr(debounce), intPtr(rw), intPtr(rc)
+	t.WarnPct, t.CritPct, t.RenewalPct = intPtr(warnPct), intPtr(critPct), intPtr(renewalPct)
 	if tags != "" {
 		t.Tags = strings.Split(tags, ",")
 	}
@@ -242,6 +243,16 @@ func (t *Target) Validate(st config.Settings) map[string]string {
 			errs["crit_days"] = fmt.Sprintf("Critical must be 1 to %d days (warning minus 1)", eff.Warn-1)
 		}
 	}
+	if t.WarnPct != nil || t.CritPct != nil {
+		if msg := config.CheckPct(eff.WarnPct, eff.CritPct); msg != "" {
+			field := "crit_pct"
+			if eff.WarnPct < 0 || eff.WarnPct > 99 {
+				field = "warn_pct"
+			}
+			errs[field] = strings.ToUpper(msg[:1]) + msg[1:]
+		}
+	}
+	rng("renewal_pct", t.RenewalPct, 50, 95, "The renewal point must be 50 to 95 % of the lifetime")
 	rng("interval_s", t.IntervalS, 3600, 7*86400, "Interval must be 1 hour to 7 days")
 	rng("timeout_s", t.TimeoutS, 2, 60, "Timeout must be 2 to 60 seconds")
 	rng("retries", t.Retries, 0, 5, "Retries must be 0 to 5")
@@ -352,12 +363,14 @@ func (s *Service) saveTargetTx(ctx context.Context, tx *sql.Tx, t Target, def co
 	args := []any{t.Name, t.Host, t.Port, string(t.Protocol), t.ServerName, string(t.Trust), nullID(t.BundleID),
 		t.RenewalManaged, t.RenewalSet, t.ExpectedIssuer, nullInt(t.WarnDays), nullInt(t.CritDays), nullInt(t.IntervalS),
 		nullInt(t.TimeoutS), nullInt(t.Retries), nullInt(t.Debounce), nullInt(t.RemindWarnS), nullInt(t.RemindCritS),
-		t.AllAddresses, !t.SkipLegacy, t.AllChannels, strings.Join(t.Tags, ","), t.Notes, nullID(t.NodeID), t.Enabled, now}
+		t.AllAddresses, !t.SkipLegacy, t.AllChannels, strings.Join(t.Tags, ","), t.Notes, nullID(t.NodeID), t.Enabled,
+		nullInt(t.WarnPct), nullInt(t.CritPct), nullInt(t.RenewalPct), now}
 	if t.ID == 0 {
 		res, err := tx.ExecContext(ctx, `INSERT INTO targets(name, host, port, protocol, servername, trust_mode, bundle_id,
 			renewal_managed, renewal_set, expected_issuer, warn_days, crit_days, interval_s, timeout_s, retries, debounce,
-			remind_warn_s, remind_crit_s, all_addresses, legacy_check, all_channels, tags, notes, node_id, enabled, updated_at, created_at, created_by, status, next_check)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`, append(args, now, user, StatusPending)...)
+			remind_warn_s, remind_crit_s, all_addresses, legacy_check, all_channels, tags, notes, node_id, enabled, warn_pct, crit_pct, renewal_pct,
+			updated_at, created_at, created_by, status, next_check)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`, append(args, now, user, StatusPending)...)
 		if err != nil {
 			return 0, uniqueTarget(err)
 		}
@@ -377,7 +390,8 @@ func (s *Service) saveTargetTx(ctx context.Context, tx *sql.Tx, t Target, def co
 		}
 		_, err = tx.ExecContext(ctx, `UPDATE targets SET name=?, host=?, port=?, protocol=?, servername=?, trust_mode=?, bundle_id=?,
 			renewal_managed=?, renewal_set=?, expected_issuer=?, warn_days=?, crit_days=?, interval_s=?, timeout_s=?, retries=?, debounce=?,
-			remind_warn_s=?, remind_crit_s=?, all_addresses=?, legacy_check=?, all_channels=?, tags=?, notes=?, node_id=?, enabled=?, updated_at=? WHERE id = ?`,
+			remind_warn_s=?, remind_crit_s=?, all_addresses=?, legacy_check=?, all_channels=?, tags=?, notes=?, node_id=?, enabled=?,
+			warn_pct=?, crit_pct=?, renewal_pct=?, updated_at=? WHERE id = ?`,
 			append(args, t.ID)...)
 		if err != nil {
 			return 0, uniqueTarget(err)

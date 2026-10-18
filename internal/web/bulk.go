@@ -301,7 +301,9 @@ func applyBulk(t *core.Target, f *bulkEditForm, add, remove []string) []string {
 	set("trust", func() { t.Trust, t.BundleID = v.Trust, v.BundleID })
 	set("renewal", func() { t.RenewalSet, t.RenewalManaged = v.RenewalSet, v.RenewalManaged })
 	set("expected_issuer", func() { t.ExpectedIssuer = v.ExpectedIssuer })
-	set("thresholds", func() { t.WarnDays, t.CritDays = v.WarnDays, v.CritDays })
+	set("thresholds", func() {
+		t.WarnDays, t.CritDays, t.WarnPct, t.CritPct, t.RenewalPct = v.WarnDays, v.CritDays, v.WarnPct, v.CritPct, v.RenewalPct
+	})
 	set("interval_s", func() { t.IntervalS = v.IntervalS })
 	set("addresses", func() { t.AllAddresses = v.AllAddresses })
 	set("probe", func() { t.TimeoutS, t.Retries, t.Debounce = v.TimeoutS, v.Retries, v.Debounce })
@@ -444,7 +446,7 @@ func (s *Server) bulkEdit(w http.ResponseWriter, r *http.Request) {
 // bulkKey maps a form field to the Change box that covers it.
 func bulkKey(field string) string {
 	switch field {
-	case "warn_days", "crit_days":
+	case "warn_days", "crit_days", "warn_pct", "crit_pct", "renewal_pct":
 		return "thresholds"
 	case "bundle_id", "trust_mode":
 		return "trust"

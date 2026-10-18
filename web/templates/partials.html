@@ -19,8 +19,8 @@
 {{/* th: a sortable column head. dict "S" Sort "K" key "L" label, optional "C" extra class, "N" true for a numeric column. */}}
 {{define "th"}}<th class="sortable{{with .C}} {{.}}{{end}}{{if .S.Dir .K}} sorted{{end}}"{{if .N}} data-num{{end}}{{with .S.Dir .K}} aria-sort="{{.}}"{{end}}><a href="{{.S.Href .K}}" data-sort="{{.K}}">{{.L}}<span class="arrow" aria-hidden="true">{{with .S.Dir .K}}{{if eq . "descending"}}▼{{else}}▲{{end}}{{end}}</span></a></th>{{end}}
 
-{{/* days-left: whole days until expiry, or "expired" once past. */}}
-{{define "days-left"}}{{if lt . 0}}<span title="{{.}} days">expired</span>{{else}}{{.}}{{end}}{{end}}
+{{/* days-left: whole days until expiry (hours under a week), or "expired" once past. timeLeft */}}
+{{define "days-left"}}{{if lt .Days 0}}<span title="{{.Days}} days">expired</span>{{else}}{{.}}{{end}}{{end}}
 
 {{define "err"}}{{with .}}<span class="err">{{.}}</span>{{end}}{{end}}
 
@@ -37,7 +37,7 @@
   <td data-label="Host" class="mono m-full"><span class="cap w240" title="{{$t.HostPort}}">{{$t.HostPort}}{{if ne (print $t.Protocol) "tls"}} <span class="tag">{{$t.Protocol}}</span>{{end}}{{if gt $t.AddressCount 1}} <span class="tag">{{$t.AddressCount}} addr</span>{{end}}</span></td>
   {{- if $r.ShowNode}}<td data-label="Node" class="m-hide hide-960">{{if $t.NodeID}}<a class="tag cap w140" href="/targets?node={{$t.NodeID}}" data-chip-for="#targets" data-chip-key="node" data-chip-value="{{$t.NodeID}}" title="Show only targets probed from {{$t.NodeName}}">{{$t.NodeName}}</a>{{else}}<span class="muted">server</span>{{end}}</td>{{end}}
   {{- if $t.NotAfter}}{{$c := $t.ExpiryClass $p.Settings.Defaults $p.Now}}
-  <td data-label="Days" class="num mono days m-lead m-end{{if $c}} {{$c}}-t{{end}}">{{template "days-left" (days $p.Now $t.NotAfter)}}</td>
+  <td data-label="Days" class="num mono days m-lead m-end{{if $c}} {{$c}}-t{{end}}">{{template "days-left" (left $p.Now $t.NotAfter)}}</td>
   <td data-label="Lifetime" class="m-hide hide-1380">{{if $t.Cert}}{{template "bar" (dict "Used" (used $p.Now $t.Cert.NotBefore $t.Cert.NotAfter) "Class" ($t.BarClass $p.Settings.Defaults $p.Now))}}{{end}}</td>
   <td data-label="Expires" class="mono m-hide hide-1240">{{date $p.Loc $t.NotAfter}}</td>
   <td data-label="Issuer" class="m-hide hide-1140">{{if $t.Cert}}<span class="cap w180" title="{{$t.Cert.IssuerName}}">{{$t.Cert.IssuerName}}{{if eq (print $t.Trust) "self-signed"}} <span class="tag">pinned</span>{{else if $t.RenewalManaged}} <span class="tag">auto</span>{{end}}</span>{{end}}</td>
@@ -72,7 +72,7 @@
   {{- if $r.O.GradeChecked}}<dt>Grade</dt><dd><span class="grade {{gradeClass $r.O.Grade}}">{{$r.O.Grade}}</span>{{if $r.O.GradeReasons}} <span class="muted">{{join $r.O.GradeReasons "; "}}</span>{{else}} <span class="muted">nothing to improve</span>{{end}}</dd>{{end}}
   <dt>Subject</dt><dd>{{.SubjectCN}}</dd>
   <dt>Issuer</dt><dd>{{.IssuerCN}}</dd>
-  <dt>Not after</dt><dd><span class="mono">{{date $p.Loc .NotAfter.Unix}}</span> · {{$r.Days}} days · {{$r.Used}}% of lifetime used</dd>
+  <dt>Not after</dt><dd><span class="mono">{{date $p.Loc .NotAfter.Unix}}</span> · {{if lt $r.Days 0}}expired{{else}}{{(left $p.Now .NotAfter.Unix).Long}}{{end}} · {{$r.Used}}% of lifetime used</dd>
   <dt>Chain</dt><dd>{{$r.ChainLen}} {{plural $r.ChainLen "certificate" "certificates"}} · {{$r.Trust}}</dd>
   <dt>SANs</dt><dd class="mono">{{join .SANs ", "}}</dd>
   <dt>Key</dt><dd>{{.KeyDesc}} · {{.SigAlg}}</dd>
@@ -208,7 +208,9 @@
     <p class="form-sec">Thresholds and schedule</p>
     <div class="fgrid c4">
       <div class="field"><label class="label" for="warn">Warning, days</label><input id="warn" name="warn_days" class="input mono{{if $e.warn_days}} invalid{{end}}" value="{{$f.Warn}}" inputmode="numeric" placeholder="{{$d.Manual.WarnDays}} manual · {{$d.Managed.WarnDays}} managed">{{template "err" $e.warn_days}}</div>
+      <div class="field"><label class="label" for="warnpct">Warning, % of lifetime left</label><input id="warnpct" name="warn_pct" class="input mono{{if $e.warn_pct}} invalid{{end}}" value="{{$f.WarnPct}}" inputmode="numeric" placeholder="{{pct $d.Manual.WarnPct}} manual · {{pct $d.Managed.WarnPct}} managed">{{template "err" $e.warn_pct}}</div>
       <div class="field"><label class="label" for="crit">Critical, days</label><input id="crit" name="crit_days" class="input mono{{if $e.crit_days}} invalid{{end}}" value="{{$f.Crit}}" inputmode="numeric" placeholder="{{$d.Manual.CritDays}} manual · {{$d.Managed.CritDays}} managed">{{template "err" $e.crit_days}}</div>
+      <div class="field"><label class="label" for="critpct">Critical, % of lifetime left</label><input id="critpct" name="crit_pct" class="input mono{{if $e.crit_pct}} invalid{{end}}" value="{{$f.CritPct}}" inputmode="numeric" placeholder="{{pct $d.Manual.CritPct}} manual · {{pct $d.Managed.CritPct}} managed">{{template "err" $e.crit_pct}}</div>
       <div class="field"><label class="label" for="interval">Interval</label>
         <select id="interval" name="interval_s" class="input">
           <option value="">Default ({{duration $d.IntervalS}})</option>
@@ -217,8 +219,8 @@
       <div class="field"><label class="label" for="addr">Addresses</label>
         <select id="addr" name="addresses" class="input"><option value="all"{{if $t.AllAddresses}} selected{{end}}>All, max 8</option><option value="first"{{if not $t.AllAddresses}} selected{{end}}>First only</option></select></div>
     </div>
-    <span class="help lift">Empty fields follow Settings › Defaults: warning {{$d.Manual.WarnDays}} and critical {{$d.Manual.CritDays}} days for manual renewal, {{$d.Managed.WarnDays}} and {{$d.Managed.CritDays}} for renewal managed.</span>
-    <details{{if or $f.Timeout $f.Retries $f.Debounce $f.RemindW $f.RemindC $t.SkipLegacy $e.timeout_s $e.retries $e.debounce $e.remind_warn_s $e.remind_crit_s}} open{{end}}>
+    <span class="help lift">The threshold that fires first wins. Empty fields follow Settings › Defaults: warning {{threshold $d.Manual.WarnDays $d.Manual.WarnPct}} and critical {{threshold $d.Manual.CritDays $d.Manual.CritPct}} for manual renewal, {{threshold $d.Managed.WarnDays $d.Managed.WarnPct}} and {{threshold $d.Managed.CritDays $d.Managed.CritPct}} for renewal managed. A percentage of 0 means days only.</span>
+    <details{{if or $f.Timeout $f.Retries $f.Debounce $f.RemindW $f.RemindC $f.RenewalPt $t.SkipLegacy $e.timeout_s $e.retries $e.debounce $e.remind_warn_s $e.remind_crit_s $e.renewal_pct}} open{{end}}>
       <summary class="label">Probe and reminder settings</summary>
       <div class="fgrid c4">
         <div class="field"><label class="label" for="timeout">Timeout, s</label><input id="timeout" name="timeout_s" class="input mono{{if $e.timeout_s}} invalid{{end}}" value="{{$f.Timeout}}" inputmode="numeric" placeholder="{{$d.TimeoutS}}">{{template "err" $e.timeout_s}}</div>
@@ -229,6 +231,8 @@
           <span class="help">TLS 1.0 and 1.1, and the weak cipher suite classes, for the grade. Off for an appliance whose old versions cannot change.</span></div>
         <div class="field"><label class="label" for="rw">Remind warning</label>{{template "remind-select" (dict "Name" "remind_warn_s" "ID" "rw" "Value" $f.RemindW "Default" $d.RemindWarnS "Min" 86400)}}{{template "err" $e.remind_warn_s}}</div>
         <div class="field"><label class="label" for="rc">Remind critical</label>{{template "remind-select" (dict "Name" "remind_crit_s" "ID" "rc" "Value" $f.RemindC "Default" $d.RemindCritS "Min" 3600)}}{{template "err" $e.remind_crit_s}}</div>
+        <div class="field"><label class="label" for="renewalpct">Renewal point, % of lifetime</label><input id="renewalpct" name="renewal_pct" class="input mono{{if $e.renewal_pct}} invalid{{end}}" value="{{$f.RenewalPt}}" inputmode="numeric" placeholder="{{renewalPoint}}">{{template "err" $e.renewal_pct}}
+          <span class="help">Renewal managed only: past this share of its lifetime, a certificate still served is reported as renewal overdue. 50 to 95.</span></div>
       </div>
     </details>
 

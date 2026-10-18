@@ -30,7 +30,7 @@ func TestDaysLeftTruncates(t *testing.T) {
 
 func TestDNSDebounce(t *testing.T) {
 	r := probe.Result{DNSError: "no such host"}
-	tg := Target{Debounce: 2, Manual: Thresholds{30, 7}, Managed: Thresholds{10, 3}}
+	tg := Target{Debounce: 2, Manual: Thresholds{Warn: 30, Crit: 7}, Managed: Thresholds{Warn: 10, Crit: 3}}
 	o := Evaluate(tg, Previous{Open: map[Kind]bool{}}, r, time.Now())
 	if len(o.Open) != 0 || o.DNSFail != 1 {
 		t.Fatalf("first failure opened: %+v", o.Open)

@@ -1226,3 +1226,32 @@ func TestHostCookiesAndStaticListing(t *testing.T) {
 		}
 	}
 }
+
+// The lifetime percentages and the renewal point are saved from the form,
+// "%" and all, and checked against their ranges.
+func TestTargetFormLifetime(t *testing.T) {
+	hs := newHarness(t)
+	f := url.Values{"host": {"acme.example.nl"}, "protocol": {"tls"}, "trust_mode": {"system"}, "all_channels": {"1"}, "action": {"save"},
+		"warn_pct": {"25 %"}, "crit_pct": {"0"}, "renewal_pct": {"96"}}
+	rec := hs.do(authz.Operator, "POST", "/targets/new", f, true)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "The renewal point must be 50 to 95 %") {
+		t.Fatalf("renewal point: %d", rec.Code)
+	}
+	f.Set("renewal_pct", "80")
+	f.Set("crit_pct", "30")
+	if rec = hs.do(authz.Operator, "POST", "/targets/new", f, true); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "Critical must be a smaller share") {
+		t.Fatalf("critical above warning: %d", rec.Code)
+	}
+	f.Set("crit_pct", "0")
+	if rec = hs.do(authz.Operator, "POST", "/targets/new", f, true); rec.Code != http.StatusSeeOther {
+		t.Fatalf("save: %d %s", rec.Code, rec.Body.String())
+	}
+	tg, _ := hs.srv.Core.Target(context.Background(), 2)
+	if tg.WarnPct == nil || *tg.WarnPct != 25 || tg.CritPct == nil || *tg.CritPct != 0 || tg.RenewalPct == nil || *tg.RenewalPct != 80 || tg.WarnDays != nil {
+		t.Fatalf("saved target: %+v", tg)
+	}
+	page := hs.do(authz.Operator, "GET", "/targets/2/edit", nil, false).Body.String()
+	if !strings.Contains(page, `name="warn_pct" class="input mono" value="25"`) || !strings.Contains(page, `name="renewal_pct" class="input mono" value="80"`) {
+		t.Fatal("edit form lost the percentages")
+	}
+}

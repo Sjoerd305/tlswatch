@@ -40,7 +40,7 @@
         <tr{{if ge $i $o.Rows}} data-more{{if not $o.All}} hidden{{end}}{{end}}>
           <td data-label="Target" class="m-lead"><a href="/targets/{{.ID}}" class="ink strong" data-row-link>{{.Name}}</a></td>
           <td data-label="Host" class="mono muted m-full">{{.HostPort}}</td>
-          <td data-label="Days" class="num mono days m-lead m-end{{if $c}} {{$c}}-t{{end}}">{{template "days-left" (days $p.Now .NotAfter)}}</td>
+          <td data-label="Days" class="num mono days m-lead m-end{{if $c}} {{$c}}-t{{end}}">{{template "days-left" (left $p.Now .NotAfter)}}</td>
           <td data-label="Lifetime" class="m-hide">{{template "bar" (dict "Used" (used $p.Now .Cert.NotBefore .Cert.NotAfter) "Class" (.BarClass $p.Settings.Defaults $p.Now))}}</td>
           <td data-label="Expires" class="mono m-hide">{{date $p.Loc .NotAfter}}</td>
           <td data-label="Issuer" class="muted">{{.Cert.IssuerName}}{{if .RenewalManaged}} <span class="tag">auto</span>{{end}}</td>

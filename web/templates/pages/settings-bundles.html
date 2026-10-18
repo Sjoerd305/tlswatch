@@ -11,7 +11,7 @@
         <thead><tr><th>Subject</th><th>Type</th><th>Key</th><th>Not after</th><th class="num">Days</th><th>SHA-256</th></tr></thead>
         <tbody>
         {{- range .Certs}}{{$dl := days $p.Now .NotAfter.Unix}}
-          <tr><td data-label="Subject" class="strong wrap">{{.SubjectCN}}</td><td data-label="Type">{{if .SelfSigned}}root{{else if .IsCA}}intermediate{{else}}leaf{{end}}</td><td data-label="Key" class="mono small">{{.KeyDesc}}</td><td data-label="Not after" class="mono">{{date $p.Loc .NotAfter.Unix}}</td><td data-label="Days" class="num mono days{{if lt $dl 0}} crit-t{{else if lt $dl 90}} warn-t{{end}}">{{template "days-left" $dl}}</td><td data-label="SHA-256" class="mono small muted">{{short .Fingerprint}}</td></tr>
+          <tr><td data-label="Subject" class="strong wrap">{{.SubjectCN}}</td><td data-label="Type">{{if .SelfSigned}}root{{else if .IsCA}}intermediate{{else}}leaf{{end}}</td><td data-label="Key" class="mono small">{{.KeyDesc}}</td><td data-label="Not after" class="mono">{{date $p.Loc .NotAfter.Unix}}</td><td data-label="Days" class="num mono days{{if lt $dl 0}} crit-t{{else if lt $dl 90}} warn-t{{end}}">{{template "days-left" (left $p.Now .NotAfter.Unix)}}</td><td data-label="SHA-256" class="mono small muted">{{short .Fingerprint}}</td></tr>
         {{- end}}
         </tbody>
       </table>

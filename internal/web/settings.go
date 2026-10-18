@@ -355,9 +355,17 @@ func (s *Server) settingsDefaultsSave(w http.ResponseWriter, r *http.Request) {
 		}
 		return x
 	}
+	// An empty percentage means days only.
+	pct := func(k string) int {
+		if strings.TrimSpace(v.Get(k)) == "" {
+			return 0
+		}
+		v.Set(k, trimPct(v.Get(k)))
+		return n(k)
+	}
 	d := config.Defaults{
-		Manual:        config.Thresholds{WarnDays: n("manual_warn"), CritDays: n("manual_crit")},
-		Managed:       config.Thresholds{WarnDays: n("managed_warn"), CritDays: n("managed_crit")},
+		Manual:        config.Thresholds{WarnDays: n("manual_warn"), CritDays: n("manual_crit"), WarnPct: pct("manual_warn_pct"), CritPct: pct("manual_crit_pct")},
+		Managed:       config.Thresholds{WarnDays: n("managed_warn"), CritDays: n("managed_crit"), WarnPct: pct("managed_warn_pct"), CritPct: pct("managed_crit_pct")},
 		IntervalS:     n("interval_s"),
 		AllAddresses:  v.Get("addresses") != "first",
 		TimeoutS:      n("timeout_s"),
@@ -397,8 +405,8 @@ func (s *Server) settingsDefaultsSave(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	s.Core.Audit(r.Context(), user(r).Email, "settings.defaults", "defaults", fmt.Sprintf("manual=%d/%d managed=%d/%d interval=%s workers=%d retention=%d digest=%v",
-		d.Manual.WarnDays, d.Manual.CritDays, d.Managed.WarnDays, d.Managed.CritDays, durationLabel(d.IntervalS), d.Workers, d.RetentionDays, d.DigestEnabled))
+	s.Core.Audit(r.Context(), user(r).Email, "settings.defaults", "defaults", fmt.Sprintf("manual=%d/%d %d%%/%d%% managed=%d/%d %d%%/%d%% interval=%s workers=%d retention=%d digest=%v",
+		d.Manual.WarnDays, d.Manual.CritDays, d.Manual.WarnPct, d.Manual.CritPct, d.Managed.WarnDays, d.Managed.CritDays, d.Managed.WarnPct, d.Managed.CritPct, durationLabel(d.IntervalS), d.Workers, d.RetentionDays, d.DigestEnabled))
 	s.Sched.Reload()
 	s.back(w, r, "/settings/defaults", "Defaults saved. Targets with their own values keep them.", "ok")
 }

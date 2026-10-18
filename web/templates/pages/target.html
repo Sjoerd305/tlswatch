@@ -33,10 +33,10 @@
 {{- end}}
 <div class="grid-main-side w360">
   <div class="stack">
-    {{- if $c}}{{$cls := $t.ExpiryClass $p.Settings.Defaults $p.Now}}{{$days := days $p.Now $t.NotAfter}}
+    {{- if $c}}{{$cls := $t.ExpiryClass $p.Settings.Defaults $p.Now}}{{$days := days $p.Now $t.NotAfter}}{{$left := left $p.Now $t.NotAfter}}
     <section class="card pad{{if eq $cls "crit"}} crit-border{{else if eq $cls "warn"}} warn-border{{end}}">
       <div class="count-row">
-        <span class="countdown {{if $cls}}{{$cls}}{{else}}ok{{end}}">{{if lt $days 0}}expired{{else}}{{$days}} {{plural $days "day" "days"}}{{end}}</span>
+        <span class="countdown {{if $cls}}{{$cls}}{{else}}ok{{end}}">{{if lt $days 0}}expired{{else}}{{$left.Long}}{{end}}</span>
         <span class="when">{{if lt $days 0}}since{{else}}until expiry ·{{end}} <span class="mono">{{datetime $p.Loc $t.NotAfter}}</span></span>
         {{- if $t.Grade}}<span class="grade-row"><span class="grade lg {{$t.GradeClass}}" title="TLS configuration grade">{{$t.Grade}}</span><span class="grade-why">{{if $t.GradeReasons}}{{range $i, $r := $t.GradeReasons}}{{if $i}} · {{end}}{{$r}}{{end}}{{else}}nothing to improve{{end}}</span></span>{{end}}
         {{- with $d.OpenMain}}
@@ -46,6 +46,9 @@
       <div class="lifetime">
         {{template "bar" (dict "Used" ($c.LifetimeUsed $p.Now) "Class" ($t.BarClass $p.Settings.Defaults $p.Now) "Wide" "full")}}
         <div class="lifetime-legend"><span>{{date $p.Loc $c.NotBefore}} issued</span><span>{{$c.LifetimeDays}}-day certificate · {{$c.LifetimeUsed $p.Now}}% used · {{if $t.RenewalManaged}}renewal managed{{else}}manual renewal{{end}}</span><span>{{date $p.Loc $c.NotAfter}}</span></div>
+        {{- if $t.IntervalTooLong $p.Settings.Defaults}}
+        <p class="help">Checked every {{duration ($t.Effective $p.Settings.Defaults).IntervalS}}; this certificate lives {{$c.LifetimeDays}} {{plural $c.LifetimeDays "day" "days"}}. An interval of at most a fifth of the lifetime gives a missed renewal time to show.</p>
+        {{- end}}
       </div>
       <dl class="kv cols4">
         <dt>Subject</dt><dd class="wrap-any">{{$c.Subject}}</dd>
@@ -69,7 +72,7 @@
         <div class="link"><span class="d {{if .Stale}}warn{{else if or (lt $dl 0) .Weak}}bad{{else if and .Worst $ecls}}{{if eq $ecls "crit"}}bad{{else}}warn{{end}}{{else}}good{{end}}"></span>
           <div><div class="name">{{.SubjectCN}}</div><div class="sub">{{.Role}}{{if .InStore}}, in {{if eq (print $t.Trust) "bundle"}}bundle{{else}}store{{end}}{{end}} · {{.KeyDesc}} · {{.SigAlg}}{{if .Weak}} · <span class="crit-t">weak</span>{{end}}{{if .Stale}} · not used by clients, can be dropped{{end}}</div></div>
           <span class="date mono">{{date $p.Loc .NotAfter}}</span>
-          <span class="left mono{{if and .Worst $ecls}} {{$ecls}}-t bold{{end}}">{{if lt $dl 0}}expired{{else}}{{$dl}} d{{end}}</span>
+          <span class="left mono{{if and .Worst $ecls}} {{$ecls}}-t bold{{end}}">{{if lt $dl 0}}expired{{else}}{{(left $p.Now .NotAfter).Short}}{{end}}</span>
         </div>
         {{- end}}
       </div>

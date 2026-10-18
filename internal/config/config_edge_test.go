@@ -152,3 +152,36 @@ func TestCheckEnvLogJSON(t *testing.T) {
 		t.Fatalf("no: %v", err)
 	}
 }
+
+// Defaults saved before the lifetime percentages existed take them from
+// the built-in defaults; a percentage saved as 0 stays days only.
+func TestThresholdPercentagesUpgrade(t *testing.T) {
+	st, d := newStore(t)
+	ctx := context.Background()
+	if _, err := d.W.ExecContext(ctx, `INSERT INTO settings(key, value) VALUES('defaults', '{"manual":{"warn_days":45,"crit_days":7},"managed":{"warn_days":10,"crit_days":3,"warn_pct":0,"crit_pct":0}}')`); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := got.Defaults.Manual; m.WarnDays != 45 || m.WarnPct != 33 || m.CritPct != 10 {
+		t.Fatalf("manual: %+v", m)
+	}
+	if m := got.Defaults.Managed; m.WarnPct != 0 || m.CritPct != 0 {
+		t.Fatalf("managed: %+v", m)
+	}
+}
+
+func TestThresholdPercentagesValidate(t *testing.T) {
+	for _, tc := range []struct {
+		warn, crit int
+		ok         bool
+	}{{33, 10, true}, {0, 0, true}, {0, 10, true}, {20, 20, false}, {100, 10, false}, {33, -1, false}} {
+		d := DefaultSettings().Defaults
+		d.Manual.WarnPct, d.Manual.CritPct = tc.warn, tc.crit
+		if err := d.Validate(); (err == nil) != tc.ok {
+			t.Errorf("%d/%d: %v", tc.warn, tc.crit, err)
+		}
+	}
+}

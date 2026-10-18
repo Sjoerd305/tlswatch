@@ -109,7 +109,7 @@ func kindsOf(fs []Finding) []Kind {
 	return ks
 }
 
-var manual = Target{Debounce: 2, Manual: Thresholds{30, 7}, Managed: Thresholds{10, 3}}
+var manual = Target{Debounce: 2, Manual: Thresholds{Warn: 30, Crit: 7}, Managed: Thresholds{Warn: 10, Crit: 3}}
 
 func TestCurrentLeafIsTheMajority(t *testing.T) {
 	iss := newIssuer(t, "Test CA", "Test CA R1")
@@ -148,11 +148,11 @@ func TestThresholds(t *testing.T) {
 		managed bool
 		want    Thresholds
 	}{
-		{"ACME issuer is managed", manual, acme, true, Thresholds{10, 3}},
-		{"other issuer is manual", manual, other, false, Thresholds{30, 7}},
-		{"explicit flag wins over issuer", Target{Manual: Thresholds{30, 7}, Managed: Thresholds{10, 3}, RenewalSet: true}, acme, false, Thresholds{30, 7}},
-		{"explicit managed", Target{Manual: Thresholds{30, 7}, Managed: Thresholds{10, 3}, RenewalSet: true, RenewalManaged: true}, other, true, Thresholds{10, 3}},
-		{"per-target override", Target{Manual: Thresholds{30, 7}, Managed: Thresholds{10, 3}, Crit: &five}, other, false, Thresholds{30, 5}},
+		{"ACME issuer is managed", manual, acme, true, Thresholds{Warn: 10, Crit: 3}},
+		{"other issuer is manual", manual, other, false, Thresholds{Warn: 30, Crit: 7}},
+		{"explicit flag wins over issuer", Target{Manual: Thresholds{Warn: 30, Crit: 7}, Managed: Thresholds{Warn: 10, Crit: 3}, RenewalSet: true}, acme, false, Thresholds{Warn: 30, Crit: 7}},
+		{"explicit managed", Target{Manual: Thresholds{Warn: 30, Crit: 7}, Managed: Thresholds{Warn: 10, Crit: 3}, RenewalSet: true, RenewalManaged: true}, other, true, Thresholds{Warn: 10, Crit: 3}},
+		{"per-target override", Target{Manual: Thresholds{Warn: 30, Crit: 7}, Managed: Thresholds{Warn: 10, Crit: 3}, Crit: &five}, other, false, Thresholds{Warn: 30, Crit: 5}},
 	}
 	for _, c := range cases {
 		o := Evaluate(c.tg, Previous{Open: open()}, result(okAddr("192.0.2.1", leafCert(t, c.iss, 60, "a.example"))), now)

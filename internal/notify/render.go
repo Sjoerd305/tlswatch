@@ -20,14 +20,16 @@ const (
 
 // AlertData holds the fields of one alert message.
 type AlertData struct {
-	Event       string
-	Severity    string // info, warning, critical
-	Kind        string // finding kind, e.g. "expiring"
-	KindLabel   string
-	TargetName  string
-	HostPort    string
-	Details     string
-	DaysLeft    *int
+	Event      string
+	Severity   string // info, warning, critical
+	Kind       string // finding kind, e.g. "expiring"
+	KindLabel  string
+	TargetName string
+	HostPort   string
+	Details    string
+	DaysLeft   *int
+	// HoursLeft replaces DaysLeft in the text under a week ("31 h").
+	HoursLeft   *int
 	NotAfter    time.Time
 	SubjectCN   string
 	IssuerCN    string
@@ -42,17 +44,30 @@ type AlertData struct {
 	Domain bool
 }
 
+// left is the time left as text: "31 h", "1 day", "12 days"; "" when
+// unknown.
+func left(a AlertData) string {
+	switch {
+	case a.HoursLeft != nil:
+		return fmt.Sprintf("%d h", *a.HoursLeft)
+	case a.DaysLeft == nil:
+		return ""
+	case *a.DaysLeft == 1:
+		return "1 day"
+	}
+	return fmt.Sprintf("%d days", *a.DaysLeft)
+}
+
 // phrase describes the problem in the subject line.
-func phrase(kind string, days *int) string {
-	switch kind {
+func phrase(a AlertData) string {
+	switch a.Kind {
 	case "expiring":
-		if days != nil {
-			if *days == 1 {
-				return "expires in 1 day"
-			}
-			return fmt.Sprintf("expires in %d days", *days)
+		if l := left(a); l != "" {
+			return "expires in " + l
 		}
 		return "expires soon"
+	case "renewal_overdue":
+		return "renewal overdue"
 	case "expired":
 		return "certificate expired"
 	case "chain_untrusted":
@@ -84,7 +99,7 @@ func phrase(kind string, days *int) string {
 	case "certificate_issued":
 		return "certificate issued"
 	}
-	return kind
+	return a.Kind
 }
 
 // Render builds the message for one alert. The subject starts with the
@@ -95,7 +110,7 @@ func Render(a AlertData) Message {
 		loc = time.UTC
 	}
 	tag := a.Severity
-	subject := fmt.Sprintf("%s %s", a.HostPort, phrase(a.Kind, a.DaysLeft))
+	subject := fmt.Sprintf("%s %s", a.HostPort, phrase(a))
 	switch a.Event {
 	case EventEscalate:
 		subject += ", escalated"
@@ -127,8 +142,8 @@ func Render(a AlertData) Message {
 	add("Details", a.Details, false)
 	if !a.NotAfter.IsZero() {
 		exp := a.NotAfter.In(loc).Format("2006-01-02 15:04 MST")
-		if a.DaysLeft != nil {
-			exp += fmt.Sprintf(" (%d days left)", *a.DaysLeft)
+		if l := left(a); l != "" {
+			exp += " (" + l + " left)"
 		}
 		add("Expires", exp, true)
 	}
@@ -151,7 +166,7 @@ func Render(a AlertData) Message {
 
 	view := &alertView{Tag: tag, Event: eventLabel(a, loc), Title: subject, Rows: rows}
 	if a.DaysLeft != nil && a.Event != EventRecover {
-		view.Countdown, view.CountdownNote = countdown(*a.DaysLeft, a.NotAfter.In(loc))
+		view.Countdown, view.CountdownNote = countdown(*a.DaysLeft, a.HoursLeft, a.NotAfter.In(loc))
 	}
 	html := renderHTML(emailDoc{Kind: "alert", Title: subject, Preheader: a.Details, Label: "Alert", Link: a.Link, Alert: view})
 	return Message{Subject: tagged(tag, subject), Body: b.String(), HTML: html}
@@ -171,7 +186,7 @@ func eventLabel(a AlertData, loc *time.Location) string {
 }
 
 // countdown is the large figure of an expiry alert and the note beside it.
-func countdown(days int, notAfter time.Time) (string, string) {
+func countdown(days int, hours *int, notAfter time.Time) (string, string) {
 	date := ""
 	if !notAfter.IsZero() {
 		date = notAfter.Format("2 Jan 2006")
@@ -179,6 +194,10 @@ func countdown(days int, notAfter time.Time) (string, string) {
 	switch {
 	case days < 0:
 		return "Expired", "on " + date
+	case hours != nil && *hours == 1:
+		return "1", "hour left · expires " + date
+	case hours != nil:
+		return fmt.Sprint(*hours), "hours left · expires " + date
 	case days == 1:
 		return "1", "day left · expires " + date
 	}

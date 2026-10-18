@@ -87,10 +87,15 @@ func ParseBool(v string) (bool, error) {
 	return strconv.ParseBool(strings.TrimSpace(v))
 }
 
-// Thresholds are the expiry thresholds for one renewal style.
+// Thresholds are the expiry thresholds for one renewal style: days, and
+// the share of the leaf's lifetime remaining in percent (0: days only).
+// Settings stored before the percentages existed load them from
+// DefaultSettings.
 type Thresholds struct {
 	WarnDays int `json:"warn_days"`
 	CritDays int `json:"crit_days"`
+	WarnPct  int `json:"warn_pct"`
+	CritPct  int `json:"crit_pct"`
 }
 
 // General holds instance-wide behaviour.
@@ -194,6 +199,21 @@ func (s Settings) Location() *time.Location {
 	return time.Local
 }
 
+// CheckPct checks a pair of lifetime percentages, 0 being off: each 1 to
+// 99, and critical below warning when both are set. It returns "" or the
+// problem.
+func CheckPct(warn, crit int) string {
+	switch {
+	case warn < 0 || warn > 99:
+		return "warning must be 1 to 99 % of the lifetime, or empty"
+	case crit < 0 || crit > 99:
+		return "critical must be 1 to 99 % of the lifetime, or empty"
+	case warn > 0 && crit >= warn:
+		return "critical must be a smaller share of the lifetime than warning"
+	}
+	return ""
+}
+
 // GoogleEnabled reports whether Google sign-in is configured.
 func (s Settings) GoogleEnabled() bool {
 	return s.SignIn.GoogleClientID != "" && s.SignIn.GoogleClientSecret != ""
@@ -206,8 +226,8 @@ func DefaultSettings() Settings {
 		Nodes:   Nodes{AutoUpdate: true},
 		CT:      CT{Source: "certspotter", IntervalS: 3600},
 		Defaults: Defaults{
-			Manual:        Thresholds{WarnDays: 30, CritDays: 7},
-			Managed:       Thresholds{WarnDays: 10, CritDays: 3},
+			Manual:        Thresholds{WarnDays: 30, CritDays: 7, WarnPct: 33, CritPct: 10},
+			Managed:       Thresholds{WarnDays: 10, CritDays: 3, WarnPct: 20, CritPct: 7},
 			IntervalS:     86400,
 			AllAddresses:  true,
 			TimeoutS:      10,
@@ -233,6 +253,9 @@ func (d Defaults) Validate() error {
 		}
 		if t.CritDays < 1 || t.CritDays > t.WarnDays-1 {
 			errs = append(errs, label+" critical must be 1 to warning minus 1 days")
+		}
+		if msg := CheckPct(t.WarnPct, t.CritPct); msg != "" {
+			errs = append(errs, label+" "+msg)
 		}
 	}
 	chk(d.Manual, "Manual renewal:")

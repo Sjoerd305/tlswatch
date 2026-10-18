@@ -173,10 +173,11 @@ func newCertRow(it core.InventoryItem, th config.Thresholds, now time.Time) cert
 		}
 	}
 	row.Window = strings.Join(tokens, " ")
-	switch {
-	case row.Days < th.CritDays:
+	ct := check.Thresholds{Warn: th.WarnDays, Crit: th.CritDays, WarnPct: th.WarnPct, CritPct: th.CritPct}
+	switch ct.Due(row.Days, check.ShareLeft(time.Unix(it.NotBefore, 0), time.Unix(it.NotAfter, 0), now)) {
+	case check.Critical:
 		row.Status = "crit"
-	case row.Days < th.WarnDays:
+	case check.Warning:
 		row.Status = "warn"
 	default:
 		row.Status = "ok"

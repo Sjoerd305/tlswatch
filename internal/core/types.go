@@ -96,6 +96,9 @@ type Target struct {
 	// Optional overrides; nil follows Settings › Defaults.
 	WarnDays    *int
 	CritDays    *int
+	WarnPct     *int // 0: days only
+	CritPct     *int
+	RenewalPct  *int // nil: check.DefaultRenewalPoint
 	IntervalS   *int
 	TimeoutS    *int
 	Retries     *int
@@ -156,16 +159,18 @@ func (t Target) HostPort() string { return net.JoinHostPort(t.Host, strconv.Itoa
 
 // Effective holds the values in force for a target after defaults.
 type Effective struct {
-	Warn, Crit      int
-	IntervalS       int
-	TimeoutS        int
-	Retries         int
-	Debounce        int
-	RemindWarnS     int
-	RemindCritS     int
-	WarnDefault     bool // warning/critical follow the default
-	IntervalDefault bool
-	RemindDefault   bool
+	Warn, Crit       int
+	WarnPct, CritPct int // 0: days only
+	RenewalPct       int
+	IntervalS        int
+	TimeoutS         int
+	Retries          int
+	Debounce         int
+	RemindWarnS      int
+	RemindCritS      int
+	WarnDefault      bool // warning/critical follow the default
+	IntervalDefault  bool
+	RemindDefault    bool
 }
 
 func or(p *int, def int) int {
@@ -184,13 +189,16 @@ func (t Target) Effective(d config.Defaults) Effective {
 	return Effective{
 		Warn:            or(t.WarnDays, th.WarnDays),
 		Crit:            or(t.CritDays, th.CritDays),
+		WarnPct:         or(t.WarnPct, th.WarnPct),
+		CritPct:         or(t.CritPct, th.CritPct),
+		RenewalPct:      or(t.RenewalPct, check.DefaultRenewalPoint),
 		IntervalS:       or(t.IntervalS, d.IntervalS),
 		TimeoutS:        or(t.TimeoutS, d.TimeoutS),
 		Retries:         or(t.Retries, d.Retries),
 		Debounce:        or(t.Debounce, d.Debounce),
 		RemindWarnS:     or(t.RemindWarnS, d.RemindWarnS),
 		RemindCritS:     or(t.RemindCritS, d.RemindCritS),
-		WarnDefault:     t.WarnDays == nil && t.CritDays == nil,
+		WarnDefault:     t.WarnDays == nil && t.CritDays == nil && t.WarnPct == nil && t.CritPct == nil,
 		IntervalDefault: t.IntervalS == nil,
 		RemindDefault:   t.RemindWarnS == nil && t.RemindCritS == nil,
 	}
@@ -418,15 +426,31 @@ func (t Target) ExpiryClass(d config.Defaults, now time.Time) string {
 	if t.NotAfter == 0 {
 		return ""
 	}
-	days := check.DaysLeft(time.Unix(t.NotAfter, 0), now)
 	eff := t.Effective(d)
-	switch {
-	case days < eff.Crit:
+	th := check.Thresholds{Warn: eff.Warn, Crit: eff.Crit, WarnPct: eff.WarnPct, CritPct: eff.CritPct}
+	switch th.Due(check.DaysLeft(time.Unix(t.NotAfter, 0), now), t.ShareLeft(now)) {
+	case check.Critical:
 		return "crit"
-	case days < eff.Warn:
+	case check.Warning:
 		return "warn"
 	}
 	return ""
+}
+
+// ShareLeft is the share of the current leaf's lifetime remaining until the
+// target's earliest expiry, in percent; 100 when the leaf is unknown.
+func (t Target) ShareLeft(now time.Time) float64 {
+	if t.Cert == nil || t.Cert.NotAfter <= t.Cert.NotBefore {
+		return 100
+	}
+	return float64(t.NotAfter-now.Unix()) * 100 / float64(t.Cert.NotAfter-t.Cert.NotBefore)
+}
+
+// IntervalTooLong reports whether the target is checked less often than a
+// fifth of its leaf's lifetime: a check can then miss most of the time a
+// renewal has to land in.
+func (t Target) IntervalTooLong(d config.Defaults) bool {
+	return t.Cert != nil && int64(t.Effective(d).IntervalS)*5 > t.Cert.NotAfter-t.Cert.NotBefore
 }
 
 // BarClass is the lifetime bar colour.

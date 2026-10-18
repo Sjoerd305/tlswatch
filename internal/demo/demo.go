@@ -44,6 +44,9 @@ type Target struct {
 	ExpectedIssuer string   `json:"expected_issuer"`
 	WarnDays       *int     `json:"warn_days"`
 	CritDays       *int     `json:"crit_days"`
+	WarnPct        *int     `json:"warn_pct"`
+	CritPct        *int     `json:"crit_pct"`
+	RenewalPct     *int     `json:"renewal_pct"`
 	FirstAddress   bool     `json:"first_address_only"`
 	SkipConfigTest bool     `json:"skip_config_test"`
 	Disabled       bool     `json:"disabled"`
@@ -136,7 +139,7 @@ func (dt Target) target(bundles map[string]int64) (core.Target, error) {
 	t := core.Target{
 		Name: dt.Name, Host: dt.Host, Port: dt.Port, ServerName: dt.ServerName,
 		Protocol: probe.TLS, Trust: probe.TrustSystem, ExpectedIssuer: dt.ExpectedIssuer,
-		WarnDays: dt.WarnDays, CritDays: dt.CritDays,
+		WarnDays: dt.WarnDays, CritDays: dt.CritDays, WarnPct: dt.WarnPct, CritPct: dt.CritPct, RenewalPct: dt.RenewalPct,
 		AllAddresses: !dt.FirstAddress, SkipLegacy: dt.SkipConfigTest, Enabled: !dt.Disabled,
 		AllChannels: true, Tags: dt.Tags, Notes: dt.Notes,
 	}

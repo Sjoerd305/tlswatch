@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -74,7 +73,7 @@ func (s *Service) Digest(ctx context.Context) (notify.Message, error) {
 		d.Issued = append(d.Issued, notify.DigestIssuance{Domain: i.DomainName, Names: strings.Join(i.Names, ", "), Issuer: i.Issuer(), State: i.State,
 			Date: time.Unix(i.FirstSeen, 0).In(loc).Format("2006-01-02")})
 	}
-	sort.Slice(exp, func(i, j int) bool { return exp[i].NotAfter < exp[j].NotAfter })
+	SortExpiring(exp, now)
 	for _, t := range exp {
 		d.Expiring = append(d.Expiring, digestExpiry(t, st.Defaults, now, loc))
 	}
@@ -87,7 +86,7 @@ func (s *Service) Digest(ctx context.Context) (notify.Message, error) {
 func digestExpiry(t Target, def config.Defaults, now time.Time, loc *time.Location) notify.DigestExpiry {
 	days := check.DaysLeft(time.Unix(t.NotAfter, 0), now)
 	e := notify.DigestExpiry{Date: time.Unix(t.NotAfter, 0).In(loc).Format("2006-01-02"), Days: days, Tag: "warning", Name: t.Name, HostPort: t.HostPort()}
-	if days < t.Effective(def).Crit {
+	if t.ExpiryClass(def, now) == "crit" {
 		e.Tag = "critical"
 	}
 	return e

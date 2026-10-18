@@ -201,6 +201,22 @@ func (s *Server) funcs() template.FuncMap {
 		// whenTime adds the time of day to older dates: "13 Oct 04:14".
 		"whenTime": func(loc *time.Location, now time.Time, unix int64) string { return when(loc, now, unix, true) },
 		"days":     func(now time.Time, unix int64) int { return check.DaysLeft(time.Unix(unix, 0), now) },
+		"left":     newTimeLeft,
+		// pct is a lifetime percentage as a placeholder shows it.
+		"pct": func(n int) string {
+			if n == 0 {
+				return "off"
+			}
+			return fmt.Sprintf("%d %%", n)
+		},
+		// threshold is a threshold as help text names it: "30 d or 33 %".
+		"threshold": func(days, pct int) string {
+			if pct == 0 {
+				return fmt.Sprintf("%d d", days)
+			}
+			return fmt.Sprintf("%d d or %d %%", days, pct)
+		},
+		"renewalPoint": func() int { return check.DefaultRenewalPoint },
 		"daysPtr": func(p *int) string {
 			if p == nil {
 				return "—"
@@ -360,4 +376,39 @@ func offsetLabel(ms int64) string {
 		return "in sync"
 	}
 	return fmt.Sprintf("%+.1f s", float64(ms)/1000)
+}
+
+// timeLeft is the time until an expiry as a days column shows it: whole
+// days, or hours under check.HoursUnder days.
+type timeLeft struct{ Days, Hours int }
+
+func newTimeLeft(now time.Time, unix int64) timeLeft {
+	na := time.Unix(unix, 0)
+	return timeLeft{Days: check.DaysLeft(na, now), Hours: int(na.Sub(now) / time.Hour)}
+}
+
+func (l timeLeft) String() string {
+	if l.Days < check.HoursUnder {
+		return fmt.Sprintf("%d h", l.Hours)
+	}
+	return fmt.Sprint(l.Days)
+}
+
+// Short is the compact text beside a date: "31 h", "12 d".
+func (l timeLeft) Short() string {
+	if l.Days < check.HoursUnder {
+		return fmt.Sprintf("%d h", l.Hours)
+	}
+	return fmt.Sprintf("%d d", l.Days)
+}
+
+// Long is the countdown text: "31 h", "1 day", "12 days".
+func (l timeLeft) Long() string {
+	switch {
+	case l.Days < check.HoursUnder:
+		return fmt.Sprintf("%d h", l.Hours)
+	case l.Days == 1:
+		return "1 day"
+	}
+	return fmt.Sprintf("%d days", l.Days)
 }
