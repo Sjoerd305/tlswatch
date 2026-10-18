@@ -210,11 +210,13 @@ Every observation runs the full set of checks (the test for legacy TLS versions 
 
 **Change detection.** A new leaf certificate is normal on an ACME-managed endpoint and suspicious on a manually managed one. A target carries the flag *renewal managed* (default on when the issuer is a known ACME CA such as Let's Encrypt, ZeroSSL or Google Trust Services, off otherwise; always editable).
 
-- Renewal managed: a new certificate with the same issuer organisation and the same or a superset of SANs is recorded as `info` and not alerted. Any other change is a warning.
+- Renewal managed: a new certificate with the same issuer organisation, the same or a superset of SANs, and (when the target has a server name) still covering that name is recorded as `info` and not alerted. Any other change is a warning, so a renewal that drops a name is never taken for a routine one.
 - Not renewal managed: any new leaf is a `warning` finding, so an operator confirms the replacement was intended. Acknowledging it resolves the finding.
 - `self-signed` targets: pinned fingerprint; any change is a warning.
 
 Changing a target's host, port, protocol or server name points it at another endpoint: the pin and the current certificate start over, so the next check sets a new baseline and opens no change. Changing only the trust mode starts a new pin.
+
+**What changed.** The details of a change, the `certificate_changed` warning, its alert and the `info` renewal event under recent changes alike, carry a one-line diff of the old and the new leaf with the unchanged fields left out: the issuer (by its CN, with the organisation when that changed too), the intermediate when the issuer's name stayed but the certificate served after the leaf is another one, the subject, the SANs added and removed, the key type and size, the signature algorithm, the expiry date, and the lifetime in days when it changed. Example: "new leaf 3f2a91c0 from Let's Encrypt: SANs +api.example.nl −old.example.nl; key RSA 2048 → ECDSA P-256; expires 2026-11-30 → 2027-01-15; lifetime 90 → 47 days", or "renewed by Let's Encrypt: intermediate R11 replaced (5a1c0e2b → 9be7d3f4); expires …". The old leaf comes from the certificate store, its intermediate from the last observation that served it; when the old leaf has been pruned the details only say whether the SANs changed. A pinned self-signed certificate is compared with the pin.
 
 A leaf that any address of the target served in the last 24 hours is not new: when the address serving the current certificate is briefly down and another address's certificate becomes current, and when it comes back, nothing opens.
 
@@ -603,7 +605,7 @@ Nobody chooses a version for a build by hand. `scripts/version.sh` derives it fr
 
 ## Planned after version 1
 
-The features below were adopted on 17 October 2026 after a review of comparable tools. Each one is specified here so it can be built as written, and its text moves into the sections above in the same change that ships it; the numbers stay as adopted. Number 1, lifetime-relative thresholds and `renewal_overdue`, is built and described under Checks and Thresholds and defaults; number 2, the distrust calendar, under Checks; number 3, discovery, under Discovery; number 4, revocation through CRLs, under Checks (Revocation). The rest are not built yet. They are listed in the order of building, by value against effort. Most of them exist to make tlswatch stand out, not to catch up: they make it the independent check that a team's renewal automation actually deployed its certificate, at a size and price nobody else covers.
+The features below were adopted on 17 October 2026 after a review of comparable tools. Each one is specified here so it can be built as written, and its text moves into the sections above in the same change that ships it; the numbers stay as adopted. Number 1, lifetime-relative thresholds and `renewal_overdue`, is built and described under Checks and Thresholds and defaults; number 2, the distrust calendar, under Checks; number 3, discovery, under Discovery; number 4, revocation through CRLs, under Checks (Revocation); number 6, the field-level diff on `certificate_changed`, under Checks (Change detection). The rest are not built yet. They are listed in the order of building, by value against effort. Most of them exist to make tlswatch stand out, not to catch up: they make it the independent check that a team's renewal automation actually deployed its certificate, at a size and price nobody else covers.
 
 ### 5. REST API and import/export
 
@@ -612,14 +614,6 @@ Every comparable tool has an API, and reviewers check for it.
 - **Tokens.** Under Account, a user creates API tokens with a name, an expiry (30 days to 1 year, or none for admins), and a role no higher than their own (viewer, operator, admin). A token is shown once, stored as a hash like the node credential, used as `Authorization: Bearer`, rate limited, and listed with its last use. Deleting or disabling the user revokes their tokens. Every write through a token is in the audit log with the token's name. A token never works for the browser UI, and a session cookie never works for the public API, so CSRF does not apply to it.
 - **Endpoints** under `/api/v2` (the internal `/api/v1` stays private to the TypeScript): targets (list with the same filters as the UI, get, create, update, delete, check now), certificates (list, get), findings (list, get, acknowledge), domain watches (list, get, create, update, delete, poll now), issuances (list), channels (list, test; admin), and `GET /api/v2/openapi.json`, which is generated from the handler definitions and served without sign-in. Lists are paginated with a cursor. Errors are JSON with a stable code. The same role × action decision function guards every endpoint, and the negative test suite covers it.
 - **Export and import.** Targets and domain watches export as YAML (`GET /api/v2/export`, and Settings › Export in the UI): one document with every setting that differs from the defaults, channels by name, bundles and nodes by name, no credentials. The Add many form accepts the same YAML next to the line format, so config as code is a round trip. Import shows a diff before saving (added, changed, unchanged, and present here but absent from the file), never deletes unless "remove targets not in the file" is ticked, and is atomic. CSV import with the columns of the Add many line format is accepted too.
-
-### 6. Field-level diff on `certificate_changed`
-
-When a certificate changes, tlswatch says what changed, not only that it changed.
-
-- The `certificate_changed` finding and its message carry a diff of the old and new leaf: issuer, subject, SANs added and removed, key type and size, signature algorithm, validity (old and new NotAfter, and lifetime), and whether the intermediate changed. Unchanged fields are left out. Example: "SANs +api.example.nl −old.example.nl; key RSA 2048 → ECDSA P-256; lifetime 90 → 47 days".
-- The info-level renewal event under recent changes shows the same one-line diff, so a renewal that quietly dropped a name is visible even when it alerts nothing.
-- A renewal that removes a SAN which the target's server name needs is no longer treated as an expected renewal: it becomes a warning, because the rule today only checks that the SANs are the same or a superset.
 
 ### 7. CAA monitoring
 

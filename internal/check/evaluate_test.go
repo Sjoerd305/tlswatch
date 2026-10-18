@@ -89,7 +89,7 @@ func open(kinds ...Kind) map[Kind]bool {
 // prevOf is the state left by a check that saw leaf.
 func prevOf(leaf *x509.Certificate, kinds ...Kind) Previous {
 	i := probe.Describe(leaf)
-	return Previous{LeafFP: i.Fingerprint, IssuerOrg: i.IssuerOrg, IssuerCN: i.IssuerCN, SANs: i.SANs, Open: open(kinds...)}
+	return Previous{LeafFP: i.Fingerprint, IssuerOrg: i.IssuerOrg, IssuerCN: i.IssuerCN, SANs: i.SANs, Leaf: &i, Open: open(kinds...)}
 }
 
 func find(fs []Finding, k Kind) (Finding, bool) {

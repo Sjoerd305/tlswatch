@@ -285,10 +285,14 @@ type Previous struct {
 	LeafFP string
 	// Recent holds the leaves served at any address of the target lately:
 	// one of them becoming current again is not a new certificate.
-	Recent     map[string]bool
-	IssuerOrg  string
-	IssuerCN   string
-	SANs       []string
+	Recent    map[string]bool
+	IssuerOrg string
+	IssuerCN  string
+	SANs      []string
+	// Leaf describes the previous leaf in full and Inter the certificate
+	// that issued it, for the diff of a change; nil and zero when unknown.
+	Leaf       *probe.CertInfo
+	Inter      Intermediate
 	FailStreak int
 	OkStreak   int
 	DNSFail    int
@@ -464,7 +468,7 @@ func Evaluate(t Target, prev Previous, r probe.Result, now time.Time) Outcome {
 	e.legacy(ok)
 	e.grade(ok)
 	e.expectedIssuer(info)
-	e.changes(info)
+	e.changes(info, cur)
 	return e.out
 }
 
@@ -782,7 +786,8 @@ func (e *evaluation) expectedIssuer(info probe.CertInfo) {
 // changes compares the leaf with the pinned one (self-signed trust) or with
 // the previous leaf. Change findings stay open until acknowledged or until
 // an automatic renewal confirms the certificate is back on its normal cycle.
-func (e *evaluation) changes(info probe.CertInfo) {
+// The details carry a diff of the two leaves.
+func (e *evaluation) changes(info probe.CertInfo, cur probe.Address) {
 	fp, prev := e.out.LeafFP, e.prev
 	renewed := false
 	switch {
@@ -790,18 +795,32 @@ func (e *evaluation) changes(info probe.CertInfo) {
 		if e.t.PinnedFP == "" {
 			e.out.PinFP = fp
 		} else if fp != e.t.PinnedFP {
+			what := describeChange(prev, info)
+			if prev.Leaf != nil && prev.Leaf.Fingerprint == e.t.PinnedFP {
+				what = Diff(*prev.Leaf, info, Intermediate{}, Intermediate{})
+			}
 			e.open(Finding{Kind: CertificateChanged, Severity: Warning, Fingerprint: fp,
-				Details: fmt.Sprintf("pinned %s replaced by %s, %s", e.t.PinnedFP[:8], fp[:8], describeChange(prev, info))})
+				Details: fmt.Sprintf("pinned %s replaced by %s: %s", e.t.PinnedFP[:8], fp[:8], what)})
 		}
 	case prev.LeafFP != "" && fp != prev.LeafFP && !prev.Recent[fp]:
 		sameIssuer := prev.IssuerOrg != "" && strings.EqualFold(prev.IssuerOrg, info.IssuerOrg)
-		if e.out.RenewalManaged && sameIssuer && superset(info.SANs, prev.SANs) {
+		// An expected renewal keeps every name and still covers the
+		// server name; dropping one is worth a look even from the ACME CA.
+		covers := true
+		if checked, ok := probe.CheckHostname(e.out.Leaf, e.t.ServerName); checked {
+			covers = ok
+		}
+		what := describeChange(prev, info)
+		if prev.Leaf != nil {
+			what = Diff(*prev.Leaf, info, prev.Inter, servedIntermediate(cur))
+		}
+		if e.out.RenewalManaged && sameIssuer && superset(info.SANs, prev.SANs) && covers {
 			renewed = true
 			e.out.Events = append(e.out.Events, Finding{Kind: CertificateChanged, Severity: Info, Fingerprint: fp,
-				Details: fmt.Sprintf("renewed by %s, %s → %s", issuerName(info), shortCN(prev.IssuerCN), shortCN(info.IssuerCN))})
+				Details: fmt.Sprintf("renewed by %s: %s", issuerName(info), what)})
 		} else {
 			e.open(Finding{Kind: CertificateChanged, Severity: Warning, Fingerprint: fp,
-				Details: fmt.Sprintf("new leaf %s from %s, %s", fp[:8], issuerName(info), describeChange(prev, info))})
+				Details: fmt.Sprintf("new leaf %s from %s: %s", fp[:8], issuerName(info), what)})
 		}
 		if e.t.ExpectedIssuer == "" && prev.IssuerOrg != "" && !sameIssuer {
 			e.open(Finding{Kind: IssuerChanged, Severity: Warning, Fingerprint: fp,
@@ -815,6 +834,14 @@ func (e *evaluation) changes(info probe.CertInfo) {
 	if e.t.ExpectedIssuer == "" {
 		e.keepUnlessOpened(IssuerChanged)
 	}
+}
+
+// servedIntermediate is the certificate the address served after its leaf.
+func servedIntermediate(a probe.Address) Intermediate {
+	if len(a.Chain) < 2 {
+		return Intermediate{}
+	}
+	return Intermediate{FP: probe.Fingerprint(a.Chain[1]), CN: nameOf(a.Chain[1])}
 }
 
 // keepUnlessOpened keeps k when this evaluation did not open it again.

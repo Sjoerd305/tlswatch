@@ -374,7 +374,9 @@ func TestACMERenewalIsInfo(t *testing.T) {
 		t.Fatalf("ACME renewal opened findings: %v", e.open(tg.ID))
 	}
 	ch, _ := e.svc.RecentChanges(e.ctx, 0, 10)
-	if len(ch) != 1 || ch[0].Severity != check.Info || !strings.Contains(ch[0].Details, "renewed by Let's Encrypt") {
+	// The renewal says what changed; the lifetime did not.
+	if len(ch) != 1 || ch[0].Severity != check.Info || !strings.HasPrefix(ch[0].Details, "renewed by Let's Encrypt: SANs +www.portal.example.nl; expires ") ||
+		strings.Contains(ch[0].Details, "lifetime") {
 		t.Fatalf("recent changes: %+v", ch)
 	}
 	e.flush()
@@ -1324,5 +1326,20 @@ func TestDigestExpiryUsesTargetThreshold(t *testing.T) {
 		if got := digestExpiry(c.t, def, now, time.UTC).Tag; got != c.want {
 			t.Errorf("%s: %s, want %s", name, got, c.want)
 		}
+	}
+}
+
+// The diff of a change names an intermediate replaced under the same name,
+// from the chain last served with the old leaf.
+func TestChangeDiffNamesIntermediate(t *testing.T) {
+	e := newEnv(t)
+	now := e.clock.Now()
+	tg := e.target(nil)
+	ca1, ca2 := newCA(t, "Example"), newCA(t, "Example") // same name, another key
+	e.apply(tg.ID, result(served("192.0.2.1", ca1.leaf(t, now.Add(-days(10)), now.Add(days(80)), "portal.example.nl"), ca1.cert)))
+	e.apply(tg.ID, result(served("192.0.2.1", ca2.leaf(t, now.Add(-days(10)), now.Add(days(80)), "portal.example.nl"), ca2.cert)))
+	f := e.open(tg.ID)[check.CertificateChanged]
+	if f.Severity != check.Warning || !strings.Contains(f.Details, "intermediate Example CA replaced ("+probe.Fingerprint(ca1.cert)[:8]+" → "+probe.Fingerprint(ca2.cert)[:8]+")") {
+		t.Fatalf("change: %+v", f)
 	}
 }

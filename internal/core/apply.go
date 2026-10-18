@@ -3,9 +3,11 @@ package core
 import (
 	"context"
 	"crypto/rand"
+	"crypto/x509"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"strings"
@@ -57,6 +59,18 @@ func (s *Service) Evaluate(ctx context.Context, t Target, r probe.Result, st con
 	if t.CurrentFP != "" {
 		if c, err := s.Certificate(ctx, t.CurrentFP); err == nil {
 			prev.IssuerOrg, prev.IssuerCN, prev.SANs = c.IssuerOrg, c.IssuerCN, c.SANs
+			if b, _ := pem.Decode([]byte(c.PEM)); b != nil {
+				if leaf, err := x509.ParseCertificate(b.Bytes); err == nil {
+					info := probe.Describe(leaf)
+					prev.Leaf = &info
+				}
+			}
+		}
+		if t.ID != 0 {
+			var err error
+			if prev.Inter, err = s.servedIntermediate(ctx, t.ID, t.CurrentFP); err != nil {
+				return check.Outcome{}, err
+			}
 		}
 	}
 	if t.ID != 0 {
@@ -99,6 +113,29 @@ func (s *Service) Evaluate(ctx context.Context, t Target, r probe.Result, st con
 
 func checkThresholds(th config.Thresholds) check.Thresholds {
 	return check.Thresholds{Warn: th.WarnDays, Crit: th.CritDays, WarnPct: th.WarnPct, CritPct: th.CritPct}
+}
+
+// servedIntermediate is the certificate last served after leaf fp on the
+// target, for the diff of a change; zero when none was.
+func (s *Service) servedIntermediate(ctx context.Context, targetID int64, fp string) (check.Intermediate, error) {
+	var chain string
+	err := s.DB.R.QueryRowContext(ctx, "SELECT chain FROM observations WHERE target_id = ? AND leaf_fp = ? ORDER BY id DESC LIMIT 1", targetID, fp).Scan(&chain)
+	if errors.Is(err, sql.ErrNoRows) {
+		return check.Intermediate{}, nil
+	}
+	if err != nil {
+		return check.Intermediate{}, err
+	}
+	var fps []string
+	_ = json.Unmarshal([]byte(chain), &fps)
+	if len(fps) < 2 || strings.HasPrefix(fps[1], "root:") {
+		return check.Intermediate{}, nil
+	}
+	in := check.Intermediate{FP: fps[1]}
+	if c, err := s.Certificate(ctx, fps[1]); err == nil {
+		in.CN = c.SubjectCN
+	}
+	return in, nil
 }
 
 // RecentLeaves is how far back a leaf served at any address of a target
