@@ -66,6 +66,7 @@ const (
 	csrfCookie    = "tlswatch_csrf"
 	themeCookie   = "tlswatch_theme"
 	oidcCookie    = "tlswatch_oidc"
+	mfaCookie     = "tlswatch_mfa" // a sign-in waiting for its TOTP code
 	flashCookie   = "tlswatch_flash"
 )
 
@@ -533,6 +534,16 @@ func (s *Server) require(a authz.Action, h http.HandlerFunc) http.HandlerFunc {
 			http.Redirect(w, r, "/login?next="+url.QueryEscape(next), http.StatusSeeOther)
 			return
 		}
+		// A local account whose role must use TOTP and has none yet sets
+		// it up before anything else.
+		if s.totpDue(ri) && r.URL.Path != "/account/totp" {
+			if wantsJSON(r) {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "Set up two-factor sign-in first."})
+				return
+			}
+			http.Redirect(w, r, "/account/totp", http.StatusSeeOther)
+			return
+		}
 		if !authz.Allowed(ri.session.User.Role, a) {
 			if ri.session.User.Role == authz.Demo {
 				s.fail(w, r, http.StatusForbidden, demoRefusal)
@@ -543,6 +554,13 @@ func (s *Server) require(a authz.Action, h http.HandlerFunc) http.HandlerFunc {
 		}
 		h(w, r)
 	}
+}
+
+// totpDue reports whether the signed-in user must set up TOTP: a local
+// account of a role an admin requires it for, without it.
+func (s *Server) totpDue(ri *reqInfo) bool {
+	u := ri.session.User
+	return !s.Demo && u.Method == auth.MethodLocal && !u.HasTOTP() && ri.settings.SignIn.TOTPRequired(string(u.Role))
 }
 
 // user returns the signed-in user (only valid behind require).
@@ -557,13 +575,18 @@ func user(r *http.Request) auth.User {
 // short-lived flash cookie.
 func (s *Server) back(w http.ResponseWriter, r *http.Request, path, notice, kind string) {
 	if notice != "" {
-		if kind == "" {
-			kind = "ok"
-		}
-		v := base64.RawURLEncoding.EncodeToString([]byte(kind + "|" + notice))
-		http.SetCookie(w, &http.Cookie{Name: flashCookie, Value: v, Path: "/", HttpOnly: true, Secure: info(r).https, SameSite: http.SameSiteLaxMode, MaxAge: 60})
+		s.setFlash(w, r, notice, kind)
 	}
 	http.Redirect(w, r, path, http.StatusSeeOther)
+}
+
+// setFlash sets the notice the next page shows.
+func (s *Server) setFlash(w http.ResponseWriter, r *http.Request, notice, kind string) {
+	if kind == "" {
+		kind = "ok"
+	}
+	v := base64.RawURLEncoding.EncodeToString([]byte(kind + "|" + notice))
+	http.SetCookie(w, &http.Cookie{Name: flashCookie, Value: v, Path: "/", HttpOnly: true, Secure: info(r).https, SameSite: http.SameSiteLaxMode, MaxAge: 60})
 }
 
 // flash reads and clears the notice set by back.

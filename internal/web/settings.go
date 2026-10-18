@@ -70,39 +70,93 @@ func (s *Server) settingsGeneralSave(w http.ResponseWriter, r *http.Request) {
 // Sign-in.
 
 type signInData struct {
-	S         config.SignIn
-	HasSecret bool
-	Redirect  string
-	Error     string
+	S          config.SignIn
+	HasSecret  bool
+	HasOIDCKey bool
+	Redirect   string
+	// OIDCRedirect is the generic provider's callback URL.
+	OIDCRedirect string
+	Error        string
+	// Section is the card the error belongs to.
+	Section string
+}
+
+func (s *Server) signInData(r *http.Request, si config.SignIn) signInData {
+	st := info(r).settings
+	return signInData{S: si, HasSecret: st.HasGoogleSecret(), HasOIDCKey: st.SignIn.OIDCClientSecret != "",
+		Redirect: s.baseURL(r) + "/auth/google/callback", OIDCRedirect: s.baseURL(r) + "/auth/oidc/callback"}
 }
 
 func (s *Server) settingsSignIn(w http.ResponseWriter, r *http.Request) {
-	st := info(r).settings
-	s.settingsPage(w, r, http.StatusOK, "settings-signin", "signin", "Settings", signInData{S: st.SignIn, HasSecret: st.HasGoogleSecret(), Redirect: s.baseURL(r) + "/auth/google/callback"})
+	s.settingsPage(w, r, http.StatusOK, "settings-signin", "signin", "Settings", s.signInData(r, info(r).settings.SignIn))
 }
 
+// settingsSignInSave saves one card of the page: section is totp, google
+// or oidc, and the others stay as they are.
 func (s *Server) settingsSignInSave(w http.ResponseWriter, r *http.Request) {
-	si := config.SignIn{
-		GoogleClientID:     strings.TrimSpace(r.PostFormValue("google_client_id")),
-		GoogleClientSecret: strings.TrimSpace(r.PostFormValue("google_client_secret")),
-		GoogleDomain:       strings.ToLower(strings.TrimSpace(r.PostFormValue("google_domain"))),
+	si := info(r).settings.SignIn
+	// The secrets in the settings are the stored ones (or the
+	// environment's); only a typed one is saved.
+	si.GoogleClientSecret, si.OIDCClientSecret = "", ""
+	var clearGoogle, clearOIDC bool
+	var object, detail string
+	section := r.PostFormValue("section")
+	switch section {
+	case "totp":
+		si.TOTPRoles = nil
+		for _, v := range r.PostForm["totp_roles"] {
+			if role, err := authz.ParseRole(v); err == nil && !slices.Contains(si.TOTPRoles, string(role)) {
+				si.TOTPRoles = append(si.TOTPRoles, string(role))
+			}
+		}
+		object, detail = "two-factor sign-in", "required for="+strings.Join(si.TOTPRoles, ",")
+	case "google":
+		si.GoogleClientID = strings.TrimSpace(r.PostFormValue("google_client_id"))
+		si.GoogleClientSecret = strings.TrimSpace(r.PostFormValue("google_client_secret"))
+		si.GoogleDomain = strings.ToLower(strings.TrimSpace(r.PostFormValue("google_domain")))
+		clearGoogle = r.PostFormValue("clear_secret") == "1"
+		object, detail = "google sign-in", fmt.Sprintf("client_id=%s domain=%s", si.GoogleClientID, si.GoogleDomain)
+		if si.GoogleClientSecret != "" {
+			detail += " secret=[changed]"
+		}
+		if clearGoogle {
+			detail += " secret=[removed]"
+		}
+	case "oidc":
+		si.OIDCName = strings.TrimSpace(r.PostFormValue("oidc_name"))
+		si.OIDCIssuer = strings.TrimSpace(r.PostFormValue("oidc_issuer"))
+		si.OIDCClientID = strings.TrimSpace(r.PostFormValue("oidc_client_id"))
+		si.OIDCClientSecret = strings.TrimSpace(r.PostFormValue("oidc_client_secret"))
+		si.OIDCScopes = strings.Join(strings.Fields(r.PostFormValue("oidc_scopes")), " ")
+		si.OIDCDomain = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(r.PostFormValue("oidc_domain")), "@"))
+		si.OIDCRoleClaim = strings.TrimSpace(r.PostFormValue("oidc_role_claim"))
+		si.OIDCAdminGroups = strings.Join(config.SplitGroups(r.PostFormValue("oidc_admin_groups")), ", ")
+		si.OIDCOperatorGroups = strings.Join(config.SplitGroups(r.PostFormValue("oidc_operator_groups")), ", ")
+		si.OIDCViewerGroups = strings.Join(config.SplitGroups(r.PostFormValue("oidc_viewer_groups")), ", ")
+		si.OIDCCreateUsers = r.PostFormValue("oidc_create_users") == "1"
+		clearOIDC = r.PostFormValue("clear_oidc_secret") == "1"
+		object = "openid connect sign-in"
+		detail = fmt.Sprintf("name=%s issuer=%s client_id=%s scopes=%s domain=%s role_claim=%s admin=%s operator=%s viewer=%s create_users=%v",
+			si.OIDCName, si.OIDCIssuer, si.OIDCClientID, si.OIDCScopes, si.OIDCDomain, si.OIDCRoleClaim, si.OIDCAdminGroups, si.OIDCOperatorGroups, si.OIDCViewerGroups, si.OIDCCreateUsers)
+		if si.OIDCClientSecret != "" {
+			detail += " secret=[changed]"
+		}
+		if clearOIDC {
+			detail += " secret=[removed]"
+		}
+	default:
+		s.fail(w, r, http.StatusBadRequest, "The form could not be read.")
+		return
 	}
-	clear := r.PostFormValue("clear_secret") == "1"
-	if err := s.Settings.SaveSignIn(r.Context(), si, clear); err != nil {
+	if err := s.Settings.SaveSignIn(r.Context(), si, clearGoogle, clearOIDC); err != nil {
 		if msg, ok := s.formError(w, r, err); ok {
-			st := info(r).settings
-			s.settingsPage(w, r, http.StatusBadRequest, "settings-signin", "signin", "Settings", signInData{S: si, HasSecret: st.HasGoogleSecret(), Error: msg, Redirect: s.baseURL(r) + "/auth/google/callback"})
+			d := s.signInData(r, si)
+			d.Error, d.Section = msg, section
+			s.settingsPage(w, r, http.StatusBadRequest, "settings-signin", "signin", "Settings", d)
 		}
 		return
 	}
-	detail := fmt.Sprintf("client_id=%s domain=%s", si.GoogleClientID, si.GoogleDomain)
-	if si.GoogleClientSecret != "" {
-		detail += " secret=[changed]"
-	}
-	if clear {
-		detail += " secret=[removed]"
-	}
-	s.Core.Audit(r.Context(), user(r).Email, "settings.signin", "google sign-in", detail)
+	s.Core.Audit(r.Context(), user(r).Email, "settings.signin", object, detail)
 	s.back(w, r, "/settings/signin", "Sign-in settings saved.", "ok")
 }
 
@@ -436,7 +490,10 @@ type usersData struct {
 	Error  string
 	Form   auth.User
 	Google bool
-	Self   int64
+	// OIDC is the generic OpenID Connect provider, under OIDCName.
+	OIDC     bool
+	OIDCName string
+	Self     int64
 	// Mail is true when an enabled SMTP channel can carry invite links;
 	// without one, an admin sets the first password.
 	Mail bool
@@ -478,7 +535,7 @@ func (s *Server) settingsUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mail := s.mailReady(r.Context())
-	d := usersData{Users: us, Google: info(r).settings.GoogleEnabled(), Self: user(r).ID, Form: newUserForm(mail), Mail: mail}
+	d := usersData{Users: us, Google: info(r).settings.GoogleEnabled(), OIDC: info(r).settings.OIDCEnabled(), OIDCName: info(r).settings.SignIn.OIDCLabel(), Self: user(r).ID, Form: newUserForm(mail), Mail: mail}
 	if id, err := strconv.ParseInt(r.URL.Query().Get("edit"), 10, 64); err == nil {
 		for i := range us {
 			if us[i].ID == id {
@@ -498,7 +555,7 @@ func (s *Server) userCreate(w http.ResponseWriter, r *http.Request) {
 	f := auth.User{Email: strings.TrimSpace(r.PostFormValue("email")), Name: strings.TrimSpace(r.PostFormValue("name")), Role: role, Method: method}
 	fail := func(msg string) {
 		us, _ := s.Auth.ListUsers(ctx)
-		s.settingsPage(w, r, http.StatusBadRequest, "settings-users", "users", "Settings", usersData{Users: us, Form: f, Error: msg, Google: info(r).settings.GoogleEnabled(), Self: user(r).ID, Mail: mail})
+		s.settingsPage(w, r, http.StatusBadRequest, "settings-users", "users", "Settings", usersData{Users: us, Form: f, Error: msg, Google: info(r).settings.GoogleEnabled(), OIDC: info(r).settings.OIDCEnabled(), OIDCName: info(r).settings.SignIn.OIDCLabel(), Self: user(r).ID, Mail: mail})
 	}
 	if rerr != nil {
 		fail("Choose a role")
@@ -538,8 +595,8 @@ func (s *Server) userCreate(w http.ResponseWriter, r *http.Request) {
 		detail += " password=set-by-admin"
 	}
 	s.Core.Audit(ctx, user(r).Email, "user.create", "user "+u.Email, detail)
-	if u.Method == auth.MethodGoogle {
-		s.back(w, r, "/settings/users", u.Email+" can now sign in with Google.", "ok")
+	if u.Method != auth.MethodLocal {
+		s.back(w, r, "/settings/users", u.Email+" can now sign in with "+s.methodName(r, u.Method)+".", "ok")
 		return
 	}
 	if setPassword {
@@ -591,7 +648,7 @@ func (s *Server) inviteLink(r *http.Request, u auth.User) (string, bool, error) 
 func (s *Server) showLink(w http.ResponseWriter, r *http.Request, u auth.User, link string, sent bool) {
 	us, _ := s.Auth.ListUsers(r.Context())
 	mail := s.mailReady(r.Context())
-	d := usersData{Users: us, Link: link, Google: info(r).settings.GoogleEnabled(), Self: user(r).ID, Form: newUserForm(mail), Mail: mail}
+	d := usersData{Users: us, Link: link, Google: info(r).settings.GoogleEnabled(), OIDC: info(r).settings.OIDCEnabled(), OIDCName: info(r).settings.SignIn.OIDCLabel(), Self: user(r).ID, Form: newUserForm(mail), Mail: mail}
 	text := "Send this one-time link to " + u.Email + "; it is valid for 7 days."
 	if sent {
 		text = "A one-time link was e-mailed to " + u.Email + ". You can also pass it on yourself; it is valid for 7 days."
@@ -818,6 +875,13 @@ func (s *Server) settingsAbout(w http.ResponseWriter, r *http.Request) {
 type accountData struct {
 	U     auth.User
 	Error string
+	// MethodName names how the user signs in.
+	MethodName string
+	// Two-factor sign-in: the recovery codes left, whether the role must
+	// use it, and new recovery codes, shown this once.
+	RecoveryLeft  int
+	TOTPRequired  bool
+	RecoveryCodes []string
 	// Calendar feeds, the tags a new one can be limited to, and the URL of
 	// one just created, shown this once.
 	Calendars []core.Calendar
@@ -836,7 +900,14 @@ func (s *Server) account(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) accountData(r *http.Request) (accountData, error) {
 	d := accountData{U: user(r)}
+	d.MethodName = s.methodName(r, d.U.Method)
+	d.TOTPRequired = info(r).settings.SignIn.TOTPRequired(string(d.U.Role))
 	var err error
+	if d.U.HasTOTP() {
+		if d.RecoveryLeft, err = s.Auth.RecoveryCodesLeft(r.Context(), d.U.ID); err != nil {
+			return d, err
+		}
+	}
 	if d.Calendars, err = s.Core.Calendars(r.Context(), d.U.ID); err != nil {
 		return d, err
 	}
@@ -966,7 +1037,7 @@ func (s *Server) accountTheme(w http.ResponseWriter, r *http.Request) {
 func (s *Server) accountPassword(w http.ResponseWriter, r *http.Request) {
 	u := user(r)
 	if u.Method != auth.MethodLocal {
-		s.fail(w, r, http.StatusBadRequest, "This account signs in with Google.")
+		s.fail(w, r, http.StatusBadRequest, "This account signs in with "+s.methodName(r, u.Method)+".")
 		return
 	}
 	fail := func(msg string) {
@@ -978,7 +1049,9 @@ func (s *Server) accountPassword(w http.ResponseWriter, r *http.Request) {
 		d.Error = msg
 		s.renderStatus(w, r, http.StatusBadRequest, "account", &Page{Title: "Account", Data: d})
 	}
-	if _, err := s.Auth.Login(r.Context(), u.Email, r.PostFormValue("current"), info(r).ip); err != nil {
+	// With TOTP, the right password answers ErrSecondFactor: this session
+	// already passed the code.
+	if _, err := s.Auth.Login(r.Context(), u.Email, r.PostFormValue("current"), info(r).ip); err != nil && !errors.Is(err, auth.ErrSecondFactor) {
 		fail("The current password is incorrect.")
 		return
 	}

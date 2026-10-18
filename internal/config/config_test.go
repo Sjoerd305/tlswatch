@@ -69,7 +69,7 @@ func TestReencryptSealedSettings(t *testing.T) {
 	k1, _, _ := secret.Generate()
 	k2, _, _ := secret.Generate()
 	st := NewStore(d, k1)
-	if err := st.SaveSignIn(ctx, SignIn{GoogleClientID: "id", GoogleClientSecret: "gsecret"}, false); err != nil {
+	if err := st.SaveSignIn(ctx, SignIn{GoogleClientID: "id", GoogleClientSecret: "gsecret"}, false, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SaveCT(ctx, CT{Source: "certspotter", IntervalS: 3600, APIKey: "ctkey"}, false); err != nil {

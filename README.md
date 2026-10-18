@@ -19,8 +19,8 @@ tlswatch watches the TLS certificates that are actually served on your hostnames
 - Live pages that update as checks land.
 - **Nodes** probe from inside networks the server cannot reach: one install command, one outbound HTTPS rule, the node updates itself, only to releases signed with the tlswatch release key; the schedule, inventory and alerts stay in one place.
 - **Certificate Transparency watching**: every certificate publicly issued for your domains, matched against what the targets serve; one that no target serves is a finding, a renewal on its way is not.
-- Roles (viewer, operator, admin), local accounts and Google sign-in, an audit log.
-- **Configured in the browser**: SMTP relays, Telegram bots, Slack (Mattermost, Rocket.Chat) and Discord webhooks, ntfy topics, your own webhooks, Google sign-in, thresholds and the public URL all live under Settings.
+- Roles (viewer, operator, admin), local accounts with optional TOTP (required per role if you like), single sign-on through Google or any OpenID Connect provider (Entra ID, Keycloak, Authentik, Okta) with groups mapped to roles, an audit log.
+- **Configured in the browser**: SMTP relays, Telegram bots, Slack (Mattermost, Rocket.Chat) and Discord webhooks, ntfy topics, your own webhooks, Google and OpenID Connect sign-in, thresholds and the public URL all live under Settings.
 - Encrypted backup and restore from the UI, also from the setup screen of a new installation.
 - Optional Prometheus metrics at `/metrics`, behind a bearer token.
 
@@ -105,7 +105,7 @@ Put a reverse proxy with TLS in front before exposing tlswatch, then set the pub
 ## Backups
 
 - **Settings › Backup** downloads the whole instance as one file encrypted with a passphrase, and restores such a file in place. Stored credentials are re-encrypted for the instance that restores it, so the file moves between hosts without the secret key.
-- **`tlswatch backup PATH`** writes a plain database copy, safe while the server runs, for a nightly cron. Keep the secret key with it: stored SMTP passwords, Telegram tokens, webhook URLs and the Google client secret are encrypted with it. `tlswatch rotate-key` replaces the key with the server stopped.
+- **`tlswatch backup PATH`** writes a plain database copy, safe while the server runs, for a nightly cron. Keep the secret key with it: stored SMTP passwords, Telegram tokens, webhook URLs, the single sign-on client secrets and TOTP secrets are encrypted with it. `tlswatch rotate-key` replaces the key with the server stopped.
 
 ## Commands
 

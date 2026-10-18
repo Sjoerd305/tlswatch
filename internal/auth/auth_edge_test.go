@@ -72,7 +72,7 @@ func TestOIDCClaimEdgeCases(t *testing.T) {
 			"email": "g@example.nl", "email_verified": "true", "hd": "Example.NL", "name": "From Google"}
 	}
 	claims = base()
-	u, err := s.OIDCFinish(ctx, cfg, st, st.State, "c")
+	u, _, err := s.OIDCFinish(ctx, cfg, st, st.State, "c")
 	if err != nil || u.ID != g.ID || u.Name != "Kept Name" {
 		t.Fatalf("string email_verified, short issuer, hd in another case: %+v %v", u, err)
 	}
@@ -88,21 +88,21 @@ func TestOIDCClaimEdgeCases(t *testing.T) {
 	} {
 		claims = base()
 		mutate(claims)
-		if _, err := s.OIDCFinish(ctx, cfg, st, st.State, "c"); err == nil {
+		if _, _, err := s.OIDCFinish(ctx, cfg, st, st.State, "c"); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
 	// A state without a value never matches, even an empty one from the
 	// callback.
 	claims = base()
-	if _, err := s.OIDCFinish(ctx, cfg, OIDCState{Nonce: st.Nonce, Expires: st.Expires}, "", "c"); !errors.Is(err, ErrTokenInvalid) {
+	if _, _, err := s.OIDCFinish(ctx, cfg, OIDCState{Nonce: st.Nonce, Expires: st.Expires}, "", "c"); !errors.Is(err, ErrTokenInvalid) {
 		t.Errorf("empty state: %v", err)
 	}
 	// Without a domain, any verified account an admin added signs in.
 	cfg.Domain = ""
 	claims = base()
 	delete(claims, "hd")
-	if _, err := s.OIDCFinish(ctx, cfg, st, st.State, "c"); err != nil {
+	if _, _, err := s.OIDCFinish(ctx, cfg, st, st.State, "c"); err != nil {
 		t.Errorf("no domain configured, no hd: %v", err)
 	}
 }

@@ -12,7 +12,7 @@
           <tr class="{{if and $d.Edit (eq $d.Edit.ID .ID)}}sel{{else if not .Enabled}}muted{{end}}">
             <td data-label="Name" class="strong">{{.DisplayName}}{{if eq .ID $d.Self}} <span class="muted">you</span>{{end}}</td>
             <td data-label="E-mail" class="mono small">{{.Email}}</td>
-            <td data-label="Login">{{if eq .Method "google"}}Google{{else}}password{{if not .HasPassword}} <span class="muted">· link pending</span>{{end}}{{end}}</td>
+            <td data-label="Login">{{if eq .Method "google"}}Google{{else if eq .Method "oidc"}}{{$d.OIDCName}}{{else}}password{{if .HasTOTP}} · TOTP{{end}}{{if not .HasPassword}} <span class="muted">· link pending</span>{{end}}{{end}}</td>
             <td data-label="Role">{{.Role}}</td>
             <td data-label="Status">{{if not .Enabled}}<span class="st off">disabled</span>{{else if .Locked $p.Now.Unix}}<span class="st warn">locked</span> <span class="mono muted small">until {{clock $p.Loc .LockedUntil}}</span>{{else}}<span class="st ok">active</span>{{end}}</td>
             <td data-label="Last sign-in" class="mono muted">{{when $p.Loc $p.Now .LastLogin}}</td>
@@ -29,17 +29,19 @@
       <div class="fgrid c3">
         <div class="field"><label class="label" for="un">Name</label><input id="un" name="name" class="input" value="{{$u.Name}}"></div>
         <div class="field"><label class="label" for="ur">Role</label><select id="ur" name="role" class="input">{{range roles}}<option value="{{.}}"{{if eq . $u.Role}} selected{{end}}>{{.}}</option>{{end}}</select></div>
-        <div class="field"><label class="label" for="um">Login method</label><select id="um" name="method" class="input"><option value="local"{{if eq $u.Method "local"}} selected{{end}}>password</option><option value="google"{{if eq $u.Method "google"}} selected{{end}}>Google</option></select></div>
+        <div class="field"><label class="label" for="um">Login method</label><select id="um" name="method" class="input"><option value="local"{{if eq $u.Method "local"}} selected{{end}}>password</option><option value="google"{{if eq $u.Method "google"}} selected{{end}}>Google</option><option value="oidc"{{if eq $u.Method "oidc"}} selected{{end}}>{{$d.OIDCName}}</option></select></div>
       </div>
       <label class="check"><input type="checkbox" name="enabled" value="1"{{if $u.Enabled}} checked{{end}}> Enabled; disabling signs the user out everywhere</label>
       <div class="form-foot">
         <button type="submit" class="btn btn-primary">Save</button>
         <a href="/settings/users" class="btn">Cancel</a>
         {{- if eq $u.Method "local"}}<button type="submit" form="user-link" class="btn cancel">{{if $d.Mail}}E-mail a new password link{{else}}New password link{{end}}</button>{{end}}
+        {{- if and $u.HasTOTP (ne $u.ID $d.Self)}}<button type="submit" form="user-totp-reset" class="btn">Reset two-factor</button>{{end}}
         {{- if ne $u.ID $d.Self}}<button type="submit" form="user-delete" class="btn-link danger{{if ne $u.Method "local"}} cancel{{end}}">Delete user</button>{{end}}
       </div>
     </form>
     {{- if eq $u.Method "local"}}<form id="user-link" method="post" action="/settings/users/{{$u.ID}}/link" hidden>{{template "csrf" $p.CSRF}}</form>{{end}}
+    {{- if and $u.HasTOTP (ne $u.ID $d.Self)}}<form id="user-totp-reset" method="post" action="/settings/users/{{$u.ID}}/totp/reset" data-confirm="Reset two-factor sign-in for {{$u.Email}}? Their TOTP and recovery codes are removed and they are signed out; if their role requires it, they set it up again at the next sign-in." hidden>{{template "csrf" $p.CSRF}}</form>{{end}}
     {{- if and (eq $u.Method "local") (not $d.Mail)}}
     <form class="card form" method="post" action="/settings/users/{{$u.ID}}/password" autocomplete="off">
       {{template "csrf" $p.CSRF}}
@@ -65,7 +67,7 @@
         <div class="field"><label class="label" for="nr">Role</label><select id="nr" name="role" class="input">{{range roles}}<option value="{{.}}"{{if eq . $d.Form.Role}} selected{{end}}>{{.}}</option>{{end}}</select></div>
         <div class="field"><label class="label" for="nm">Login method</label><select id="nm" name="method" class="input">
           {{- if not $d.Mail}}<option value="local-set"{{if eq $d.Form.Method "local-set"}} selected{{end}}>password, set by you</option>{{end}}
-          <option value="local"{{if eq $d.Form.Method "local"}} selected{{end}}>{{if $d.Mail}}password, invite link by e-mail{{else}}password, one-time link you pass on{{end}}</option><option value="google"{{if eq $d.Form.Method "google"}} selected{{end}}>Google{{if not $d.Google}} (not configured yet){{end}}</option></select></div>
+          <option value="local"{{if eq $d.Form.Method "local"}} selected{{end}}>{{if $d.Mail}}password, invite link by e-mail{{else}}password, one-time link you pass on{{end}}</option><option value="google"{{if eq $d.Form.Method "google"}} selected{{end}}>Google{{if not $d.Google}} (not configured yet){{end}}</option><option value="oidc"{{if eq $d.Form.Method "oidc"}} selected{{end}}>{{$d.OIDCName}}{{if not $d.OIDC}} (not configured yet){{end}}</option></select></div>
       </div>
       {{- if not $d.Mail}}
       <div class="fgrid c2 setpw">

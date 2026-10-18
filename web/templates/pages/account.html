@@ -1,5 +1,5 @@
 {{define "content"}}{{$p := .}}{{$d := .Data}}
-<div class="page-head"><div><h1>Account</h1><span class="summary">{{$d.U.Email}} · {{$d.U.Role}} · {{if eq $d.U.Method "google"}}signs in with Google{{else}}local password{{end}}</span></div></div>
+<div class="page-head"><div><h1>Account</h1><span class="summary">{{$d.U.Email}} · {{$d.U.Role}} · {{if eq $d.U.Method "local"}}local password{{if $d.U.HasTOTP}} and TOTP{{end}}{{else}}signs in with {{$d.MethodName}}{{end}}</span></div></div>
 {{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
 <div class="grid-form-side">
   <div class="stack">
@@ -27,6 +27,34 @@
       </div>
       <div class="form-foot"><button type="submit" class="btn btn-primary">Change password</button><span class="help">Other sessions are signed out.</span></div>
     </form>
+    <section class="card form" id="totp">
+      <div class="row between"><h2 class="h3">Two-factor sign-in</h2>{{if $d.U.HasTOTP}}<span class="st sm ok">on</span>{{else}}<span class="st sm off">off</span>{{end}}</div>
+      {{- with $d.RecoveryCodes}}
+      <div class="notice warn" role="status">{{template "notice-icon" "warn"}}<div>Save these recovery codes somewhere safe now; they are not shown again. Each one signs you in once without your phone.</div></div>
+      <ul class="codes mono">{{range .}}<li>{{.}}</li>{{end}}</ul>
+      <div class="row"><button type="button" class="btn btn-xs" data-copy="{{join . "\n"}}">copy all</button></div>
+      {{- end}}
+      {{- if $d.U.HasTOTP}}
+      <p class="help">On since {{date $p.Loc $d.U.TOTPSince}}. After your password, sign-in asks for the code from your authenticator app. {{$d.RecoveryLeft}} of 10 recovery codes left.</p>
+      <form method="post" action="/account/totp/recovery" class="row" autocomplete="off">
+        {{template "csrf" $p.CSRF}}
+        <label class="label" for="rcode">Code</label><input id="rcode" name="code" class="input mono w150" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" maxlength="20" required>
+        <button type="submit" class="btn">New recovery codes</button>
+      </form>
+      {{- if not $d.TOTPRequired}}
+      <form method="post" action="/account/totp/disable" class="row" autocomplete="off" data-confirm="Turn two-factor sign-in off? Your password alone will sign you in.">
+        {{template "csrf" $p.CSRF}}
+        <label class="label" for="dcode">Code</label><input id="dcode" name="code" class="input mono w150" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" maxlength="20" required>
+        <button type="submit" class="btn">Turn off</button>
+      </form>
+      <span class="help">Both ask for a current code from the app, or a recovery code.</span>
+      {{- end}}
+      {{- if $d.TOTPRequired}}<span class="help">Required for {{$d.U.Role}}s by an administrator, so it cannot be turned off; an administrator can reset it if you lose your phone and your recovery codes.</span>{{end}}
+      {{- else}}
+      <p class="help">Asks for a code from an authenticator app on your phone after your password, so a leaked password alone does not sign anyone in.</p>
+      <div class="row"><a href="/account/totp" class="btn">Set up</a></div>
+      {{- end}}
+    </section>
     {{- end}}
     <section class="card form" id="calendars">
       <h2 class="h3">Calendar feeds</h2>

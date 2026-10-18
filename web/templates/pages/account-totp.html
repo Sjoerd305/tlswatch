@@ -1,0 +1,20 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}
+<div class="page-head"><div><h1>Two-factor sign-in</h1><span class="summary">A code from an authenticator app on your phone, asked for after your password.</span></div></div>
+{{- if $d.Required}}<div class="notice info" role="note">{{template "notice-icon" "info"}}<div>An administrator requires two-factor sign-in for your role. Set it up to continue.</div></div>{{end}}
+<div class="grid-form-side">
+  <form class="card form" method="post" action="/account/totp" autocomplete="off">
+    {{template "csrf" $p.CSRF}}
+    <input type="hidden" name="setup" value="{{$d.Setup.Sealed}}">
+    {{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
+    <div class="form-sec">1 · Scan</div>
+    <p class="help">Scan the code with an authenticator app, such as Aegis, 2FAS, Google Authenticator, Microsoft Authenticator or the one in your password manager.</p>
+    <div class="qr">{{$d.QR}}</div>
+    <div class="field"><span class="label">Or enter this key by hand</span>
+      <div class="fp-row"><span class="mono wrap-any">{{$d.Setup.Secret}}</span><button type="button" class="btn btn-xs" data-copy="{{$d.Setup.Secret}}">copy</button></div>
+      <span class="help">Time-based, 6 digits, every 30 seconds.</span></div>
+    <div class="form-sec">2 · Confirm</div>
+    <div class="field"><label class="label" for="code">Code the app shows now</label><input id="code" name="code" class="input mono w150" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" maxlength="8" required></div>
+    <div class="form-foot"><button type="submit" class="btn btn-primary">Turn on</button>{{if not $d.Required}}<a href="/account" class="btn">Cancel</a>{{end}}<span class="help">Other sessions are signed out.</span></div>
+  </form>
+</div>
+{{end}}

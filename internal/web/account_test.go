@@ -270,7 +270,7 @@ func TestGoogleSignInHandlers(t *testing.T) {
 	if rec := hs.signedOut("GET", "/auth/google", nil, nil); rec.Code != http.StatusNotFound {
 		t.Fatalf("start while not configured: %d", rec.Code)
 	}
-	if err := hs.srv.Settings.SaveSignIn(ctx, config.SignIn{GoogleClientID: "cid.apps.googleusercontent.com", GoogleClientSecret: "gsecret", GoogleDomain: "example.test"}, false); err != nil {
+	if err := hs.srv.Settings.SaveSignIn(ctx, config.SignIn{GoogleClientID: "cid.apps.googleusercontent.com", GoogleClientSecret: "gsecret", GoogleDomain: "example.test"}, false, false); err != nil {
 		t.Fatal(err)
 	}
 	rec := hs.signedOut("GET", "/auth/google", nil, nil)

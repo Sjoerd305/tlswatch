@@ -556,7 +556,7 @@ func TestSettingsSavedFromUI(t *testing.T) {
 	if rec := hs.do(authz.Admin, "POST", "/settings/general", f, true); rec.Code != http.StatusSeeOther {
 		t.Fatalf("general: %d", rec.Code)
 	}
-	g := url.Values{"google_client_id": {"123.apps.googleusercontent.com"}, "google_client_secret": {"gsecret"}, "google_domain": {"Example.nl"}}
+	g := url.Values{"section": {"google"}, "google_client_id": {"123.apps.googleusercontent.com"}, "google_client_secret": {"gsecret"}, "google_domain": {"Example.nl"}}
 	if rec := hs.do(authz.Admin, "POST", "/settings/signin", g, true); rec.Code != http.StatusSeeOther {
 		t.Fatalf("signin: %d", rec.Code)
 	}

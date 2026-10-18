@@ -3,12 +3,24 @@
 <div class="grid-settings">
   {{template "settings-nav" $p}}
   <div class="stack">
-    <div><h2 class="h2">Sign-in</h2><span class="summary">Local accounts always work. Google sign-in is on once a client ID and secret are set; only users added under Users can sign in.</span></div>
-    {{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
-    {{- if $d.S.SecretUnreadable}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>The stored client secret was encrypted under another secret key and cannot be read; Google sign-in is off until it is entered again or removed.</div></div>{{end}}
-    <form class="card form" method="post" action="/settings/signin" autocomplete="off">
-      {{template "csrf" $p.CSRF}}
+    <div><h2 class="h2">Sign-in</h2><span class="summary">Local accounts always work. Google and another OpenID Connect provider are on once their client ID and secret are set; only users added under Users can sign in, unless the provider's role claim creates them.</span></div>
+    {{- if $d.S.SecretUnreadable}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>The stored Google client secret was encrypted under another secret key and cannot be read; Google sign-in is off until it is entered again or removed.</div></div>{{end}}
+    {{- if $d.S.OIDCSecretUnreadable}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>The stored OpenID Connect client secret was encrypted under another secret key and cannot be read; that sign-in is off until it is entered again or removed.</div></div>{{end}}
+
+    <form class="card form" method="post" action="/settings/signin" id="totp">
+      {{template "csrf" $p.CSRF}}<input type="hidden" name="section" value="totp">
+      <h3 class="h3">Two-factor sign-in</h3>
+      {{- if and $d.Error (eq $d.Section "totp")}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
+      <p class="help">Every local account can turn on a TOTP code from an authenticator app under Account. Required here, a local account of that role sets it up at its next sign-in before it can do anything else. Single sign-on accounts are left to their provider.</p>
+      <div class="field"><span class="label">Required for local accounts of</span>
+        <div class="checks">{{range roles}}<label class="check"><input type="checkbox" name="totp_roles" value="{{.}}"{{if $d.S.TOTPRequired (print .)}} checked{{end}}> {{.}}s</label>{{end}}</div></div>
+      <div class="form-foot"><button type="submit" class="btn btn-primary">Save</button></div>
+    </form>
+
+    <form class="card form" method="post" action="/settings/signin" autocomplete="off" id="google">
+      {{template "csrf" $p.CSRF}}<input type="hidden" name="section" value="google">
       <div class="row between"><h3 class="h3">Google</h3>{{if $s.GoogleEnabled}}<span class="st sm ok">enabled</span>{{else}}<span class="st sm off">off</span>{{end}}</div>
+      {{- if and $d.Error (eq $d.Section "google")}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
       <div class="field"><label class="label" for="redirect">Authorised redirect URI</label>
         <div class="fp-row"><input id="redirect" class="input mono" value="{{$d.Redirect}}" readonly><button type="button" class="btn btn-xs" data-copy="{{$d.Redirect}}">copy</button></div>
         <span class="help">Register this URI on the OAuth client in the Google Cloud console (type: Web application).</span></div>
@@ -19,6 +31,41 @@
         {{- if or $d.HasSecret $d.S.SecretUnreadable}}<label class="check"><input type="checkbox" name="clear_secret" value="1"> Remove the stored secret (turns Google sign-in off)</label>{{end}}{{end}}</div>
       <div class="field"><label class="label" for="domain">Workspace domain, optional</label><input id="domain" name="google_domain" class="input mono" value="{{$d.S.GoogleDomain}}" placeholder="example.nl" spellcheck="false"{{if $s.Locked "google_domain"}} readonly{{end}}>
         {{if $s.Locked "google_domain"}}{{template "env-note" (index $s.Env "google_domain")}}{{else}}<span class="help">Only accept accounts of this Google Workspace domain.</span>{{end}}</div>
+      <div class="form-foot"><button type="submit" class="btn btn-primary">Save</button></div>
+    </form>
+
+    <form class="card form" method="post" action="/settings/signin" autocomplete="off" id="oidc">
+      {{template "csrf" $p.CSRF}}<input type="hidden" name="section" value="oidc">
+      <div class="row between"><h3 class="h3">OpenID Connect</h3>{{if $s.OIDCEnabled}}<span class="st sm ok">enabled</span>{{else}}<span class="st sm off">off</span>{{end}}</div>
+      {{- if and $d.Error (eq $d.Section "oidc")}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
+      <p class="help">Microsoft Entra ID, Keycloak, Authentik, Okta or any other provider with OpenID Connect discovery. The e-mail address in the token is trusted, so use your organisation's own issuer (for Entra ID, the tenant's, not <span class="mono">common</span>).</p>
+      <div class="field"><label class="label" for="oredirect">Redirect URI</label>
+        <div class="fp-row"><input id="oredirect" class="input mono" value="{{$d.OIDCRedirect}}" readonly><button type="button" class="btn btn-xs" data-copy="{{$d.OIDCRedirect}}">copy</button></div>
+        <span class="help">Register this URI on the client at the provider, as a confidential web client using the authorization code flow.</span></div>
+      <div class="fgrid c2">
+        <div class="field"><label class="label" for="oname">Name on the button</label><input id="oname" name="oidc_name" class="input" value="{{$d.S.OIDCName}}" placeholder="OpenID Connect"><span class="help">"Sign in with …", for example Keycloak.</span></div>
+        <div class="field"><label class="label" for="oscopes">Scopes</label><input id="oscopes" name="oidc_scopes" class="input mono" value="{{$d.S.OIDCScopes}}" placeholder="openid email profile" spellcheck="false"><span class="help">Space-separated; empty is openid email profile.</span></div>
+      </div>
+      <div class="field"><label class="label" for="oissuer">Issuer URL</label><input id="oissuer" name="oidc_issuer" class="input mono" value="{{$d.S.OIDCIssuer}}" placeholder="https://login.example.nl/realms/main" spellcheck="false">
+        <span class="help">The endpoints are read from <span class="mono">/.well-known/openid-configuration</span> under it.</span></div>
+      <div class="fgrid c2">
+        <div class="field"><label class="label" for="ocid">Client ID</label><input id="ocid" name="oidc_client_id" class="input mono" value="{{$d.S.OIDCClientID}}" spellcheck="false"></div>
+        <div class="field"><label class="label" for="osecret">Client secret</label>
+          <input id="osecret" name="oidc_client_secret" class="input mono" type="password" value="" autocomplete="new-password" placeholder="{{if $d.HasOIDCKey}}stored · leave empty to keep{{else if $d.S.OIDCSecretUnreadable}}stored but unreadable · enter it again{{else}}not set{{end}}">
+          <span class="help">Stored encrypted with the secret key.</span>
+          {{- if or $d.HasOIDCKey $d.S.OIDCSecretUnreadable}}<label class="check"><input type="checkbox" name="clear_oidc_secret" value="1"> Remove the stored secret (turns this sign-in off)</label>{{end}}</div>
+      </div>
+      <div class="field"><label class="label" for="odomain">Allowed e-mail domain, optional</label><input id="odomain" name="oidc_domain" class="input mono" value="{{$d.S.OIDCDomain}}" placeholder="example.nl" spellcheck="false"><span class="help">Only accept e-mail addresses in this domain.</span></div>
+      <div class="form-sec">Roles from the provider, optional</div>
+      <div class="field"><label class="label" for="oclaim">Role claim</label><input id="oclaim" name="oidc_role_claim" class="input mono" value="{{$d.S.OIDCRoleClaim}}" placeholder="groups" spellcheck="false">
+        <span class="help">The claim with the user's groups or roles, such as <span class="mono">groups</span>, <span class="mono">roles</span> or <span class="mono">realm_access.roles</span>. Set, it decides the role at every sign-in, and a user in none of the groups below cannot sign in. Empty, roles are set under Users.</span></div>
+      <div class="fgrid c3">
+        <div class="field"><label class="label" for="oadmin">Admin groups</label><input id="oadmin" name="oidc_admin_groups" class="input mono" value="{{$d.S.OIDCAdminGroups}}" spellcheck="false"></div>
+        <div class="field"><label class="label" for="ooperator">Operator groups</label><input id="ooperator" name="oidc_operator_groups" class="input mono" value="{{$d.S.OIDCOperatorGroups}}" spellcheck="false"></div>
+        <div class="field"><label class="label" for="oviewer">Viewer groups</label><input id="oviewer" name="oidc_viewer_groups" class="input mono" value="{{$d.S.OIDCViewerGroups}}" spellcheck="false"></div>
+      </div>
+      <span class="help">Comma-separated, matched exactly; the highest role wins.</span>
+      <label class="check"><input type="checkbox" name="oidc_create_users" value="1"{{if $d.S.OIDCCreateUsers}} checked{{end}}> Create users from the role claim: someone in one of the groups signs in without being added first</label>
       <div class="form-foot"><button type="submit" class="btn btn-primary">Save</button></div>
     </form>
   </div>

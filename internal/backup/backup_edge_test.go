@@ -98,7 +98,7 @@ func TestRestoreDropsLinksAndReSealsSettings(t *testing.T) {
 	src := source(t, ka, "admin")
 	exec(t, src, "INSERT INTO tokens(hash, kind, user_id, expires_at, created_at) VALUES('t', 'invite', 1, 99999999999, 1)")
 	st := config.NewStore(src, ka)
-	if err := st.SaveSignIn(ctx, config.SignIn{GoogleClientID: "cid", GoogleClientSecret: "gsecret"}, false); err != nil {
+	if err := st.SaveSignIn(ctx, config.SignIn{GoogleClientID: "cid", GoogleClientSecret: "gsecret"}, false, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SaveCT(ctx, config.CT{Source: "certspotter", IntervalS: 3600, APIKey: "ctkey"}, false); err != nil {

@@ -34,6 +34,7 @@ import (
 
 	"golang.org/x/crypto/argon2"
 
+	"github.com/sjoerd305/tlswatch/internal/auth"
 	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/core"
 	"github.com/sjoerd305/tlswatch/internal/db"
@@ -212,6 +213,11 @@ func reseal(ctx context.Context, path string, from, to *secret.Key) error {
 		return err
 	}
 	if _, err := core.ReencryptNodeTokens(ctx, tx, from, to); err != nil {
+		return err
+	}
+	// An unreadable TOTP secret is dropped: its user signs in with the
+	// password and sets TOTP up again.
+	if _, _, err := auth.ReencryptTOTP(ctx, tx, from, to); err != nil {
 		return err
 	}
 	return tx.Commit()

@@ -79,6 +79,7 @@
  * Panels     .panel (side panel card) · .panel-head · .panel-close (×)
  * Bulk       .bulkbar (actions on checked rows) · th.chk/td.chk · .rowcheck
  *            .field.opt + .check.change + .bulk-value (bulk edit fields)
+ * Two-factor .qr (the QR code to scan) · ul.codes (recovery codes)
  * Misc       .copyable (identifier with copy/pem buttons) · .menu
  *            .kbd · .pre (PEM / code block)
  */
@@ -723,3 +724,8 @@ input[type="file"].input{padding:5px 8px;height:auto}
 .tbl tr.group-head th{background:var(--bg);text-transform:none;letter-spacing:0;font-size:12px;color:var(--ink);padding:10px 10px 6px}
 .tbl tbody+tbody tr.group-head th{border-top:1px solid var(--line)}
 @media (max-width:760px){.tbl.cards tr.group-head{display:block;padding:10px 12px 6px}.tbl.cards tr.group-head th{display:block}}
+
+/* ---------- Two-factor sign-in ---------- */
+/* The QR code keeps its white quiet zone in both themes, so a camera reads it. */
+.qr svg{display:block;width:200px;height:200px;border-radius:5px}
+.codes{display:grid;grid-template-columns:repeat(2,max-content);gap:4px 24px;margin:0;padding:10px 12px;background:var(--surface-2);border:1px solid var(--line);border-radius:5px;list-style:none}

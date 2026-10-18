@@ -60,7 +60,7 @@ func TestStoreEnvWinsOverSaved(t *testing.T) {
 	if err := st.SaveGeneral(ctx, General{BaseURL: "https://ui.example.nl/", AllowLocal: false}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SaveSignIn(ctx, SignIn{GoogleClientID: "ui-id", GoogleClientSecret: "ui-secret"}, false); err != nil {
+	if err := st.SaveSignIn(ctx, SignIn{GoogleClientID: "ui-id", GoogleClientSecret: "ui-secret"}, false, false); err != nil {
 		t.Fatal(err)
 	}
 	secretFile := filepath.Join(t.TempDir(), "google")

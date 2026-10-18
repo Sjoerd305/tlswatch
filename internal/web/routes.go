@@ -3,6 +3,7 @@ package web
 import (
 	"net/http"
 
+	"github.com/sjoerd305/tlswatch/internal/auth"
 	"github.com/sjoerd305/tlswatch/internal/authz"
 )
 
@@ -23,8 +24,12 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /login", s.loginPage)
 	mux.HandleFunc("POST /login", s.login)
 	mux.HandleFunc("POST /logout", s.logout)
-	mux.HandleFunc("GET /auth/google", s.googleStart)
-	mux.HandleFunc("GET /auth/google/callback", s.googleCallback)
+	mux.HandleFunc("GET /login/code", s.loginCodePage)
+	mux.HandleFunc("POST /login/code", s.loginCode)
+	mux.HandleFunc("GET /auth/google", s.ssoStart(auth.ProviderGoogle))
+	mux.HandleFunc("GET /auth/google/callback", s.ssoCallback(auth.ProviderGoogle))
+	mux.HandleFunc("GET /auth/oidc", s.ssoStart(auth.ProviderOIDC))
+	mux.HandleFunc("GET /auth/oidc/callback", s.ssoCallback(auth.ProviderOIDC))
 	mux.HandleFunc("GET /setup", s.setupPage)
 	mux.HandleFunc("POST /setup", s.setup)
 	mux.HandleFunc("POST /setup/restore", s.setupRestore)
@@ -118,6 +123,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /settings/users/{id}/link", users(s.userLink))
 	mux.HandleFunc("POST /settings/users/{id}/password", users(s.userPassword))
 	mux.HandleFunc("POST /settings/users/{id}/unlock", users(s.userUnlock))
+	mux.HandleFunc("POST /settings/users/{id}/totp/reset", users(s.userTOTPReset))
 	mux.HandleFunc("POST /settings/users/{id}/delete", users(s.userDelete))
 	mux.HandleFunc("GET /settings/audit", audit(s.settingsAudit))
 	mux.HandleFunc("GET /settings/audit.csv", audit(s.auditCSV))
@@ -133,6 +139,10 @@ func (s *Server) routes(mux *http.ServeMux) {
 		mux.HandleFunc("POST /account/theme", own(s.accountTheme))
 	}
 	mux.HandleFunc("POST /account/password", own(s.accountPassword))
+	mux.HandleFunc("GET /account/totp", own(s.totpSetupPage))
+	mux.HandleFunc("POST /account/totp", own(s.totpConfirm))
+	mux.HandleFunc("POST /account/totp/recovery", own(s.totpRecovery))
+	mux.HandleFunc("POST /account/totp/disable", own(s.totpDisable))
 	mux.HandleFunc("POST /account/calendars", own(s.calendarCreate))
 	mux.HandleFunc("POST /account/calendars/{id}/delete", own(s.calendarDelete))
 

@@ -1,5 +1,6 @@
-// Package auth handles local passwords, one-time links, server-side
-// sessions and Google sign-in (OpenID Connect).
+// Package auth handles local passwords, TOTP, one-time links, server-side
+// sessions and single sign-on through OpenID Connect (Google and any other
+// provider).
 package auth
 
 import (
@@ -7,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/mail"
 	"strings"
 	"sync"
@@ -29,12 +31,17 @@ var (
 	ErrLastAdmin          = usererr.New("at least one enabled admin must remain")
 	ErrExists             = usererr.New("a user with this e-mail already exists")
 	ErrSetupDone          = usererr.New("setup is already complete")
+	// ErrSecondFactor is returned by Login for the right password of an
+	// account with TOTP: the sign-in goes on with a code (LoginCode).
+	ErrSecondFactor = errors.New("a code from the authenticator app is needed")
+	ErrInvalidCode  = errors.New("invalid code")
 )
 
 // Login methods.
 const (
 	MethodLocal  = "local"
 	MethodGoogle = "google"
+	MethodOIDC   = "oidc" // the generic OpenID Connect provider
 )
 
 const (
@@ -62,10 +69,15 @@ type User struct {
 	LastLogin   int64
 	CreatedAt   int64
 	HasPassword bool
+	// TOTPSince is when the user set up TOTP, or 0.
+	TOTPSince int64
 	// LockedUntil is set by ListUsers: the end of a lockout after too many
 	// failed sign-ins, or 0.
 	LockedUntil int64
 }
+
+// HasTOTP reports whether the user signs in with a TOTP code as well.
+func (u User) HasTOTP() bool { return u.TOTPSince > 0 }
 
 // Locked reports whether the account is locked out at the given time.
 func (u User) Locked(now int64) bool { return u.LockedUntil > now }
@@ -86,10 +98,16 @@ type Service struct {
 	IdleTimeout time.Duration
 	MaxAge      time.Duration
 	Breached    *Breached
+	// HTTPClient reaches the OpenID Connect providers; nil is a client
+	// with a 10-second timeout. AllowHTTP accepts plain HTTP endpoints,
+	// for tests.
+	HTTPClient *http.Client
+	AllowHTTP  bool
 
-	mu      sync.Mutex
-	ipFails map[string][]int64
-	phantom map[string]phantomLock // lockout of e-mail addresses without a local account
+	mu        sync.Mutex
+	discovery map[string]cachedDiscovery // by issuer
+	ipFails   map[string][]int64
+	phantom   map[string]phantomLock // lockout of e-mail addresses without a local account
 	// lastGoodIP is the address each account last signed in from. The
 	// account lockout does not apply there, so failures from elsewhere
 	// cannot keep someone out; the per-address limit still does.
@@ -120,7 +138,7 @@ func New(d *db.DB, k *secret.Key) *Service {
 
 func (s *Service) now() int64 { return s.Now().Unix() }
 
-const userCols = "id, email, name, role, method, password_hash, enabled, theme, last_login, created_at"
+const userCols = "id, email, name, role, method, password_hash, enabled, theme, last_login, created_at, totp_since"
 
 type rowScanner interface{ Scan(...any) error }
 
@@ -130,7 +148,7 @@ func scanUser(r rowScanner, extra ...any) (User, string, error) {
 	var u User
 	var hash, role string
 	var enabled int
-	dest := append([]any{&u.ID, &u.Email, &u.Name, &role, &u.Method, &hash, &enabled, &u.Theme, &u.LastLogin, &u.CreatedAt}, extra...)
+	dest := append([]any{&u.ID, &u.Email, &u.Name, &role, &u.Method, &hash, &enabled, &u.Theme, &u.LastLogin, &u.CreatedAt, &u.TOTPSince}, extra...)
 	err := r.Scan(dest...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return u, "", ErrNotFound
@@ -151,7 +169,7 @@ func NormalizeEmail(email string) (string, error) {
 	return strings.ToLower(email), nil
 }
 
-func validMethod(m string) bool { return m == MethodLocal || m == MethodGoogle }
+func validMethod(m string) bool { return m == MethodLocal || m == MethodGoogle || m == MethodOIDC }
 
 // CreateUser adds a user without a password.
 func (s *Service) CreateUser(ctx context.Context, email, name string, role authz.Role, method string) (User, error) {
@@ -219,9 +237,9 @@ func (s *Service) CountUsers(ctx context.Context) (int, error) {
 }
 
 // UpdateUser changes a user's name, role, method and status. Disabling a
-// user ends their sessions; switching to Google removes the password, the
-// sessions and the password links. The
-// last enabled admin can be neither demoted nor disabled.
+// user ends their sessions; switching to single sign-on (Google or OpenID
+// Connect) removes the password, TOTP, the sessions and the password
+// links. The last enabled admin can be neither demoted nor disabled.
 func (s *Service) UpdateUser(ctx context.Context, id int64, name string, role authz.Role, method string, enabled bool) error {
 	if _, err := authz.ParseRole(string(role)); err != nil {
 		return err
@@ -252,23 +270,26 @@ func (s *Service) UpdateUser(ctx context.Context, id int64, name string, role au
 		}
 	}
 	q := "UPDATE users SET name = ?, role = ?, method = ?, enabled = ? WHERE id = ?"
-	if method == MethodGoogle {
-		q = "UPDATE users SET name = ?, role = ?, method = ?, enabled = ?, password_hash = '' WHERE id = ?"
+	if method != MethodLocal {
+		q = "UPDATE users SET name = ?, role = ?, method = ?, enabled = ?, password_hash = '', totp_sealed = NULL, totp_since = 0 WHERE id = ?"
 	}
 	if _, err := tx.ExecContext(ctx, q, strings.TrimSpace(name), string(role), method, boolInt(enabled), id); err != nil {
 		return err
 	}
-	// Switching to Google ends what the password gave: the sessions signed
-	// in with it and the links to set one.
-	toGoogle := method == MethodGoogle && curMethod != MethodGoogle
-	if !enabled || toGoogle {
+	// Switching to single sign-on, or between providers, ends what the
+	// old method gave: the sessions signed in with it, the links to set a
+	// password and the recovery codes.
+	switched := method != curMethod
+	if !enabled || switched {
 		if _, err := tx.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = ?", id); err != nil {
 			return err
 		}
 	}
-	if method == MethodGoogle {
-		if _, err := tx.ExecContext(ctx, "DELETE FROM tokens WHERE user_id = ? AND kind = 'invite'", id); err != nil {
-			return err
+	if method != MethodLocal {
+		for _, q := range []string{"DELETE FROM tokens WHERE user_id = ? AND kind = 'invite'", "DELETE FROM recovery_codes WHERE user_id = ?"} {
+			if _, err := tx.ExecContext(ctx, q, id); err != nil {
+				return err
+			}
 		}
 	}
 	return tx.Commit()
@@ -312,7 +333,7 @@ func (s *Service) DeleteUser(ctx context.Context, id int64) error {
 			return ErrLastAdmin
 		}
 	}
-	for _, q := range []string{"DELETE FROM sessions WHERE user_id = ?", "DELETE FROM tokens WHERE user_id = ?", "DELETE FROM users WHERE id = ?"} {
+	for _, q := range []string{"DELETE FROM sessions WHERE user_id = ?", "DELETE FROM tokens WHERE user_id = ?", "DELETE FROM recovery_codes WHERE user_id = ?", "DELETE FROM users WHERE id = ?"} {
 		if _, err := tx.ExecContext(ctx, q, id); err != nil {
 			return err
 		}
@@ -328,7 +349,7 @@ func (s *Service) SetPassword(ctx context.Context, id int64, pw string) error {
 		return err
 	}
 	if u.Method != MethodLocal {
-		return usererr.New("This account signs in with Google and has no password")
+		return usererr.New("This account signs in with single sign-on and has no password")
 	}
 	if err := s.CheckPasswordPolicy(pw, u.Email); err != nil {
 		return err
@@ -392,40 +413,60 @@ func (s *Service) Login(ctx context.Context, email, pw, ip string) (User, error)
 	}
 	if !VerifyPassword(hash, pw) {
 		s.ipFail(ip, now)
-		// Counted in one statement, so attempts in parallel all count.
-		if err := s.DB.W.QueryRowContext(ctx, "UPDATE users SET failed_count = failed_count + 1 WHERE id = ? RETURNING failed_count", u.ID).Scan(&failed); err != nil {
-			return User{}, err
-		}
-		locked := false
-		if failed%maxFailures == 0 {
-			// The count keeps running through the lock: every further
-			// maxFailures locks again, and from hardMaxFailures on nothing
-			// is spared.
-			if _, err := s.DB.W.ExecContext(ctx, "UPDATE users SET locked_until = ? WHERE id = ?", now+int64(lockDuration/time.Second), u.ID); err != nil {
-				return User{}, err
-			}
-			locked = !s.spared(u.ID, ip, failed)
-		}
-		if locked {
-			return User{}, ErrLocked
-		}
-		return User{}, ErrInvalidCredentials
+		return User{}, s.countFailure(ctx, u.ID, ip, now, ErrInvalidCredentials)
 	}
 	if !u.Enabled {
 		return User{}, ErrInvalidCredentials
 	}
-	if _, err := s.DB.W.ExecContext(ctx, "UPDATE users SET failed_count = 0, locked_until = 0 WHERE id = ?", u.ID); err != nil {
+	// The failure count stays until the code is right too, so the
+	// password does not buy fresh guesses at the code.
+	if u.HasTOTP() {
+		return u, ErrSecondFactor
+	}
+	if err := s.signedIn(ctx, u.ID, ip); err != nil {
 		return User{}, err
+	}
+	return u, nil
+}
+
+// countFailure counts a failed sign-in of an account, password or code
+// alike, and returns ErrLocked when it locks the account for ip, otherwise
+// wrong.
+func (s *Service) countFailure(ctx context.Context, id int64, ip string, now int64, wrong error) error {
+	var failed int
+	// Counted in one statement, so attempts in parallel all count.
+	if err := s.DB.W.QueryRowContext(ctx, "UPDATE users SET failed_count = failed_count + 1 WHERE id = ? RETURNING failed_count", id).Scan(&failed); err != nil {
+		return err
+	}
+	if failed%maxFailures == 0 {
+		// The count keeps running through the lock: every further
+		// maxFailures locks again, and from hardMaxFailures on nothing
+		// is spared.
+		if _, err := s.DB.W.ExecContext(ctx, "UPDATE users SET locked_until = ? WHERE id = ?", now+int64(lockDuration/time.Second), id); err != nil {
+			return err
+		}
+		if !s.spared(id, ip, failed) {
+			return ErrLocked
+		}
+	}
+	return wrong
+}
+
+// signedIn clears the failure count of a completed sign-in and remembers
+// the address it came from.
+func (s *Service) signedIn(ctx context.Context, id int64, ip string) error {
+	if _, err := s.DB.W.ExecContext(ctx, "UPDATE users SET failed_count = 0, locked_until = 0 WHERE id = ?", id); err != nil {
+		return err
 	}
 	s.mu.Lock()
 	if s.lastGoodIP == nil {
 		s.lastGoodIP = map[int64]string{}
 	}
 	if ip != "" {
-		s.lastGoodIP[u.ID] = ip
+		s.lastGoodIP[id] = ip
 	}
 	s.mu.Unlock()
-	return u, nil
+	return nil
 }
 
 // spared reports whether a lock does not apply to ip: the address of the

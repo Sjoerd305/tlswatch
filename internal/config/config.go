@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -113,7 +114,9 @@ type General struct {
 	MetricsToken string `json:"metrics_token"`
 }
 
-// SignIn holds the Google sign-in settings. The secret is stored encrypted.
+// SignIn holds the sign-in settings: Google, a generic OpenID Connect
+// provider and the TOTP requirement. The client secrets are stored
+// encrypted.
 type SignIn struct {
 	GoogleClientID     string `json:"google_client_id"`
 	GoogleClientSecret string `json:"-"`
@@ -121,6 +124,74 @@ type SignIn struct {
 	// SecretUnreadable is set when a client secret is stored but the
 	// instance key cannot open it (another key): it must be entered again.
 	SecretUnreadable bool `json:"-"`
+
+	// OIDCName is the provider's name on the sign-in button.
+	OIDCName         string `json:"oidc_name"`
+	OIDCIssuer       string `json:"oidc_issuer"`
+	OIDCClientID     string `json:"oidc_client_id"`
+	OIDCClientSecret string `json:"-"`
+	// OIDCScopes is space-separated; empty is "openid email profile".
+	OIDCScopes string `json:"oidc_scopes"`
+	// OIDCDomain is the domain every e-mail address must be in, or empty.
+	OIDCDomain string `json:"oidc_domain"`
+	// OIDCRoleClaim names the claim with the groups; the groups per role
+	// are comma-separated. With a claim, it decides the role at every
+	// sign-in.
+	OIDCRoleClaim      string `json:"oidc_role_claim"`
+	OIDCAdminGroups    string `json:"oidc_admin_groups"`
+	OIDCOperatorGroups string `json:"oidc_operator_groups"`
+	OIDCViewerGroups   string `json:"oidc_viewer_groups"`
+	// OIDCCreateUsers creates the users the role claim gives a role.
+	OIDCCreateUsers      bool `json:"oidc_create_users"`
+	OIDCSecretUnreadable bool `json:"-"`
+
+	// TOTPRoles are the roles whose local accounts must use TOTP.
+	TOTPRoles []string `json:"totp_roles"`
+}
+
+// TOTPRequired reports whether local accounts of a role must use TOTP.
+func (si SignIn) TOTPRequired(role string) bool { return slices.Contains(si.TOTPRoles, role) }
+
+// OIDCLabel is the provider's name for people.
+func (si SignIn) OIDCLabel() string {
+	if si.OIDCName != "" {
+		return si.OIDCName
+	}
+	return "OpenID Connect"
+}
+
+// SplitGroups splits a comma-separated list of groups.
+func SplitGroups(v string) []string {
+	var out []string
+	for _, g := range strings.Split(v, ",") {
+		if g = strings.TrimSpace(g); g != "" {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
+// ValidateOIDC checks the generic OpenID Connect settings.
+func (si SignIn) ValidateOIDC() error {
+	if si.OIDCIssuer != "" {
+		u, err := url.Parse(si.OIDCIssuer)
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
+			return errors.New("the issuer must be an https URL without a query, such as https://login.example.com/realms/main")
+		}
+	}
+	if si.OIDCCreateUsers && si.OIDCRoleClaim == "" {
+		return errors.New("creating users needs a role claim: the claim decides which role they get")
+	}
+	if si.OIDCRoleClaim != "" && si.OIDCAdminGroups == "" && si.OIDCOperatorGroups == "" && si.OIDCViewerGroups == "" {
+		return errors.New("with a role claim, name the groups of at least one role; nobody could sign in otherwise")
+	}
+	if si.OIDCScopes != "" && !slices.Contains(strings.Fields(si.OIDCScopes), "openid") {
+		return errors.New(`the scopes must include "openid"`)
+	}
+	if strings.ContainsAny(si.OIDCDomain, "@ /") {
+		return errors.New("the e-mail domain is a domain name only, such as example.nl")
+	}
+	return nil
 }
 
 // Defaults are the global defaults targets follow while their own field is
@@ -220,6 +291,12 @@ func CheckPct(warn, crit int) string {
 // GoogleEnabled reports whether Google sign-in is configured.
 func (s Settings) GoogleEnabled() bool {
 	return s.SignIn.GoogleClientID != "" && s.SignIn.GoogleClientSecret != ""
+}
+
+// OIDCEnabled reports whether the generic OpenID Connect provider is
+// configured.
+func (s Settings) OIDCEnabled() bool {
+	return s.SignIn.OIDCIssuer != "" && s.SignIn.OIDCClientID != "" && s.SignIn.OIDCClientSecret != ""
 }
 
 // DefaultSettings returns the built-in defaults from the specification.
@@ -328,6 +405,7 @@ const (
 	keyGeneral  = "general"
 	keySignIn   = "signin"
 	keySecret   = "signin.google_client_secret"
+	keyOIDCKey  = "signin.oidc_client_secret"
 	keyDefaults = "defaults"
 	keyNodes    = "nodes"
 	keyCT       = "ct"
@@ -364,6 +442,9 @@ func (s *Store) Get(ctx context.Context) (Settings, error) {
 	if st.SignIn.GoogleClientSecret, st.SignIn.SecretUnreadable, err = s.loadSealed(ctx, keySecret); err != nil {
 		return st, err
 	}
+	if st.SignIn.OIDCClientSecret, st.SignIn.OIDCSecretUnreadable, err = s.loadSealed(ctx, keyOIDCKey); err != nil {
+		return st, err
+	}
 	applyEnv(&st)
 	// Metrics switched on by the environment alone still need a token,
 	// shown under Settings › General: until one is saved it is derived
@@ -397,10 +478,10 @@ func (s *Store) loadSealed(ctx context.Context, key string) (value string, unrea
 }
 
 // sealedKeys are the settings stored encrypted under the instance key.
-var sealedKeys = []string{keySecret, keyCTKey}
+var sealedKeys = []string{keySecret, keyCTKey, keyOIDCKey}
 
 // sealedNames names the sealed settings for people.
-var sealedNames = map[string]string{keySecret: "Google client secret", keyCTKey: "CT API key"}
+var sealedNames = map[string]string{keySecret: "Google client secret", keyCTKey: "CT API key", keyOIDCKey: "OpenID Connect client secret"}
 
 // HasSealed reports whether any setting is stored sealed: a database that
 // needs its key.
@@ -573,20 +654,32 @@ func NewToken() string {
 	return hex.EncodeToString(b)
 }
 
-// SaveSignIn stores the Google settings; an empty secret keeps the stored
-// one unless clearSecret is set.
-func (s *Store) SaveSignIn(ctx context.Context, si SignIn, clearSecret bool) error {
+// SaveSignIn stores the sign-in settings; an empty client secret keeps
+// the stored one unless its clear flag is set.
+func (s *Store) SaveSignIn(ctx context.Context, si SignIn, clearGoogle, clearOIDC bool) error {
+	if err := si.ValidateOIDC(); err != nil {
+		return usererr.Wrap(err)
+	}
 	if err := s.save(ctx, keySignIn, si); err != nil {
 		return err
 	}
+	if err := s.saveSealed(ctx, keySecret, si.GoogleClientSecret, clearGoogle); err != nil {
+		return err
+	}
+	return s.saveSealed(ctx, keyOIDCKey, si.OIDCClientSecret, clearOIDC)
+}
+
+// saveSealed stores a value sealed under the key, removes it when clear is
+// set, and keeps the stored one when v is empty.
+func (s *Store) saveSealed(ctx context.Context, key, v string, clear bool) error {
 	switch {
-	case clearSecret:
-		_, err := s.db.W.ExecContext(ctx, "DELETE FROM settings WHERE key = ?", keySecret)
+	case clear:
+		_, err := s.db.W.ExecContext(ctx, "DELETE FROM settings WHERE key = ?", key)
 		s.invalidate()
 		return err
-	case si.GoogleClientSecret != "":
-		b, _ := json.Marshal(s.key.Seal("settings:"+keySecret, []byte(si.GoogleClientSecret)))
-		_, err := s.db.W.ExecContext(ctx, "INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", keySecret, string(b))
+	case v != "":
+		b, _ := json.Marshal(s.key.Seal("settings:"+key, []byte(v)))
+		_, err := s.db.W.ExecContext(ctx, "INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", key, string(b))
 		s.invalidate()
 		return err
 	}

@@ -2,11 +2,14 @@ package web
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/sjoerd305/tlswatch/internal/auth"
+	"github.com/sjoerd305/tlswatch/internal/authz"
+	"github.com/sjoerd305/tlswatch/internal/config"
 )
 
 type loginData struct {
@@ -14,14 +17,44 @@ type loginData struct {
 	Next   string
 	Error  string
 	Google bool
+	// OIDC is the generic OpenID Connect provider, under OIDCName.
+	OIDC     bool
+	OIDCName string
 }
 
-func (s *Server) googleConfig(r *http.Request) auth.OIDCConfig {
+func (s *Server) newLoginData(r *http.Request, next string) loginData {
 	st := info(r).settings
-	return auth.OIDCConfig{
-		ClientID: st.SignIn.GoogleClientID, ClientSecret: st.SignIn.GoogleClientSecret, Domain: st.SignIn.GoogleDomain,
-		RedirectURL: s.baseURL(r) + "/auth/google/callback",
+	return loginData{Next: safeNext(next), Google: st.GoogleEnabled(), OIDC: st.OIDCEnabled(), OIDCName: st.SignIn.OIDCLabel()}
+}
+
+// providerConfig is the configuration of a single sign-on provider: Google,
+// or the generic one, whose endpoints come from its discovery document.
+func (s *Server) providerConfig(r *http.Request, provider string) (auth.OIDCConfig, error) {
+	st := info(r).settings
+	si := st.SignIn
+	if provider == auth.ProviderGoogle {
+		return auth.OIDCConfig{
+			Provider: auth.ProviderGoogle, ClientID: si.GoogleClientID, ClientSecret: si.GoogleClientSecret, Domain: si.GoogleDomain,
+			RedirectURL: s.baseURL(r) + "/auth/google/callback",
+		}, nil
 	}
+	if !st.OIDCEnabled() {
+		return auth.OIDCConfig{Provider: auth.ProviderOIDC}, nil
+	}
+	d, err := s.Auth.Discover(r.Context(), si.OIDCIssuer)
+	if err != nil {
+		return auth.OIDCConfig{}, err
+	}
+	return auth.OIDCConfig{
+		Provider: auth.ProviderOIDC, ClientID: si.OIDCClientID, ClientSecret: si.OIDCClientSecret,
+		RedirectURL: s.baseURL(r) + "/auth/oidc/callback",
+		Issuer:      d.Issuer, AuthURL: d.AuthURL, TokenURL: d.TokenURL, UserinfoURL: d.UserinfoURL,
+		Scopes: strings.Fields(si.OIDCScopes), Domain: si.OIDCDomain, RoleClaim: si.OIDCRoleClaim,
+		RoleGroups: map[authz.Role][]string{
+			authz.Admin: config.SplitGroups(si.OIDCAdminGroups), authz.Operator: config.SplitGroups(si.OIDCOperatorGroups), authz.Viewer: config.SplitGroups(si.OIDCViewerGroups),
+		},
+		CreateUsers: si.OIDCCreateUsers,
+	}, nil
 }
 
 func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
@@ -33,10 +66,12 @@ func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/setup", http.StatusSeeOther)
 		return
 	}
-	d := loginData{Next: safeNext(r.URL.Query().Get("next")), Google: s.googleConfig(r).Enabled()}
+	d := s.newLoginData(r, r.URL.Query().Get("next"))
 	switch r.URL.Query().Get("error") {
 	case "google":
 		d.Error = "Google sign-in failed. Ask an administrator to add your account."
+	case "oidc":
+		d.Error = "Sign-in with " + d.OIDCName + " failed. Ask an administrator to add your account."
 	case "expired":
 		d.Error = "The sign-in attempt expired. Try again."
 	}
@@ -45,8 +80,16 @@ func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	email := strings.TrimSpace(r.PostFormValue("email"))
-	d := loginData{Email: email, Next: safeNext(r.PostFormValue("next")), Google: s.googleConfig(r).Enabled()}
+	d := s.newLoginData(r, r.PostFormValue("next"))
+	d.Email = email
 	u, err := s.Auth.Login(r.Context(), email, r.PostFormValue("password"), info(r).ip)
+	if errors.Is(err, auth.ErrSecondFactor) {
+		https := info(r).https
+		http.SetCookie(w, &http.Cookie{Name: cookieName(mfaCookie, https), Value: s.Auth.SealMFA(u.ID, d.Next), Path: "/", HttpOnly: true,
+			Secure: https, SameSite: http.SameSiteLaxMode, MaxAge: 300})
+		http.Redirect(w, r, "/login/code", http.StatusSeeOther)
+		return
+	}
 	if err != nil {
 		switch {
 		case errors.Is(err, auth.ErrLocked):
@@ -62,6 +105,70 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.startSession(w, r, u, d.Next)
+}
+
+type codeData struct {
+	Error string
+}
+
+// mfaState returns the sign-in waiting for its code, or sends the browser
+// back to the sign-in page.
+func (s *Server) mfaState(w http.ResponseWriter, r *http.Request) (auth.MFAState, bool) {
+	c, err := readCookie(r, mfaCookie, info(r).https)
+	if err == nil {
+		if st, err := s.Auth.OpenMFA(c.Value); err == nil {
+			return st, true
+		}
+	}
+	s.clearCookie(w, mfaCookie, info(r))
+	http.Redirect(w, r, "/login?error=expired", http.StatusSeeOther)
+	return auth.MFAState{}, false
+}
+
+// loginCodePage asks for the TOTP code after the password.
+func (s *Server) loginCodePage(w http.ResponseWriter, r *http.Request) {
+	if info(r).session != nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	if _, ok := s.mfaState(w, r); !ok {
+		return
+	}
+	s.render(w, r, "login-code", &Page{Title: "Sign in", Data: codeData{}})
+}
+
+func (s *Server) loginCode(w http.ResponseWriter, r *http.Request) {
+	st, ok := s.mfaState(w, r)
+	if !ok {
+		return
+	}
+	u, recovery, err := s.Auth.LoginCode(r.Context(), st.UserID, r.PostFormValue("code"), info(r).ip)
+	if err != nil {
+		var d codeData
+		switch {
+		case errors.Is(err, auth.ErrTokenInvalid):
+			s.clearCookie(w, mfaCookie, info(r))
+			http.Redirect(w, r, "/login?error=expired", http.StatusSeeOther)
+			return
+		case errors.Is(err, auth.ErrLocked):
+			d.Error = "Too many failed attempts. Try again in 15 minutes."
+		case errors.Is(err, auth.ErrInvalidCode):
+			d.Error = "The code is incorrect."
+		default:
+			s.serverError(w, r, err)
+			return
+		}
+		s.Log.Info("sign-in code failed", "ip", info(r).ip)
+		s.renderStatus(w, r, http.StatusUnauthorized, "login-code", &Page{Title: "Sign in", Data: d})
+		return
+	}
+	s.clearCookie(w, mfaCookie, info(r))
+	if recovery {
+		left, _ := s.Auth.RecoveryCodesLeft(r.Context(), u.ID)
+		s.Core.Audit(r.Context(), u.Email, "user.totp.recovery_used", "user "+u.Email, fmt.Sprintf("%d recovery codes left", left))
+		s.setFlash(w, r, fmt.Sprintf("You signed in with a recovery code; %d left. Make new ones under Account if you lost your phone.", left), "warn")
+	}
+	s.startSession(w, r, u, st.Next)
 }
 
 func (s *Server) startSession(w http.ResponseWriter, r *http.Request, u auth.User, next string) {
@@ -86,46 +193,72 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-func (s *Server) googleStart(w http.ResponseWriter, r *http.Request) {
-	cfg := s.googleConfig(r)
-	if !cfg.Enabled() {
-		s.fail(w, r, http.StatusNotFound, "Google sign-in is not configured.")
-		return
+// ssoStart sends the browser to a single sign-on provider.
+func (s *Server) ssoStart(provider string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cfg, err := s.providerConfig(r, provider)
+		if err != nil {
+			s.Log.Warn("single sign-on discovery failed", "provider", provider, "err", err)
+			s.fail(w, r, http.StatusBadGateway, "The sign-in provider cannot be reached. Try again later, or ask an administrator to check Settings › Sign-in.")
+			return
+		}
+		if !cfg.Enabled() {
+			s.fail(w, r, http.StatusNotFound, "This sign-in method is not configured.")
+			return
+		}
+		redirect, st, err := s.Auth.OIDCStart(cfg)
+		if err != nil {
+			s.serverError(w, r, err)
+			return
+		}
+		http.SetCookie(w, &http.Cookie{Name: oidcCookie, Value: s.Auth.SealState(st), Path: "/auth/" + provider, HttpOnly: true,
+			Secure: info(r).https, SameSite: http.SameSiteLaxMode, MaxAge: 600})
+		http.Redirect(w, r, redirect, http.StatusFound)
 	}
-	redirect, st, err := s.Auth.OIDCStart(cfg)
-	if err != nil {
-		s.serverError(w, r, err)
-		return
-	}
-	http.SetCookie(w, &http.Cookie{Name: oidcCookie, Value: s.Auth.SealState(st), Path: "/auth/google", HttpOnly: true,
-		Secure: info(r).https, SameSite: http.SameSiteLaxMode, MaxAge: 600})
-	http.Redirect(w, r, redirect, http.StatusFound)
 }
 
-func (s *Server) googleCallback(w http.ResponseWriter, r *http.Request) {
-	cfg := s.googleConfig(r)
-	c, err := r.Cookie(oidcCookie)
-	http.SetCookie(w, &http.Cookie{Name: oidcCookie, Value: "", Path: "/auth/google", MaxAge: -1, HttpOnly: true, Secure: info(r).https})
-	if err != nil {
-		http.Redirect(w, r, "/login?error=expired", http.StatusSeeOther)
-		return
+// ssoCallback completes a single sign-on: the provider sends the browser
+// back here with a code.
+func (s *Server) ssoCallback(provider string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c, err := r.Cookie(oidcCookie)
+		http.SetCookie(w, &http.Cookie{Name: oidcCookie, Value: "", Path: "/auth/" + provider, MaxAge: -1, HttpOnly: true, Secure: info(r).https})
+		if err != nil {
+			http.Redirect(w, r, "/login?error=expired", http.StatusSeeOther)
+			return
+		}
+		st, err := s.Auth.OpenState(c.Value)
+		if err != nil {
+			http.Redirect(w, r, "/login?error=expired", http.StatusSeeOther)
+			return
+		}
+		if r.URL.Query().Get("error") != "" {
+			http.Redirect(w, r, "/login?error="+provider, http.StatusSeeOther)
+			return
+		}
+		cfg, err := s.providerConfig(r, provider)
+		if err == nil && !cfg.Enabled() {
+			err = errors.New("not configured")
+		}
+		var u auth.User
+		var out auth.OIDCOutcome
+		if err == nil {
+			u, out, err = s.Auth.OIDCFinish(r.Context(), cfg, st, r.URL.Query().Get("state"), r.URL.Query().Get("code"))
+		}
+		if err != nil {
+			s.Log.Warn("single sign-on refused", "provider", provider, "err", err, "ip", info(r).ip)
+			http.Redirect(w, r, "/login?error="+provider, http.StatusSeeOther)
+			return
+		}
+		actor := provider + " sign-in"
+		switch {
+		case out.Created:
+			s.Core.Audit(r.Context(), actor, "user.create", "user "+u.Email, fmt.Sprintf("role=%s method=%s from the role claim", u.Role, u.Method))
+		case out.OldRole != "":
+			s.Core.Audit(r.Context(), actor, "user.update", "user "+u.Email, fmt.Sprintf("role=%s (was %s) from the role claim", u.Role, out.OldRole))
+		}
+		s.startSession(w, r, u, "/")
 	}
-	st, err := s.Auth.OpenState(c.Value)
-	if err != nil {
-		http.Redirect(w, r, "/login?error=expired", http.StatusSeeOther)
-		return
-	}
-	if r.URL.Query().Get("error") != "" {
-		http.Redirect(w, r, "/login?error=google", http.StatusSeeOther)
-		return
-	}
-	u, err := s.Auth.OIDCFinish(r.Context(), cfg, st, r.URL.Query().Get("state"), r.URL.Query().Get("code"))
-	if err != nil {
-		s.Log.Warn("google sign-in refused", "err", err, "ip", info(r).ip)
-		http.Redirect(w, r, "/login?error=google", http.StatusSeeOther)
-		return
-	}
-	s.startSession(w, r, u, "/")
 }
 
 type setupData struct {
@@ -206,7 +339,7 @@ func (s *Server) invite(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		d.User, err = s.Auth.UserByID(r.Context(), id)
 	}
-	// A Google account has no password to set.
+	// A single sign-on account has no password to set.
 	if err != nil || !d.User.Enabled || d.User.Method != auth.MethodLocal {
 		s.renderStatus(w, r, http.StatusBadRequest, "invite", &Page{Title: "Set your password", Data: d})
 		return

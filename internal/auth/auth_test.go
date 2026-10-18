@@ -486,11 +486,11 @@ func TestOIDCFinish(t *testing.T) {
 		}
 	}
 	claims = base()
-	u, err := s.OIDCFinish(ctx, cfg, st, st.State, "the-code")
+	u, _, err := s.OIDCFinish(ctx, cfg, st, st.State, "the-code")
 	if err != nil || u.Email != "g@example.nl" || u.Name != "Gee" {
 		t.Fatalf("good: %+v %v", u, err)
 	}
-	if _, err := s.OIDCFinish(ctx, cfg, st, "other-state", "the-code"); err != ErrTokenInvalid {
+	if _, _, err := s.OIDCFinish(ctx, cfg, st, "other-state", "the-code"); err != ErrTokenInvalid {
 		t.Fatalf("state mismatch: %v", err)
 	}
 	bad := map[string]func(map[string]any){
@@ -506,13 +506,13 @@ func TestOIDCFinish(t *testing.T) {
 	for name, mutate := range bad {
 		claims = base()
 		mutate(claims)
-		if _, err := s.OIDCFinish(ctx, cfg, st, st.State, "the-code"); err == nil {
+		if _, _, err := s.OIDCFinish(ctx, cfg, st, st.State, "the-code"); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
 	claims = base()
 	claims["aud"] = []string{"x", "cid"}
-	if _, err := s.OIDCFinish(ctx, cfg, st, st.State, "the-code"); err != nil {
+	if _, _, err := s.OIDCFinish(ctx, cfg, st, st.State, "the-code"); err != nil {
 		t.Errorf("aud array: %v", err)
 	}
 }

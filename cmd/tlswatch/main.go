@@ -185,16 +185,20 @@ func keyGuard(d *db.DB, path string, log *slog.Logger) error {
 }
 
 // hasSealed reports whether the database holds anything sealed under the
-// secret key: a channel, a sealed setting or a node install token.
+// secret key: a channel, a sealed setting, a node install token or a TOTP
+// secret.
 func hasSealed(ctx context.Context, d *db.DB) (bool, error) {
-	var channels, tokens int
+	var channels, tokens, totp int
 	if err := d.R.QueryRowContext(ctx, "SELECT COUNT(*) FROM channels").Scan(&channels); err != nil {
 		return false, err
 	}
 	if err := d.R.QueryRowContext(ctx, "SELECT COUNT(*) FROM nodes WHERE token_sealed IS NOT NULL").Scan(&tokens); err != nil {
 		return false, err
 	}
-	if channels > 0 || tokens > 0 {
+	if err := d.R.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE totp_sealed IS NOT NULL").Scan(&totp); err != nil {
+		return false, err
+	}
+	if channels > 0 || tokens > 0 || totp > 0 {
 		return true, nil
 	}
 	return config.HasSealed(ctx, d)
@@ -458,6 +462,10 @@ func rotateKey() error {
 	if err != nil {
 		return err
 	}
+	totp, droppedTOTP, err := auth.ReencryptTOTP(ctx, tx, old, next)
+	if err != nil {
+		return err
+	}
 	// The new key is on disk before the database depends on it.
 	pending := b.SecretKeyFile + ".new"
 	if err := secret.WriteFile(pending, raw); err != nil {
@@ -474,10 +482,13 @@ func rotateKey() error {
 	if err := os.Rename(pending, b.SecretKeyFile); err != nil {
 		return fmt.Errorf("the database now uses the key in %s; move it to %s by hand: %w", pending, b.SecretKeyFile, err)
 	}
-	fmt.Printf("secret key rotated: %d channel(s), %d sealed setting(s) and %d node install token(s) re-encrypted", n, settings, tokens)
+	fmt.Printf("secret key rotated: %d channel(s), %d sealed setting(s), %d node install token(s) and %d TOTP secret(s) re-encrypted", n, settings, tokens, totp)
 	fmt.Printf(".\nThe old key is kept in %s; delete it once backups made with it have expired.\n", kept)
 	if len(unreadable) > 0 {
 		fmt.Printf("Not re-encrypted, the old key could not read them either: %s. Enter their credentials again.\n", strings.Join(unreadable, ", "))
+	}
+	if len(droppedTOTP) > 0 {
+		fmt.Printf("TOTP turned off, the old key could not read the secret: %s. They sign in with their password and set it up again.\n", strings.Join(droppedTOTP, ", "))
 	}
 	return nil
 }
