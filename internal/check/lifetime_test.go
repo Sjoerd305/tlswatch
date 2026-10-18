@@ -19,10 +19,13 @@ func lifeCert(t *testing.T, iss *ca, lifetime, left int) *x509.Certificate {
 	}, iss).cert
 }
 
-// managed is a renewal-managed target on the default lifetime thresholds.
+// managed is a renewal-managed target on the default lifetime thresholds,
+// manualPct a manually managed one.
 var managed = Target{Debounce: 2, RenewalSet: true, RenewalManaged: true,
 	Manual:  Thresholds{Warn: 30, Crit: 7, WarnPct: 33, CritPct: 10},
 	Managed: Thresholds{Warn: 10, Crit: 3, WarnPct: 20, CritPct: 7}}
+
+var manualPct = func() Target { m := managed; m.RenewalManaged = false; return m }()
 
 func TestLifetimeThresholds(t *testing.T) {
 	iss := newIssuer(t, "Test CA", "Test CA R1")
@@ -36,13 +39,16 @@ func TestLifetimeThresholds(t *testing.T) {
 		want           Severity
 		details        string
 	}{
-		{"share fires before the days", managed, 90, 15, Warning, "15 days left, 16 % of its lifetime"},
-		{"days fire before the share", managed, 30, 9, Warning, "9 days left ·"},
-		{"a 1-year certificate is critical at 7 %", managed, 365, 20, Critical, "20 days left, 5 % of its lifetime"},
-		{"critical by share, in hours under a week", managed, 90, 5, Critical, "121 h left, 5 % of its lifetime"},
-		{"healthy share", managed, 90, 30, "", ""},
-		{"0 means days only", daysOnly, 90, 15, "", ""},
-		{"a 6-day certificate", managed, 6, 1, Critical, "25 h left ·"},
+		{"90-day managed: the days are later", managed, 90, 9, Warning, "9 days left ·"},
+		{"90-day managed: critical in hours", managed, 90, 2, Critical, "49 h left ·"},
+		{"47-day manual: the share is later", manualPct, 47, 20, "", ""},
+		{"47-day manual: warning by share", manualPct, 47, 15, Warning, "15 days left, 32 % of its lifetime"},
+		{"1-year manual: no warning months ahead", manualPct, 365, 100, "", ""},
+		{"1-year manual: warning by days", manualPct, 365, 20, Warning, "20 days left ·"},
+		{"6-day managed: nothing at issuance", managed, 6, 5, "", ""},
+		{"6-day managed: warning by share", managed, 6, 1, Warning, "25 h left, 17 % of its lifetime"},
+		{"6-day managed: critical by share", managed, 6, 0, Critical, "1 h left, 0 % of its lifetime"},
+		{"0 means days only", daysOnly, 6, 5, Warning, "121 h left ·"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			o := Evaluate(tc.tg, Previous{Open: open()}, result(okAddr("192.0.2.1", lifeCert(t, iss, tc.lifetime, tc.left))), now)
@@ -69,9 +75,9 @@ func TestRenewalOverdue(t *testing.T) {
 	if !ok || f.Severity != Warning || f.Details != "renewal was due 10 days ago; the certificate expires in 12 days" {
 		t.Fatalf("renewal_overdue %v: %+v", ok, f)
 	}
-	// It sits next to expiring, which 13 % left (warning 20 %) opens too.
-	if f, ok := find(o.Open, Expiring); !ok || f.Severity != Warning {
-		t.Fatalf("expiring %v: %+v", ok, f)
+	// Long before expiring (10 days and 20 %) opens.
+	if f, ok := find(o.Open, Expiring); ok {
+		t.Fatalf("expiring opened: %+v", f)
 	}
 
 	for _, tc := range []struct {
@@ -80,7 +86,7 @@ func TestRenewalOverdue(t *testing.T) {
 		cert *x509.Certificate
 	}{
 		{"not yet due", managed, lifeCert(t, iss, 90, 30)},
-		{"manual renewal", func() Target { m := managed; m.RenewalManaged = false; return m }(), late},
+		{"manual renewal", manualPct, late},
 		{"later renewal point", func() Target { m := managed; m.RenewalPoint = 90; return m }(), late},
 		{"expired", managed, lifeCert(t, iss, 90, -3)},
 	} {

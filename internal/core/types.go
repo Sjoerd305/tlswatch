@@ -428,7 +428,11 @@ func (t Target) ExpiryClass(d config.Defaults, now time.Time) string {
 	}
 	eff := t.Effective(d)
 	th := check.Thresholds{Warn: eff.Warn, Crit: eff.Crit, WarnPct: eff.WarnPct, CritPct: eff.CritPct}
-	switch th.Due(check.DaysLeft(time.Unix(t.NotAfter, 0), now), t.ShareLeft(now)) {
+	share := 0.0 // an unknown lifetime leaves it to the days
+	if t.Cert != nil {
+		share = t.ShareLeft(now)
+	}
+	switch th.Due(check.DaysLeft(time.Unix(t.NotAfter, 0), now), share) {
 	case check.Critical:
 		return "crit"
 	case check.Warning:

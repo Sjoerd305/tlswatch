@@ -15,12 +15,13 @@ func TestRenewalOverdueAlertsOnce(t *testing.T) {
 	e := newEnv(t)
 	ca := newCA(t, "Let's Encrypt")
 	now := e.clock.Now()
-	tg := e.target(func(t *Target) { t.RenewalManaged, t.WarnPct, t.CritPct = true, nil, nil })
-	// A 90-day certificate with 12 days left: 87 % used, 13 % left.
+	tg := e.target(func(t *Target) { t.RenewalManaged, t.WarnPct, t.CritPct, t.RemindWarnS = true, nil, nil, intp(86400) })
+	// A 90-day certificate with 12 days left: 87 % used, past the renewal
+	// point, not yet expiring (10 days and 20 %).
 	c := ca.leaf(t, now.Add(-days(78)), now.Add(days(12)+time.Hour), "portal.example.nl")
 	tg = e.apply(tg.ID, result(served("192.0.2.1", c, ca.cert)))
 	open := e.open(tg.ID)
-	if open[check.RenewalOverdue].Severity != check.Warning || open[check.Expiring].Severity != check.Warning {
+	if _, ok := open[check.Expiring]; ok || open[check.RenewalOverdue].Severity != check.Warning {
 		t.Fatalf("findings: %+v", open)
 	}
 	if d := open[check.RenewalOverdue].Details; d != "renewal was due 10 days ago; the certificate expires in 12 days" {
@@ -32,8 +33,19 @@ func TestRenewalOverdueAlertsOnce(t *testing.T) {
 		t.Fatalf("mail: %+v", mail)
 	}
 
-	// A week on: renewal_overdue is reminded, the expiring warning is not.
+	// A week on, 4 days left: expiring opens as a warning, without an alert.
 	e.clock.Add(days(7) + time.Hour)
+	tg = e.apply(tg.ID, result(served("192.0.2.1", c, ca.cert)))
+	if f := e.open(tg.ID)[check.Expiring]; f.Severity != check.Warning {
+		t.Fatalf("expiring: %+v", f)
+	}
+	e.flush()
+	if mail = e.take("mail"); len(mail) != 0 {
+		t.Fatalf("expiring alerted beside renewal_overdue: %+v", mail)
+	}
+
+	// A day on: renewal_overdue is reminded, the expiring warning is not.
+	e.clock.Add(days(1) + time.Hour)
 	if _, err := e.svc.Remind(e.ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -42,18 +54,19 @@ func TestRenewalOverdueAlertsOnce(t *testing.T) {
 		t.Fatalf("reminders: %+v", mail)
 	}
 
-	// Under the critical share (7 %, about 6 days): the escalation goes out,
-	// in hours.
+	// Under 3 days: the escalation goes out, in hours (2 d 23 h less the
+	// fraction of a second the certificate's dates drop: 70 h).
+	e.clock.Add(days(1))
 	tg = e.apply(tg.ID, result(served("192.0.2.1", c, ca.cert)))
 	if f := e.open(tg.ID)[check.Expiring]; f.Severity != check.Critical {
 		t.Fatalf("expiring: %+v", f)
 	}
 	e.flush()
-	if mail = e.take("mail"); len(mail) != 1 || !strings.Contains(mail[0].Subject, "expires in 119 h, escalated") {
+	if mail = e.take("mail"); len(mail) != 1 || !strings.Contains(mail[0].Subject, "expires in 70 h, escalated") {
 		t.Fatalf("escalation: %+v", mail)
 	}
 
-	// Renewed: both resolve; only the channels told hear of it.
+	// Renewed: both resolve.
 	c2 := ca.leaf(t, e.clock.Now(), e.clock.Now().Add(days(90)), "portal.example.nl")
 	tg = e.apply(tg.ID, result(served("192.0.2.1", c2, ca.cert)))
 	if open := e.open(tg.ID); len(open) != 0 {

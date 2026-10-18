@@ -219,7 +219,7 @@
       <div class="field"><label class="label" for="addr">Addresses</label>
         <select id="addr" name="addresses" class="input"><option value="all"{{if $t.AllAddresses}} selected{{end}}>All, max 8</option><option value="first"{{if not $t.AllAddresses}} selected{{end}}>First only</option></select></div>
     </div>
-    <span class="help lift">The threshold that fires first wins. Empty fields follow Settings › Defaults: warning {{threshold $d.Manual.WarnDays $d.Manual.WarnPct}} and critical {{threshold $d.Manual.CritDays $d.Manual.CritPct}} for manual renewal, {{threshold $d.Managed.WarnDays $d.Managed.WarnPct}} and {{threshold $d.Managed.CritDays $d.Managed.CritPct}} for renewal managed. A percentage of 0 means days only.</span>
+    <span class="help lift">A threshold fires once both its days and its share of the lifetime have passed. Empty fields follow Settings › Defaults: warning {{threshold $d.Manual.WarnDays $d.Manual.WarnPct}} and critical {{threshold $d.Manual.CritDays $d.Manual.CritPct}} for manual renewal, {{threshold $d.Managed.WarnDays $d.Managed.WarnPct}} and {{threshold $d.Managed.CritDays $d.Managed.CritPct}} for renewal managed. A percentage of 0 means days only.</span>
     <details{{if or $f.Timeout $f.Retries $f.Debounce $f.RemindW $f.RemindC $f.RenewalPt $t.SkipLegacy $e.timeout_s $e.retries $e.debounce $e.remind_warn_s $e.remind_crit_s $e.renewal_pct}} open{{end}}>
       <summary class="label">Probe and reminder settings</summary>
       <div class="fgrid c4">

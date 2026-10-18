@@ -209,12 +209,12 @@ func (s *Server) funcs() template.FuncMap {
 			}
 			return fmt.Sprintf("%d %%", n)
 		},
-		// threshold is a threshold as help text names it: "30 d or 33 %".
+		// threshold is a threshold as help text names it: "30 d and 33 %".
 		"threshold": func(days, pct int) string {
 			if pct == 0 {
 				return fmt.Sprintf("%d d", days)
 			}
-			return fmt.Sprintf("%d d or %d %%", days, pct)
+			return fmt.Sprintf("%d d and %d %%", days, pct)
 		},
 		"renewalPoint": func() int { return check.DefaultRenewalPoint },
 		"daysPtr": func(p *int) string {

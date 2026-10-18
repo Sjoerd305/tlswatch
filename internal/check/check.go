@@ -233,7 +233,8 @@ func IsACMEIssuer(org, cn string) bool {
 
 // Thresholds are warning and critical days, and the same as a share of
 // the leaf's lifetime remaining in percent (0: days only). The one that
-// fires first wins.
+// fires later wins: days keep a long-lived certificate from warning months
+// ahead, the share keeps a short-lived one from warning at issuance.
 type Thresholds struct{ Warn, Crit, WarnPct, CritPct int }
 
 // DefaultRenewalPoint is the share of its lifetime, in percent, after
@@ -372,15 +373,27 @@ func ShareLeft(notBefore, notAfter, now time.Time) float64 {
 }
 
 // Due reports which threshold th sets off with days whole days and share
-// percent of the leaf's lifetime left: Critical, Warning or "".
+// percent of the leaf's lifetime left: Critical, Warning or "". A
+// threshold fires once both its days and its share have passed.
 func (th Thresholds) Due(days int, share float64) Severity {
+	passed := func(d, pct int) bool { return days < d && (pct == 0 || share < float64(pct)) }
 	switch {
-	case days < th.Crit || th.CritPct > 0 && share < float64(th.CritPct):
+	case passed(th.Crit, th.CritPct):
 		return Critical
-	case days < th.Warn || th.WarnPct > 0 && share < float64(th.WarnPct):
+	case passed(th.Warn, th.WarnPct):
 		return Warning
 	}
 	return ""
+}
+
+// ShareDecides reports whether, for a leaf of lifetime life, the share
+// rather than the days is the later of the two at severity sev.
+func (th Thresholds) ShareDecides(sev Severity, life time.Duration) bool {
+	d, pct := th.Warn, th.WarnPct
+	if sev == Critical {
+		d, pct = th.Crit, th.CritPct
+	}
+	return pct > 0 && life*time.Duration(pct)/100 < time.Duration(d)*24*time.Hour
 }
 
 // Evaluate applies every check to one probe result. The caller resolves
@@ -832,8 +845,8 @@ func addressFacts(t Target, a probe.Address, th Thresholds, now time.Time) ([]Fi
 	days := DaysLeft(earliest, now)
 	// The share is what remains until the earliest expiry, against the
 	// leaf's own lifetime.
-	share := 100.0
-	if life := leaf.NotAfter.Sub(leaf.NotBefore); life > 0 {
+	share, life := 100.0, leaf.NotAfter.Sub(leaf.NotBefore)
+	if life > 0 {
 		share = float64(earliest.Sub(now)) * 100 / float64(life)
 	}
 	if len(expired) > 0 {
@@ -842,8 +855,8 @@ func addressFacts(t Target, a probe.Address, th Thresholds, now time.Time) ([]Fi
 			Details: fmt.Sprintf("%s expired %s", strings.Join(expired, ", "), earliest.UTC().Format("2006-01-02"))})
 	} else if sev := th.Due(days, share); sev != "" {
 		left := Span(earliest.Sub(now)) + " left"
-		// Name the share when it, not the days, set the severity.
-		if th.Due(days, 100) != sev {
+		// Name the share when it, not the days, decided.
+		if th.ShareDecides(sev, life) {
 			left += fmt.Sprintf(", %d %% of its lifetime", int(share))
 		}
 		d := days
