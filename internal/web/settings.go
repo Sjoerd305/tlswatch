@@ -161,6 +161,12 @@ func (s *Server) channelSave(w http.ResponseWriter, r *http.Request) {
 		c.Ntfy = notify.NtfySettings{Server: strings.TrimSpace(v.Get("server")), Topic: strings.TrimSpace(v.Get("topic")), Token: strings.TrimSpace(v.Get("token"))}
 	case notify.KindWebhook:
 		c.Webhook = notify.WebhookSettings{URL: strings.TrimSpace(v.Get("url")), Secret: strings.TrimSpace(v.Get("secret"))}
+	case notify.KindTeams:
+		c.Teams = notify.TeamsSettings{WebhookURL: strings.TrimSpace(v.Get("webhook_url"))}
+	case notify.KindMatrix:
+		c.Matrix = notify.MatrixSettings{Homeserver: strings.TrimSpace(v.Get("homeserver")), RoomID: strings.TrimSpace(v.Get("room_id")), Token: strings.TrimSpace(v.Get("token"))}
+	case notify.KindPagerDuty:
+		c.PagerDuty = notify.PagerDutySettings{RoutingKey: strings.TrimSpace(v.Get("routing_key")), Region: v.Get("region")}
 	default:
 		c.Kind = notify.KindSMTP
 		port, _ := strconv.Atoi(strings.TrimSpace(v.Get("port")))
@@ -812,10 +818,110 @@ func (s *Server) settingsAbout(w http.ResponseWriter, r *http.Request) {
 type accountData struct {
 	U     auth.User
 	Error string
+	// Calendar feeds, the tags a new one can be limited to, and the URL of
+	// one just created, shown this once.
+	Calendars []core.Calendar
+	Tags      []string
+	NewFeed   string
 }
 
 func (s *Server) account(w http.ResponseWriter, r *http.Request) {
-	s.render(w, r, "account", &Page{Title: "Account", Data: accountData{U: user(r)}})
+	d, err := s.accountData(r)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	s.render(w, r, "account", &Page{Title: "Account", Data: d})
+}
+
+func (s *Server) accountData(r *http.Request) (accountData, error) {
+	d := accountData{U: user(r)}
+	var err error
+	if d.Calendars, err = s.Core.Calendars(r.Context(), d.U.ID); err != nil {
+		return d, err
+	}
+	ts, err := s.Core.Targets(r.Context())
+	if err != nil {
+		return d, err
+	}
+	for _, tc := range core.TagCounts(ts) {
+		d.Tags = append(d.Tags, tc.Tag)
+	}
+	return d, nil
+}
+
+// calendarCreate makes a calendar feed and shows its URL once.
+func (s *Server) calendarCreate(w http.ResponseWriter, r *http.Request) {
+	u := user(r)
+	c, token, err := s.Core.CreateCalendar(r.Context(), u.ID, r.PostFormValue("tag"))
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	scope := "all targets"
+	if c.Tag != "" {
+		scope = "tag " + c.Tag
+	}
+	s.Core.Audit(r.Context(), u.Email, "calendar.create", fmt.Sprintf("calendar %d", c.ID), scope)
+	d, err := s.accountData(r)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	scheme := "http"
+	if info(r).https {
+		scheme = "https"
+	}
+	d.NewFeed = core.CalendarURL(info(r).settings, scheme+"://"+r.Host, token)
+	s.render(w, r, "account", &Page{Title: "Account", Data: d})
+}
+
+// calendarDelete revokes one of the user's calendar feeds.
+func (s *Server) calendarDelete(w http.ResponseWriter, r *http.Request) {
+	u := user(r)
+	id, err := pathID(r)
+	if err != nil {
+		s.fail(w, r, http.StatusNotFound, "No such calendar.")
+		return
+	}
+	c, err := s.Core.DeleteCalendar(r.Context(), u.ID, id)
+	if err != nil {
+		s.failErr(w, r, err, "No such calendar.")
+		return
+	}
+	scope := "all targets"
+	if c.Tag != "" {
+		scope = "tag " + c.Tag
+	}
+	s.Core.Audit(r.Context(), u.Email, "calendar.revoke", fmt.Sprintf("calendar %d", c.ID), scope)
+	s.back(w, r, "/account", "Calendar feed revoked; its URL no longer works.", "ok")
+}
+
+// calendarFeed serves a calendar feed to whoever holds its token.
+func (s *Server) calendarFeed(w http.ResponseWriter, r *http.Request) {
+	token, ok := strings.CutSuffix(r.PathValue("file"), ".ics")
+	if !ok || token == "" {
+		http.NotFound(w, r)
+		return
+	}
+	c, err := s.Core.CalendarByToken(r.Context(), token)
+	if err != nil {
+		if errors.Is(err, core.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		s.serverError(w, r, err)
+		return
+	}
+	body, err := s.Core.CalendarICS(r.Context(), c)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/calendar; charset=utf-8")
+	w.Header().Set("Cache-Control", "private, max-age=900")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	_, _ = w.Write(body)
 }
 
 func (s *Server) accountSave(w http.ResponseWriter, r *http.Request) {
@@ -864,7 +970,13 @@ func (s *Server) accountPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fail := func(msg string) {
-		s.renderStatus(w, r, http.StatusBadRequest, "account", &Page{Title: "Account", Data: accountData{U: u, Error: msg}})
+		d, err := s.accountData(r)
+		if err != nil {
+			s.serverError(w, r, err)
+			return
+		}
+		d.Error = msg
+		s.renderStatus(w, r, http.StatusBadRequest, "account", &Page{Title: "Account", Data: d})
 	}
 	if _, err := s.Auth.Login(r.Context(), u.Email, r.PostFormValue("current"), info(r).ip); err != nil {
 		fail("The current password is incorrect.")

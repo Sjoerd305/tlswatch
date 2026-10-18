@@ -6,7 +6,7 @@
     <div class="row between">
       <div><h2 class="h2">Channels</h2><span class="summary">Where alerts go. Each target picks its channels; a channel only carries severities at or above its floor.</span></div>
       <div class="row gap-sm"><a href="?new=smtp" class="btn btn-primary">Add SMTP</a><a href="?new=telegram" class="btn">Add Telegram</a>
-        <details class="menu"><summary class="btn">More types…</summary><div class="menu-list"><a href="?new=slack">Slack</a><a href="?new=discord">Discord</a><a href="?new=ntfy">ntfy</a><a href="?new=webhook">Webhook</a></div></details></div>
+        <details class="menu"><summary class="btn">More types…</summary><div class="menu-list"><a href="?new=slack">Slack</a><a href="?new=discord">Discord</a><a href="?new=teams">Microsoft Teams</a><a href="?new=matrix">Matrix</a><a href="?new=ntfy">ntfy</a><a href="?new=pagerduty">PagerDuty</a><a href="?new=webhook">Webhook</a></div></details></div>
     </div>
     {{- if $d.Channels}}
     <div class="card clip">
@@ -30,7 +30,7 @@
       </table>
     </div>
     {{- else if not $d.Edit}}
-    <section class="card"><div class="empty"><span class="h3">No channels yet</span><span>Findings are recorded but not delivered. Add an SMTP relay, a Telegram bot, a Slack or Discord webhook, an ntfy topic or a webhook of your own to receive alerts.</span></div></section>
+    <section class="card"><div class="empty"><span class="h3">No channels yet</span><span>Findings are recorded but not delivered. Add an SMTP relay, a Telegram bot, a Slack, Discord or Teams webhook, a Matrix room, an ntfy topic, a PagerDuty service or a webhook of your own to receive alerts.</span></div></section>
     {{- end}}
 
     {{- with $d.Edit}}{{$c := .}}
@@ -74,6 +74,20 @@
       <div class="field"><label class="label" for="hook">Webhook URL</label><input id="hook" name="webhook_url" class="input mono" type="password" value="" autocomplete="new-password" spellcheck="false" placeholder="{{if $c.ID}}stored · leave empty to keep{{else}}https://hooks.slack.com/services/T…/B…/…{{end}}"{{if not $c.ID}} required{{end}}><span class="help">An incoming webhook of a Slack app; Mattermost and Rocket.Chat incoming webhooks work too. The URL lets anyone post to the channel, so it is stored encrypted and not shown again{{if $c.ID}}; leave empty to keep{{end}}.</span></div>
       {{- else if eq $c.Kind "discord"}}
       <div class="field"><label class="label" for="hook">Webhook URL</label><input id="hook" name="webhook_url" class="input mono" type="password" value="" autocomplete="new-password" spellcheck="false" placeholder="{{if $c.ID}}stored · leave empty to keep{{else}}https://discord.com/api/webhooks/…{{end}}"{{if not $c.ID}} required{{end}}><span class="help">Channel settings › Integrations › Webhooks in Discord. The URL lets anyone post to the channel, so it is stored encrypted and not shown again{{if $c.ID}}; leave empty to keep{{end}}.</span></div>
+      {{- else if eq $c.Kind "teams"}}
+      <div class="field"><label class="label" for="hook">Workflow URL</label><input id="hook" name="webhook_url" class="input mono" type="password" value="" autocomplete="new-password" spellcheck="false" placeholder="{{if $c.ID}}stored · leave empty to keep{{else}}https://….logic.azure.com/workflows/…{{end}}"{{if not $c.ID}} required{{end}}><span class="help">In Teams, add the Workflows template "Post to a channel when a webhook request is received" to the channel and copy its URL. Alerts arrive as Adaptive Cards. The URL lets anyone post to the channel, so it is stored encrypted and not shown again{{if $c.ID}}; leave empty to keep{{end}}.</span></div>
+      {{- else if eq $c.Kind "matrix"}}
+      <div class="fgrid c2">
+        <div class="field"><label class="label" for="homeserver">Homeserver</label><input id="homeserver" name="homeserver" class="input mono" value="{{$c.Matrix.Homeserver}}" required spellcheck="false" placeholder="https://matrix.example.org"><span class="help">The client-server API of the account's server.</span></div>
+        <div class="field"><label class="label" for="room">Room ID</label><input id="room" name="room_id" class="input mono" value="{{$c.Matrix.RoomID}}" required spellcheck="false" placeholder="!abc123:example.org"><span class="help">Room settings › Advanced. The account must have joined the room.</span></div>
+      </div>
+      <div class="field"><label class="label" for="token">Access token</label><input id="token" name="token" class="input mono" type="password" value="" autocomplete="new-password" placeholder="{{if $c.ID}}stored · leave empty to keep{{else}}syt_…{{end}}"{{if not $c.ID}} required{{end}}><span class="help">Of a bot account that may post in the room. Alerts are sent as notices, which clients show without a sound. Stored encrypted with the secret key{{if $c.ID}}; leave empty to keep{{end}}.</span></div>
+      {{- else if eq $c.Kind "pagerduty"}}
+      <div class="fgrid c2">
+        <div class="field"><label class="label" for="rkey">Integration key</label><input id="rkey" name="routing_key" class="input mono" type="password" value="" autocomplete="new-password" spellcheck="false" placeholder="{{if $c.ID}}stored · leave empty to keep{{else}}32 characters{{end}}"{{if not $c.ID}} required{{end}}><span class="help">Of an Events API v2 integration on the service. Stored encrypted with the secret key{{if $c.ID}}; leave empty to keep{{end}}.</span></div>
+        <div class="field"><label class="label" for="region">Region</label><select id="region" name="region" class="input"><option value="us"{{if ne $c.PagerDuty.Region "eu"}} selected{{end}}>US</option><option value="eu"{{if eq $c.PagerDuty.Region "eu"}} selected{{end}}>EU</option></select><span class="help">Where the PagerDuty account lives.</span></div>
+      </div>
+      <p class="help">One incident per finding: opening, escalating and reminding trigger it, recovery resolves it. Alerts to PagerDuty are never batched, and an acknowledgement in PagerDuty does not reach tlswatch. Send test triggers and at once resolves a test incident.</p>
       {{- else if eq $c.Kind "ntfy"}}
       <div class="fgrid c2">
         <div class="field"><label class="label" for="server">Server</label><input id="server" name="server" class="input mono" value="{{$c.Ntfy.Server}}" spellcheck="false" placeholder="https://ntfy.sh"><span class="help">ntfy.sh or your own ntfy server.</span></div>

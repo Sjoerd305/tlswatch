@@ -41,7 +41,7 @@
         <div class="field"><label class="label" for="dh">Hour</label><select id="dh" name="digest_hour" class="input">{{range (seq 0 23)}}<option value="{{.}}"{{if eq . $x.DigestHour}} selected{{end}}>{{.}}:00</option>{{end}}</select></div>
       </div>
       {{- if $d.Channels}}
-      <div class="field"><span class="label">Digest channels</span><div class="checks">{{range $d.Channels}}<label class="check"><input type="checkbox" name="digest_channel" value="{{.ID}}"{{if hasID $x.DigestChannels .ID}} checked{{end}}> {{.Name}} <span class="muted">{{.KindLabel}}</span></label>{{end}}</div><span class="help">None checked: every SMTP channel.</span></div>
+      <div class="field"><span class="label">Digest channels</span><div class="checks">{{range $d.Channels}}{{if ne .Kind "pagerduty"}}<label class="check"><input type="checkbox" name="digest_channel" value="{{.ID}}"{{if hasID $x.DigestChannels .ID}} checked{{end}}> {{.Name}} <span class="muted">{{.KindLabel}}</span></label>{{end}}{{end}}</div><span class="help">None checked: every SMTP channel. PagerDuty takes incidents, not digests.</span></div>
       {{- end}}
       <div class="form-foot"><button type="submit" class="btn btn-primary">Save defaults</button><button type="submit" form="digest-now" class="btn cancel">Send digest now</button></div>
     </form>

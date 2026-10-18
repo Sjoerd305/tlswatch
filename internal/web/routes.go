@@ -30,6 +30,8 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /setup/restore", s.setupRestore)
 	mux.HandleFunc("GET /invite", s.invitePage)
 	mux.HandleFunc("POST /invite", s.invite)
+	// Calendar feeds: the secret token in the path is the credential.
+	mux.HandleFunc("GET /calendar/{file}", s.calendarFeed)
 
 	// Pages.
 	mux.HandleFunc("GET /{$}", view(s.overview))
@@ -131,6 +133,8 @@ func (s *Server) routes(mux *http.ServeMux) {
 		mux.HandleFunc("POST /account/theme", own(s.accountTheme))
 	}
 	mux.HandleFunc("POST /account/password", own(s.accountPassword))
+	mux.HandleFunc("POST /account/calendars", own(s.calendarCreate))
+	mux.HandleFunc("POST /account/calendars/{id}/delete", own(s.calendarDelete))
 
 	// JSON API for the TypeScript modules.
 	mux.HandleFunc("POST /api/v1/targets/{id}/check", edit(s.apiTargetCheck))

@@ -28,6 +28,30 @@
       <div class="form-foot"><button type="submit" class="btn btn-primary">Change password</button><span class="help">Other sessions are signed out.</span></div>
     </form>
     {{- end}}
+    <section class="card form" id="calendars">
+      <h2 class="h3">Calendar feeds</h2>
+      <p class="help">A secret URL your calendar subscribes to: one all-day event per served certificate on its expiry date, and for renewal-managed targets one on the renewal point. A renewal moves the event. Anyone with the URL sees the names in it, so treat it as a password; it stops working when you revoke it or your account is disabled.</p>
+      {{- with $d.NewFeed}}
+      <div class="notice ok" role="status">{{template "notice-icon" "ok"}}<div>Copy the URL now; it is not shown again.<div class="fp-row"><span class="mono wrap-any">{{.}}</span><button type="button" class="btn btn-xs" data-copy="{{.}}">copy</button></div></div></div>
+      {{- end}}
+      {{- if $d.Calendars}}
+      <table class="tbl compact">
+        <thead><tr><th>Scope</th><th>Created</th><th>Last fetched</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody>
+        {{- range $d.Calendars}}
+          <tr><td>{{if .Tag}}tag <span class="tag">{{.Tag}}</span>{{else}}all targets{{end}}</td><td class="mono">{{date $p.Loc .Created}}</td><td class="mono">{{if .LastUsed}}{{when $p.Loc $p.Now .LastUsed}}{{else}}never{{end}}</td>
+            <td><form method="post" action="/account/calendars/{{.ID}}/delete">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-xs">Revoke</button></form></td></tr>
+        {{- end}}
+        </tbody>
+      </table>
+      {{- end}}
+      <form method="post" action="/account/calendars" class="row">
+        {{template "csrf" $p.CSRF}}
+        <label class="label" for="caltag">Targets</label>
+        <select id="caltag" name="tag" class="input w-auto"><option value="">All targets</option>{{range $d.Tags}}<option value="{{.}}">Tag {{.}}</option>{{end}}</select>
+        <button type="submit" class="btn">Create feed</button>
+      </form>
+    </section>
   </div>
 </div>
 {{end}}

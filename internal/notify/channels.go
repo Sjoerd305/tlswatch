@@ -16,18 +16,22 @@ import (
 
 // Channel kinds.
 const (
-	KindSMTP     = "smtp"
-	KindTelegram = "telegram"
-	KindSlack    = "slack"
-	KindDiscord  = "discord"
-	KindNtfy     = "ntfy"
-	KindWebhook  = "webhook"
+	KindSMTP      = "smtp"
+	KindTelegram  = "telegram"
+	KindSlack     = "slack"
+	KindDiscord   = "discord"
+	KindNtfy      = "ntfy"
+	KindWebhook   = "webhook"
+	KindTeams     = "teams"
+	KindMatrix    = "matrix"
+	KindPagerDuty = "pagerduty"
 )
 
 // Kinds lists the channel kinds in the order the UI offers them, with their
 // display names.
 var Kinds = []struct{ Kind, Label string }{
-	{KindSMTP, "SMTP"}, {KindTelegram, "Telegram"}, {KindSlack, "Slack"}, {KindDiscord, "Discord"}, {KindNtfy, "ntfy"}, {KindWebhook, "Webhook"},
+	{KindSMTP, "SMTP"}, {KindTelegram, "Telegram"}, {KindSlack, "Slack"}, {KindDiscord, "Discord"}, {KindTeams, "Microsoft Teams"},
+	{KindMatrix, "Matrix"}, {KindNtfy, "ntfy"}, {KindPagerDuty, "PagerDuty"}, {KindWebhook, "Webhook"},
 }
 
 // KnownKind reports whether k is a channel kind.
@@ -55,6 +59,9 @@ type Channel struct {
 	Discord     DiscordSettings
 	Ntfy        NtfySettings
 	Webhook     WebhookSettings
+	Teams       TeamsSettings
+	Matrix      MatrixSettings
+	PagerDuty   PagerDutySettings
 	CreatedAt   int64
 	UpdatedAt   int64
 	// Unreadable is set when the stored settings cannot be decrypted, for
@@ -102,6 +109,12 @@ func (c Channel) Validate() error {
 		return c.Ntfy.Validate()
 	case KindWebhook:
 		return c.Webhook.Validate()
+	case KindTeams:
+		return c.Teams.Validate()
+	case KindMatrix:
+		return c.Matrix.Validate()
+	case KindPagerDuty:
+		return c.PagerDuty.Validate()
 	}
 	return errors.New("unknown channel type")
 }
@@ -119,6 +132,12 @@ func (c Channel) Sender() Sender {
 		return &NtfySender{S: c.Ntfy}
 	case KindWebhook:
 		return &WebhookSender{S: c.Webhook}
+	case KindTeams:
+		return &TeamsSender{S: c.Teams}
+	case KindMatrix:
+		return &MatrixSender{S: c.Matrix}
+	case KindPagerDuty:
+		return &PagerDutySender{S: c.PagerDuty}
 	}
 	return &SMTPSender{S: c.SMTP}
 }
@@ -136,13 +155,20 @@ func (c Channel) destination() string {
 		return c.Ntfy.Destination()
 	case KindWebhook:
 		return c.Webhook.Destination()
+	case KindTeams:
+		return c.Teams.Destination()
+	case KindMatrix:
+		return c.Matrix.Destination()
+	case KindPagerDuty:
+		return c.PagerDuty.Destination()
 	}
 	return c.SMTP.Destination()
 }
 
 // Secrets lists the credential values to redact from logs.
 func (c Channel) Secrets() []string {
-	return []string{c.SMTP.Password, c.Telegram.Token, c.Slack.WebhookURL, c.Discord.WebhookURL, c.Ntfy.Token, c.Webhook.Secret}
+	return []string{c.SMTP.Password, c.Telegram.Token, c.Slack.WebhookURL, c.Discord.WebhookURL, c.Ntfy.Token, c.Webhook.Secret,
+		c.Teams.WebhookURL, c.Matrix.Token, c.PagerDuty.RoutingKey}
 }
 
 // HasSecret reports whether a credential is set: a password, token, signing
@@ -160,6 +186,7 @@ func (c Channel) HasSecret() bool {
 // error: a secret is never echoed back.
 func (c *Channel) ClearSecrets() {
 	c.SMTP.Password, c.Telegram.Token, c.Slack.WebhookURL, c.Discord.WebhookURL, c.Ntfy.Token, c.Webhook.Secret = "", "", "", "", "", ""
+	c.Teams.WebhookURL, c.Matrix.Token, c.PagerDuty.RoutingKey = "", "", ""
 }
 
 // keepSecrets fills every empty credential of c from old, so that a form
@@ -176,6 +203,9 @@ func (c *Channel) keepSecrets(old Channel) {
 	keep(&c.Discord.WebhookURL, old.Discord.WebhookURL)
 	keep(&c.Ntfy.Token, old.Ntfy.Token)
 	keep(&c.Webhook.Secret, old.Webhook.Secret)
+	keep(&c.Teams.WebhookURL, old.Teams.WebhookURL)
+	keep(&c.Matrix.Token, old.Matrix.Token)
+	keep(&c.PagerDuty.RoutingKey, old.PagerDuty.RoutingKey)
 }
 
 // Channels stores channels with their settings encrypted under the key.
@@ -193,12 +223,15 @@ func (s *Channels) now() time.Time {
 }
 
 type sealedSettings struct {
-	SMTP     *SMTPSettings     `json:"smtp,omitempty"`
-	Telegram *TelegramSettings `json:"telegram,omitempty"`
-	Slack    *SlackSettings    `json:"slack,omitempty"`
-	Discord  *DiscordSettings  `json:"discord,omitempty"`
-	Ntfy     *NtfySettings     `json:"ntfy,omitempty"`
-	Webhook  *WebhookSettings  `json:"webhook,omitempty"`
+	SMTP      *SMTPSettings      `json:"smtp,omitempty"`
+	Telegram  *TelegramSettings  `json:"telegram,omitempty"`
+	Slack     *SlackSettings     `json:"slack,omitempty"`
+	Discord   *DiscordSettings   `json:"discord,omitempty"`
+	Ntfy      *NtfySettings      `json:"ntfy,omitempty"`
+	Webhook   *WebhookSettings   `json:"webhook,omitempty"`
+	Teams     *TeamsSettings     `json:"teams,omitempty"`
+	Matrix    *MatrixSettings    `json:"matrix,omitempty"`
+	PagerDuty *PagerDutySettings `json:"pagerduty,omitempty"`
 }
 
 func (s *Channels) seal(c Channel) ([]byte, error) {
@@ -214,6 +247,12 @@ func (s *Channels) seal(c Channel) ([]byte, error) {
 		v.Ntfy = &c.Ntfy
 	case KindWebhook:
 		v.Webhook = &c.Webhook
+	case KindTeams:
+		v.Teams = &c.Teams
+	case KindMatrix:
+		v.Matrix = &c.Matrix
+	case KindPagerDuty:
+		v.PagerDuty = &c.PagerDuty
 	default:
 		v.SMTP = &c.SMTP
 	}
@@ -258,6 +297,15 @@ func (s *Channels) unseal(c *Channel, blob []byte) error {
 	}
 	if v.Webhook != nil {
 		c.Webhook = *v.Webhook
+	}
+	if v.Teams != nil {
+		c.Teams = *v.Teams
+	}
+	if v.Matrix != nil {
+		c.Matrix = *v.Matrix
+	}
+	if v.PagerDuty != nil {
+		c.PagerDuty = *v.PagerDuty
 	}
 	return nil
 }

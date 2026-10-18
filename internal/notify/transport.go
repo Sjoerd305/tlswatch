@@ -16,6 +16,11 @@ type Message struct {
 	// Ref identifies this delivery; SMTP sends it as the Message-ID so
 	// the relay's logs can be matched with the alert log. Empty: random.
 	Ref string
+	// Event and FindingID are the alert event (open, escalate, remind,
+	// recover, digest, test) and its finding, set when the message is one
+	// alert and not a batch: PagerDuty turns them into incident actions.
+	Event     string
+	FindingID int64
 }
 
 // NewRef returns a random delivery reference.

@@ -24,6 +24,11 @@ const maxBody = 64 << 10
 // log. A 429, or a 503 with Retry-After, becomes a *RetryAfterError; the
 // caller decides what the other statuses mean.
 func httpPost(ctx context.Context, client *http.Client, rawURL, contentType string, body []byte, headers map[string]string) (int, []byte, error) {
+	return httpSend(ctx, client, http.MethodPost, rawURL, contentType, body, headers)
+}
+
+// httpSend is httpPost with another method (Matrix sends with PUT).
+func httpSend(ctx context.Context, client *http.Client, method, rawURL, contentType string, body []byte, headers map[string]string) (int, []byte, error) {
 	if client == nil {
 		client = &http.Client{Timeout: httpTimeout}
 	}
@@ -35,7 +40,7 @@ func httpPost(ctx context.Context, client *http.Client, rawURL, contentType stri
 		return errors.New("the endpoint redirected; alerts are posted only to the configured URL")
 	}
 	client = &c
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, strings.NewReader(string(body)))
+	req, err := http.NewRequestWithContext(ctx, method, rawURL, strings.NewReader(string(body)))
 	if err != nil {
 		return 0, nil, err
 	}

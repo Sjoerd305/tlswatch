@@ -108,9 +108,14 @@ type pending struct {
 	msg       Message
 }
 
+// solo reports a channel kind that takes every alert on its own: one
+// PagerDuty incident per finding is the point of it.
+func solo(kind string) bool { return kind == KindPagerDuty }
+
 // batchKey groups due alerts into one message: per channel, and per set of
 // recipients already reached, so a retry skips exactly those. A digest is
-// a message of its own (solo is its alert id), never a line in a batch.
+// a message of its own (solo is its alert id), never a line in a batch,
+// and so is every alert to a channel kind that is never batched.
 type batchKey struct {
 	channel   int64
 	delivered string
@@ -130,7 +135,11 @@ func (d *Dispatcher) Flush(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	now := d.now()
-	rows, err := d.DB.R.QueryContext(ctx, `SELECT id, channel_id, delivered, ref, created_at, attempts, subject, body, html, event FROM alerts
+	kinds, err := d.channelKinds(ctx)
+	if err != nil {
+		return err
+	}
+	rows, err := d.DB.R.QueryContext(ctx, `SELECT id, channel_id, delivered, ref, created_at, attempts, subject, body, html, event, COALESCE(finding_id, 0) FROM alerts
 		WHERE state = 'pending' AND next_attempt <= ? ORDER BY id`, now.Unix())
 	if err != nil {
 		return err
@@ -140,12 +149,12 @@ func (d *Dispatcher) Flush(ctx context.Context) error {
 	for rows.Next() {
 		var p pending
 		var k batchKey
-		var event string
-		if err := rows.Scan(&p.id, &k.channel, &k.delivered, &p.ref, &p.createdAt, &p.attempts, &p.msg.Subject, &p.msg.Body, &p.msg.HTML, &event); err != nil {
+		if err := rows.Scan(&p.id, &k.channel, &k.delivered, &p.ref, &p.createdAt, &p.attempts, &p.msg.Subject, &p.msg.Body, &p.msg.HTML,
+			&p.msg.Event, &p.msg.FindingID); err != nil {
 			rows.Close()
 			return err
 		}
-		if event == EventDigest {
+		if p.msg.Event == EventDigest || solo(kinds[k.channel]) {
 			k.solo = p.id
 		}
 		if _, ok := batches[k]; !ok {
@@ -174,6 +183,25 @@ func (d *Dispatcher) Flush(ctx context.Context) error {
 	}
 	wg.Wait()
 	return nil
+}
+
+// channelKinds maps every channel to its kind.
+func (d *Dispatcher) channelKinds(ctx context.Context) (map[int64]string, error) {
+	rows, err := d.DB.R.QueryContext(ctx, "SELECT id, kind FROM channels")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	m := map[int64]string{}
+	for rows.Next() {
+		var id int64
+		var k string
+		if err := rows.Scan(&id, &k); err != nil {
+			return nil, err
+		}
+		m[id] = k
+	}
+	return m, rows.Err()
 }
 
 // attempt is the outcome of sending one batch to one channel.
@@ -225,6 +253,10 @@ func (d *Dispatcher) send(ctx context.Context, c Channel, delivered string, ps [
 	}
 	m := Combine(msgs, link)
 	m.Ref = batchRef(ps)
+	if len(ps) > 1 {
+		// A batch is no single alert's event.
+		m.Event, m.FindingID = "", 0
+	}
 	sctx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
 	a := attempt{delivered: delivered}
@@ -331,7 +363,7 @@ func (d *Dispatcher) SendTest(ctx context.Context, chID int64, link string) erro
 		return err
 	}
 	m := TestMessage(c.Name, link)
-	m.Ref = NewRef()
+	m.Ref, m.Event = NewRef(), "test"
 	sctx, cancel := context.WithTimeout(ctx, sendTimeout)
 	var refs []string
 	var sendErr error

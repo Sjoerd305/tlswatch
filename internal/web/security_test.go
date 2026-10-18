@@ -52,6 +52,9 @@ var publicRoutes = map[string]bool{
 	"GET /auth/google": true, "GET /auth/google/callback": true,
 	"GET /setup": true, "POST /setup": true, "POST /setup/restore": true,
 	"GET /invite": true, "POST /invite": true,
+	// The feed's secret token is its credential, as a calendar client
+	// cannot sign in.
+	"GET /calendar/{file}": true,
 }
 
 // concrete fills a pattern's wildcards with IDs that exist nowhere, so an

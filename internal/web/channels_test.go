@@ -23,6 +23,10 @@ func TestChannelKindsForms(t *testing.T) {
 		{"discord", "https://discord.com/api/webhooks/42/TOKq9hid", "discord.com", url.Values{"webhook_url": {"https://discord.com/api/webhooks/42/TOKq9hid"}}},
 		{"ntfy", "tk_q9hid", "https://ntfy.lan/tlswatch", url.Values{"server": {"https://ntfy.lan/"}, "topic": {"tlswatch"}, "token": {"tk_q9hid"}}},
 		{"webhook", "hmac_q9hid", "https://automation.lan/hook", url.Values{"url": {"https://automation.lan/hook?key=k"}, "secret": {"hmac_q9hid"}}},
+		{"teams", "https://prod.westeurope.logic.azure.com/workflows/1/triggers/manual/paths/invoke?sig=q9hid", "prod.westeurope.logic.azure.com",
+			url.Values{"webhook_url": {"https://prod.westeurope.logic.azure.com/workflows/1/triggers/manual/paths/invoke?sig=q9hid"}}},
+		{"matrix", "syt_q9hid", "!ops:example.org", url.Values{"homeserver": {"https://matrix.example.org"}, "room_id": {"!ops:example.org"}, "token": {"syt_q9hid"}}},
+		{"pagerduty", "q9hid" + strings.Repeat("0", 27), "https://events.eu.pagerduty.com/v2/enqueue", url.Values{"routing_key": {"q9hid" + strings.Repeat("0", 27)}, "region": {"eu"}}},
 	}
 	for i, k := range kinds {
 		id := i + 1
@@ -56,7 +60,7 @@ func TestChannelKindsForms(t *testing.T) {
 		// Saving with the credential field empty keeps it; the validation
 		// error for a missing credential only applies to a new channel.
 		f.Set("id", itoa(id))
-		for _, key := range []string{"webhook_url", "token", "secret"} {
+		for _, key := range []string{"webhook_url", "token", "secret", "routing_key"} {
 			if f.Has(key) {
 				f.Set(key, "")
 			}
