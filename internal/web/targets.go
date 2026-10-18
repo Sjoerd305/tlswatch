@@ -332,6 +332,9 @@ type targetDetail struct {
 	Channels  []string
 	Hostname  string
 	Slot      string
+	// DistrustSev is the severity of the open distrusted_ca finding, "" for
+	// none: the chain view colours the distrusted link by it.
+	DistrustSev string
 }
 
 func (s *Server) targetDetail(w http.ResponseWriter, r *http.Request) {
@@ -371,6 +374,11 @@ func (s *Server) loadTargetDetail(ctx context.Context, t core.Target, st config.
 	}
 	if d.Findings, d.OpenMain, err = s.targetFindings(ctx, t.ID); err != nil {
 		return d, err
+	}
+	for _, f := range d.Findings {
+		if f.Open() && f.Kind == check.DistrustedCA {
+			d.DistrustSev = string(f.Severity)
+		}
 	}
 	if !slices.ContainsFunc(d.Findings, func(f core.Finding) bool { return f.Open() && f.Kind == check.Expired }) {
 		core.MarkStale(d.Chain, d.ChainOK, s.now().Unix())

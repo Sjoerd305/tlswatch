@@ -91,7 +91,7 @@ func (s *Server) certificates(w http.ResponseWriter, r *http.Request) {
 		d.AllHref = chipHref(r, "all", "")
 	}
 	issuers, keys := map[string]int{}, map[string]int{}
-	var w30, w90 int
+	var w30, w90, distrusted int
 	targets := map[int64]bool{}
 	for _, it := range inv {
 		if len(it.Served) == 0 && !f.showAll {
@@ -117,6 +117,9 @@ func (s *Server) certificates(w http.ResponseWriter, r *http.Request) {
 		if row.Days < 90 {
 			w90++
 		}
+		if it.Distrusted {
+			distrusted++
+		}
 		issuers[it.IssuerName()]++
 		keys[it.KeyType]++
 		for _, sv := range it.Served {
@@ -130,6 +133,9 @@ func (s *Server) certificates(w http.ResponseWriter, r *http.Request) {
 		{Key: "window", Value: "", Label: "All", Count: d.Total, On: f.window == ""},
 		{Key: "window", Value: "30", Label: "≤ 30 days", Count: w30, On: f.window == "30"},
 		{Key: "window", Value: "90", Label: "≤ 90 days", Count: w90, On: f.window == "90"},
+	}
+	if distrusted > 0 || f.window == "distrusted" {
+		d.Windows = append(d.Windows, Chip{Key: "window", Value: "distrusted", Label: "Distrusted", Count: distrusted, On: f.window == "distrusted", Class: "warn"})
 	}
 	d.Issuers = sortedChips("issuer", issuers, f.issuer)
 	d.Keys = sortedChips("key", keys, f.key)
@@ -171,6 +177,9 @@ func newCertRow(it core.InventoryItem, th config.Thresholds, now time.Time) cert
 		if row.Days < w {
 			tokens = append(tokens, strconv.Itoa(w))
 		}
+	}
+	if it.Distrusted {
+		tokens = append(tokens, "distrusted")
 	}
 	row.Window = strings.Join(tokens, " ")
 	ct := check.Thresholds{Warn: th.WarnDays, Crit: th.CritDays, WarnPct: th.WarnPct, CritPct: th.CritPct}

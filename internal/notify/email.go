@@ -104,7 +104,8 @@ var emailFuncs = template.FuncMap{
 			";letter-spacing:.04em;text-transform:uppercase;color:" + c[0] + ";background:" + c[1] + ";")
 	},
 	// ink colours a status figure (the countdown, a days-left number).
-	"ink": func(tag string) template.CSS { return template.CSS("color:" + statusColor(tag)[0] + ";") }, // #nosec G203 -- palette constant
+	"ink":  func(tag string) template.CSS { return template.CSS("color:" + statusColor(tag)[0] + ";") }, // #nosec G203 -- palette constant
+	"join": strings.Join,
 	"short": func(tag string) string {
 		switch tag {
 		case "critical":
@@ -210,6 +211,14 @@ var emailTemplates = template.Must(template.New("email").Funcs(emailFuncs).Parse
 {{- range .Issued}}
 <tr><td class="cell" style="{{st "cell"}}{{st "mono"}}width:1%;white-space:nowrap;">{{.Date}}</td><td class="cell" style="{{st "cell"}}width:1%;white-space:nowrap;"><span class="s-{{if eq .State "unexpected"}}warning{{else}}ok{{end}} b-{{if eq .State "unexpected"}}warning{{else}}ok{{end}}" style="{{pill (print (or (and (eq .State "unexpected") "warning") "ok"))}}">{{.State}}</span></td>
 <td class="cell" style="{{st "cell"}}"><span style="{{st "mono"}}">{{.Names}}</span> <span class="muted" style="{{st "muted"}}">by {{.Issuer}} · {{.Domain}}</span></td></tr>
+{{- end}}
+</table>
+{{- end}}
+{{- if .Distrust}}
+<div class="section" style="{{st "section"}}">Distrust taking effect in the next 90 days</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+{{- range .Distrust}}
+<tr><td class="cell" style="{{st "cell"}}{{st "mono"}}width:1%;white-space:nowrap;vertical-align:top;">{{.Date}}</td><td class="cell" style="{{st "cell"}}">{{.CA}}: {{.Phrase}}{{if .Link}} <a class="link" href="{{.Link}}" style="{{st "link"}}">announcement</a>{{end}}<br>{{if .Targets}}<span class="s-warning" style="{{ink "warning"}}">affects {{join .Targets ", "}}</span>{{else}}<span class="muted" style="{{st "muted"}}">no target affected</span>{{end}}</td></tr>
 {{- end}}
 </table>
 {{- end}}

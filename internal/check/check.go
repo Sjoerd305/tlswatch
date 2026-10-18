@@ -22,6 +22,7 @@ type Kind string
 const (
 	Expiring           Kind = "expiring"
 	RenewalOverdue     Kind = "renewal_overdue"
+	DistrustedCA       Kind = "distrusted_ca"
 	Expired            Kind = "expired"
 	NotYetValid        Kind = "not_yet_valid"
 	ChainUntrusted     Kind = "chain_untrusted"
@@ -52,13 +53,15 @@ const (
 )
 
 // Kinds lists every kind, for filters.
-var Kinds = []Kind{Expiring, RenewalOverdue, Expired, NotYetValid, ChainUntrusted, SelfSigned, HostnameMismatch, WeakSignature, LegacyProtocol, WeakConfiguration, CertificateChanged, IssuerChanged, GradeChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed, NodeOffline, UnexpectedCertificate, CTSourceFailed, CertificateIssued}
+var Kinds = []Kind{Expiring, RenewalOverdue, DistrustedCA, Expired, NotYetValid, ChainUntrusted, SelfSigned, HostnameMismatch, WeakSignature, LegacyProtocol, WeakConfiguration, CertificateChanged, IssuerChanged, GradeChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed, NodeOffline, UnexpectedCertificate, CTSourceFailed, CertificateIssued}
 
 // Label is the human name of a kind.
 func (k Kind) Label() string {
 	switch k {
 	case RenewalOverdue:
 		return "Renewal overdue"
+	case DistrustedCA:
+		return "Distrusted CA"
 	case NotYetValid:
 		return "Not yet valid"
 	case ChainUntrusted:
@@ -108,6 +111,8 @@ func (k Kind) Short() string {
 		return "issuer"
 	case RenewalOverdue:
 		return "renewal"
+	case DistrustedCA:
+		return "distrusted"
 	case NotYetValid:
 		return "not yet valid"
 	case ChainUntrusted:
@@ -882,6 +887,12 @@ func addressFacts(t Target, a probe.Address, th Thresholds, now time.Time) ([]Fi
 	}
 	if len(weak) > 0 {
 		fs = append(fs, Finding{Kind: WeakSignature, Severity: Warning, Fingerprint: fp, Details: "weak signature or key: " + strings.Join(weak, ", ")})
+	}
+	// A private PKI is in no root program.
+	if t.Trust == probe.TrustSystem || t.Trust == "" {
+		if hits := Distrusted(a.Chain, a.VerifiedChain); len(hits) > 0 {
+			fs = append(fs, distrustFinding(hits, leaf, fp, now))
+		}
 	}
 	return fs, earliest
 }

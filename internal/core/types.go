@@ -5,7 +5,9 @@ package core
 
 import (
 	"context"
+	"crypto/x509"
 	"database/sql"
+	"encoding/pem"
 	"errors"
 	"log/slog"
 	"net"
@@ -283,6 +285,16 @@ func LifetimeUsed(nb, na int64, now time.Time) int {
 		return 100
 	}
 	return int(p)
+}
+
+// X509 parses the certificate from its PEM; a list query leaves the PEM
+// out, and parsing then fails.
+func (c Certificate) X509() (*x509.Certificate, error) {
+	b, _ := pem.Decode([]byte(c.PEM))
+	if b == nil {
+		return nil, errors.New("no PEM")
+	}
+	return x509.ParseCertificate(b.Bytes)
 }
 
 // LifetimeDays is the total validity in days.

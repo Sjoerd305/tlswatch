@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 
+	"github.com/sjoerd305/tlswatch/internal/check"
 	"github.com/sjoerd305/tlswatch/internal/probe"
 )
 
@@ -96,6 +98,11 @@ type ChainLink struct {
 	// Stale: an expired root the server still sends after a chain that
 	// verifies without it; clients ignore it and it can be dropped.
 	Stale bool
+	// Distrust lists the root-program distrust events that cover this
+	// certificate; on the top link of a chain sent without its root, those
+	// that cover the root it was issued by (DistrustIssuer).
+	Distrust       []check.DistrustEvent
+	DistrustIssuer bool
 }
 
 // Chain resolves an observation's chain to certificates.
@@ -118,7 +125,17 @@ func (s *Service) Chain(ctx context.Context, o Observation) []ChainLink {
 		}
 		// A root's own signature is never checked; its key is.
 		l.Weak = isWeak(c) && !(c.SelfSigned && c.IsCA) || c.KeyType == "RSA" && c.KeyBits < 2048
+		if i > 0 {
+			if x, err := c.X509(); err == nil {
+				l.Distrust = check.DistrustsOf(x, false)
+			}
+		}
 		out = append(out, l)
+	}
+	if n := len(out); n > 1 && !slices.ContainsFunc(out, func(l ChainLink) bool { return len(l.Distrust) > 0 }) {
+		if x, err := out[n-1].X509(); err == nil {
+			out[n-1].Distrust, out[n-1].DistrustIssuer = check.DistrustsOf(x, true), true
+		}
 	}
 	markWorst(out)
 	return out
@@ -219,6 +236,8 @@ type InventoryItem struct {
 	Targets int
 	Stale   bool // served on only some addresses of a target
 	Chain   []ChainLink
+	// Distrusted: an open distrusted_ca finding names this leaf.
+	Distrusted bool
 }
 
 // served returns where leaf certificates are served now, per fingerprint:
@@ -261,6 +280,20 @@ func (s *Service) Inventory(ctx context.Context) ([]InventoryItem, error) {
 	if err != nil {
 		return nil, err
 	}
+	distrusted := map[string]bool{}
+	drows, err := s.DB.R.QueryContext(ctx, "SELECT DISTINCT fingerprint FROM findings WHERE kind = ? AND resolved_at = 0", string(check.DistrustedCA))
+	if err != nil {
+		return nil, err
+	}
+	for drows.Next() {
+		var fp string
+		if err := drows.Scan(&fp); err != nil {
+			drows.Close()
+			return nil, err
+		}
+		distrusted[fp] = true
+	}
+	drows.Close()
 	crow, err := s.DB.R.QueryContext(ctx, "SELECT "+certListCols+" FROM certificates WHERE fingerprint IN (SELECT DISTINCT leaf_fp FROM observations WHERE leaf_fp != '') ORDER BY not_after")
 	if err != nil {
 		return nil, err
@@ -272,7 +305,7 @@ func (s *Service) Inventory(ctx context.Context) ([]InventoryItem, error) {
 		if err != nil {
 			return nil, err
 		}
-		it := InventoryItem{Certificate: c, Served: served[c.Fingerprint]}
+		it := InventoryItem{Certificate: c, Served: served[c.Fingerprint], Distrusted: distrusted[c.Fingerprint]}
 		tg := map[int64]int{}
 		for _, sv := range it.Served {
 			tg[sv.TargetID]++

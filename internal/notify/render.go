@@ -68,6 +68,8 @@ func phrase(a AlertData) string {
 		return "expires soon"
 	case "renewal_overdue":
 		return "renewal overdue"
+	case "distrusted_ca":
+		return "chain roots in a distrusted CA"
 	case "expired":
 		return "certificate expired"
 	case "chain_untrusted":
@@ -278,7 +280,15 @@ type DigestData struct {
 	Failed   []DigestFailure
 	Grades   []DigestGrade // targets whose configuration grade dropped this week
 	Issued   []DigestIssuance
+	Distrust []DigestDistrust // events taking effect in the next 90 days
 	Link     string
+}
+
+// DigestDistrust is a root-program distrust event ahead, with the targets
+// whose certificates it will affect.
+type DigestDistrust struct {
+	Date, CA, Phrase, Link string
+	Targets                []string // "name (host:port)"
 }
 
 // DigestIssuance is a certificate issued for a watched domain this week.
@@ -348,6 +358,16 @@ func RenderDigest(d DigestData, tag string) Message {
 		fmt.Fprintf(&b, "\nIssued for your domains this week (%d)\n", len(d.Issued))
 		for _, i := range d.Issued {
 			fmt.Fprintf(&b, "  %s  %-10s %s by %s (%s)\n", i.Date, i.State, i.Names, i.Issuer, i.Domain)
+		}
+	}
+	if len(d.Distrust) > 0 {
+		fmt.Fprintf(&b, "\nDistrust taking effect in the next 90 days (%d)\n", len(d.Distrust))
+		for _, e := range d.Distrust {
+			affects := "no target affected"
+			if len(e.Targets) > 0 {
+				affects = "affects " + strings.Join(e.Targets, ", ")
+			}
+			fmt.Fprintf(&b, "  %s  %s: %s; %s\n", e.Date, e.CA, e.Phrase, affects)
 		}
 	}
 	if d.Link != "" {

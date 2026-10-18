@@ -38,7 +38,7 @@
     {{- range $d.Items}}
       <tr data-expand tabindex="0" aria-expanded="{{if .Open}}true{{else}}false{{end}}" data-search="{{.Search}}" data-window="{{.Window}}" data-issuer="{{.IssuerName}}" data-key="{{.KeyType}}"{{.SortAttrs}}{{if .Hidden}} hidden{{end}}{{if not .Targets}} class="muted"{{end}}>
         <td class="expander muted m-hide"><a href="?open={{short .Fingerprint}}" class="ink" aria-label="Details">{{template "chevron"}}</a></td>
-        <td data-label="Subject" class="strong m-lead">{{.SubjectCN}}{{if .SelfSigned}} <span class="pill off ml">self-signed</span>{{end}}{{if .Stale}} <span class="pill warn ml">stale node</span>{{end}}{{if not .Targets}} <span class="pill off ml">not served</span>{{end}}</td>
+        <td data-label="Subject" class="strong m-lead">{{.SubjectCN}}{{if .SelfSigned}} <span class="pill off ml">self-signed</span>{{end}}{{if .Stale}} <span class="pill warn ml">stale node</span>{{end}}{{if .Distrusted}} <span class="pill warn ml">distrusted</span>{{end}}{{if not .Targets}} <span class="pill off ml">not served</span>{{end}}</td>
         <td data-label="Issuer">{{.IssuerName}}</td>
         <td data-label="Days" class="num mono days m-lead m-end{{if ne .Status "ok"}} {{.Status}}-t{{end}}">{{template "days-left" (left $p.Now .NotAfter)}}</td>
         <td data-label="Lifetime" class="m-hide">{{template "bar" (dict "Used" .Used "Class" .Status)}}</td>

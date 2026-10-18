@@ -69,8 +69,10 @@
       <div class="chain">
         {{- $ecls := $t.ExpiryClass $p.Settings.Defaults $p.Now}}
         {{- range $d.Chain}}{{$dl := days $p.Now .NotAfter}}
-        <div class="link"><span class="d {{if .Stale}}warn{{else if or (lt $dl 0) .Weak}}bad{{else if and .Worst $ecls}}{{if eq $ecls "crit"}}bad{{else}}warn{{end}}{{else}}good{{end}}"></span>
-          <div><div class="name">{{.SubjectCN}}</div><div class="sub">{{.Role}}{{if .InStore}}, in {{if eq (print $t.Trust) "bundle"}}bundle{{else}}store{{end}}{{end}} · {{.KeyDesc}} · {{.SigAlg}}{{if .Weak}} · <span class="crit-t">weak</span>{{end}}{{if .Stale}} · not used by clients, can be dropped{{end}}</div></div>
+        {{- $dist := and .Distrust (eq (print $t.Trust) "system")}}
+        <div class="link"><span class="d {{if .Stale}}warn{{else if or (lt $dl 0) .Weak}}bad{{else if and $dist $d.DistrustSev}}{{if eq $d.DistrustSev "critical"}}bad{{else}}warn{{end}}{{else if and .Worst $ecls}}{{if eq $ecls "crit"}}bad{{else}}warn{{end}}{{else}}good{{end}}"></span>
+          <div><div class="name">{{.SubjectCN}}</div><div class="sub">{{.Role}}{{if .InStore}}, in {{if eq (print $t.Trust) "bundle"}}bundle{{else}}store{{end}}{{end}} · {{.KeyDesc}} · {{.SigAlg}}{{if .Weak}} · <span class="crit-t">weak</span>{{end}}{{if .Stale}} · not used by clients, can be dropped{{end}}</div>
+          {{- if $dist}}<div class="sub">{{if .DistrustIssuer}}Issued by a distrusted root: {{end}}{{range $i, $e := .Distrust}}{{if $i}}; {{end}}<a href="{{$e.Link}}" rel="noopener noreferrer" target="_blank"{{if $d.DistrustSev}} class="{{if eq $d.DistrustSev "critical"}}crit-t{{else}}warn-t{{end}}"{{end}}>{{$e.Phrase $p.Now}}</a>{{end}}</div>{{end}}</div>
           <span class="date mono">{{date $p.Loc .NotAfter}}</span>
           <span class="left mono{{if and .Worst $ecls}} {{$ecls}}-t bold{{end}}">{{if lt $dl 0}}expired{{else}}{{(left $p.Now .NotAfter).Short}}{{end}}</span>
         </div>
