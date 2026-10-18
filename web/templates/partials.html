@@ -145,6 +145,7 @@
   {{- end}}
   {{- if .Can "users.manage"}}<a href="/settings/users"{{if eq .SettingsNav "users"}} class="on" aria-current="page"{{end}}>Users</a>{{end}}
   {{- if .Can "audit.view"}}<a href="/settings/audit"{{if eq .SettingsNav "audit"}} class="on" aria-current="page"{{end}}>Audit log</a>{{end}}
+  {{- if .Can "settings.manage"}}<a href="/settings/export"{{if eq .SettingsNav "export"}} class="on" aria-current="page"{{end}}>Export</a>{{end}}
   {{- if .Can "settings.manage"}}<a href="/settings/backup"{{if eq .SettingsNav "backup"}} class="on" aria-current="page"{{end}}>Backup</a>{{end}}
   {{- if .Can "settings.manage"}}<a href="/settings/about"{{if eq .SettingsNav "about"}} class="on" aria-current="page"{{end}}>About</a>{{end}}
 </nav>

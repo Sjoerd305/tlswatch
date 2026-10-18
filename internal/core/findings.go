@@ -127,6 +127,13 @@ func (s *Service) Finding(ctx context.Context, id int64) (Finding, error) {
 	return f, err
 }
 
+// OpenFindings counts the open findings of a kind about a certificate.
+func (s *Service) OpenFindings(ctx context.Context, kind check.Kind, fp string) (int, error) {
+	var n int
+	err := s.DB.R.QueryRowContext(ctx, "SELECT COUNT(*) FROM findings WHERE kind = ? AND fingerprint = ? AND resolved_at = 0", string(kind), fp).Scan(&n)
+	return n, err
+}
+
 // AlertEntry is one delivery in the alert log.
 type AlertEntry struct {
 	ID          int64

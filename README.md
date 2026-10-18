@@ -21,6 +21,8 @@ tlswatch watches the TLS certificates that are actually served on your hostnames
 - **Certificate Transparency watching**: every certificate publicly issued for your domains, matched against what the targets serve; one that no target serves is a finding, a renewal on its way is not.
 - Roles (viewer, operator, admin), local accounts with optional TOTP (required per role if you like), single sign-on through Google or any OpenID Connect provider (Entra ID, Keycloak, Authentik, Okta) with groups mapped to roles, an audit log.
 - **Configured in the browser**: SMTP relays, Telegram bots, Slack (Mattermost, Rocket.Chat) and Discord webhooks, ntfy topics, your own webhooks, Google and OpenID Connect sign-in, thresholds and the public URL all live under Settings.
+- **REST API** under `/api/v2` with personal API tokens (role-capped, hashed, revocable), described by a generated OpenAPI document at `/api/v2/openapi.json`.
+- **Config as code**: export targets and domain watches as YAML and import them back through Add many, with a diff before anything is saved; CSV imports too.
 - Encrypted backup and restore from the UI, also from the setup screen of a new installation.
 - Optional Prometheus metrics at `/metrics`, behind a bearer token.
 

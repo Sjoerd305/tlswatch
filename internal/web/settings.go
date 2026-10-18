@@ -887,6 +887,13 @@ type accountData struct {
 	Calendars []core.Calendar
 	Tags      []string
 	NewFeed   string
+	// API tokens, the roles and lifetimes a new one can have, and the
+	// token just created, shown this once.
+	Tokens     []auth.APIToken
+	TokenRoles []authz.Role
+	TokenTTLs  []tokenTTL
+	NewToken   string
+	TokenError string
 }
 
 func (s *Server) account(w http.ResponseWriter, r *http.Request) {
@@ -911,6 +918,15 @@ func (s *Server) accountData(r *http.Request) (accountData, error) {
 	if d.Calendars, err = s.Core.Calendars(r.Context(), d.U.ID); err != nil {
 		return d, err
 	}
+	if d.Tokens, err = s.Auth.APITokens(r.Context(), d.U.ID); err != nil {
+		return d, err
+	}
+	for _, role := range authz.Roles {
+		if authz.AtMost(role, d.U.Role) {
+			d.TokenRoles = append(d.TokenRoles, role)
+		}
+	}
+	d.TokenTTLs = tokenTTLs(d.U.Role)
 	ts, err := s.Core.Targets(r.Context())
 	if err != nil {
 		return d, err

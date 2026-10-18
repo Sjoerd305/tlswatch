@@ -488,9 +488,9 @@ func prepare(ctx context.Context, path string, sealed, instance *secret.Key) err
 	if admins == 0 {
 		return usererr.New("The backup has no enabled admin; restoring it would lock everyone out of the settings")
 	}
-	// Nobody stays signed in, and no invite or password link from before
-	// the backup comes back to life.
-	for _, q := range []string{"DELETE FROM sessions", "DELETE FROM tokens"} {
+	// Nobody stays signed in, and no invite or password link or API token
+	// from before the backup comes back to life: one revoked since would.
+	for _, q := range []string{"DELETE FROM sessions", "DELETE FROM tokens", "DELETE FROM api_tokens"} {
 		if _, err := m.W.ExecContext(ctx, q); err != nil {
 			return err
 		}

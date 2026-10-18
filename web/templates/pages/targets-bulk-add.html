@@ -2,7 +2,7 @@
 <div class="crumbs"><a href="/targets">Targets</a><span>/</span><span>Add targets</span></div>
 <div class="page-head"><div><h1>Add targets</h1><span class="summary">Several endpoints at once, with the same settings. Each can be edited on its own afterwards.</span></div></div>
 {{- if or $e $f.LineErrs}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>Nothing was added yet. Check the highlighted fields.</div></div>{{end}}
-<form class="card form" method="post" action="/targets/bulk-add" novalidate>
+<form class="card form" method="post" action="/targets/bulk-add" enctype="multipart/form-data" novalidate>
   {{template "csrf" $p.CSRF}}
   <div class="field"><label class="label" for="hosts">Hosts, one per line</label>
     <textarea id="hosts" name="hosts" class="input tall{{if $f.LineErrs}} invalid{{end}}" rows="8" required spellcheck="false" placeholder="portal.example.nl
@@ -10,9 +10,11 @@ mail.example.nl:587 Mail server
 https://shop.example.nl/
 10.20.0.5:443 sni=intranet.example.nl Intranet
 # lines starting with # are skipped">{{$f.Lines}}</textarea>
-    <span class="help">A host, <span class="mono">host:port</span> or URL, followed by an optional name. Without a port the protocol's default is used; the name defaults to the host and the server name follows a DNS host. <span class="mono">sni=NAME</span> after the host sets the server name of an address, and <span class="mono">protocol=smtp</span> (or imap, pop3, ftp, postgres, tls) the protocol of that line.</span>
+    <span class="help">A host, <span class="mono">host:port</span> or URL, followed by an optional name. Without a port the protocol's default is used; the name defaults to the host and the server name follows a DNS host. <span class="mono">sni=NAME</span> after the host sets the server name of an address, and <span class="mono">protocol=smtp</span> (or imap, pop3, ftp, postgres, tls) the protocol of that line. CSV with a header row of <span class="mono">host,protocol,sni,name</span> works too.</span>
+    <span class="help">A YAML export from <a href="/settings/export">Settings › Export</a> or <span class="mono">/api/v2/export</span> is imported with its own settings instead of those below: you see what it adds, changes and leaves out before anything is saved.</span>
     {{- if $f.LineErrs}}<ul class="err-list">{{range $f.LineErrs}}<li class="err">{{.}}</li>{{end}}</ul>{{end}}
   </div>
+  <div class="field"><label class="label" for="file">Or a file</label><input id="file" name="file" type="file" class="input" accept=".yaml,.yml,.csv,.txt,text/plain,text/csv,application/yaml"><span class="help">A YAML export, a CSV file or a list of hosts, up to 1 MB; it replaces the text above.</span></div>
   <div class="fgrid c2">
     <div class="field"><label class="label" for="protocol">Protocol</label>
       <select id="protocol" name="protocol" class="input">

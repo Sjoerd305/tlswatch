@@ -45,6 +45,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /targets/new", edit(s.targetSave))
 	mux.HandleFunc("GET /targets/bulk-add", edit(s.bulkAddPage))
 	mux.HandleFunc("POST /targets/bulk-add", edit(s.bulkAdd))
+	mux.HandleFunc("POST /targets/import", edit(s.targetsImport))
 	mux.HandleFunc("GET /targets/discover", edit(s.discoverPage))
 	mux.HandleFunc("POST /targets/discover", edit(s.discoverStart))
 	mux.HandleFunc("GET /scans/{id}", edit(s.scanPage))
@@ -130,6 +131,8 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /settings/backup", admin(s.settingsBackup))
 	mux.HandleFunc("POST /settings/backup", admin(s.backupDownload))
 	mux.HandleFunc("POST /settings/backup/restore", admin(s.backupRestore))
+	mux.HandleFunc("GET /settings/export", admin(s.settingsExport))
+	mux.HandleFunc("GET /settings/export.yaml", admin(s.settingsExportYAML))
 	mux.HandleFunc("GET /settings/about", admin(s.settingsAbout))
 	mux.HandleFunc("GET /account", own(s.account))
 	mux.HandleFunc("POST /account", own(s.accountSave))
@@ -145,6 +148,8 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /account/totp/disable", own(s.totpDisable))
 	mux.HandleFunc("POST /account/calendars", own(s.calendarCreate))
 	mux.HandleFunc("POST /account/calendars/{id}/delete", own(s.calendarDelete))
+	mux.HandleFunc("POST /account/tokens", own(s.tokenCreate))
+	mux.HandleFunc("POST /account/tokens/{id}/delete", own(s.tokenDelete))
 
 	// JSON API for the TypeScript modules.
 	mux.HandleFunc("POST /api/v1/targets/{id}/check", edit(s.apiTargetCheck))
@@ -153,6 +158,14 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/findings/{id}/panel", view(s.apiFindingPanel))
 	mux.HandleFunc("GET /api/v1/stamp", view(s.apiStamp))
 	mux.HandleFunc("GET /api/v1/certificates/{fp}/chain", view(s.apiCertChain))
+
+	// The public REST API: API tokens only, each endpoint behind the role
+	// check of its row in apiRoutes. The document describing it is public.
+	mux.HandleFunc("GET /api/v2/openapi.json", s.openAPI)
+	for _, a := range s.apiRoutes() {
+		mux.HandleFunc(a.Method+" "+a.Path, s.apiGuard(a.Action, a.Handler))
+	}
+	mux.HandleFunc(apiPrefix, s.apiNotFound)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusNotFound, "There is nothing at this address.")

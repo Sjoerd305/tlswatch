@@ -1,6 +1,6 @@
 // Package web serves the UI: server-rendered pages, real forms that work
-// without JavaScript, and a small internal JSON API under /api/v1 used by the
-// TypeScript modules.
+// without JavaScript, a small internal JSON API under /api/v1 used by the
+// TypeScript modules, and the public REST API under /api/v2 (api.go).
 package web
 
 import (
@@ -59,6 +59,10 @@ type Server struct {
 	pages     map[string]*template.Template
 	static    http.Handler
 	restoring sync.Mutex // one restore at a time
+	// apiLimits rate-limits each API token; apiFails the addresses that
+	// present invalid ones.
+	apiLimits limiter
+	apiFails  limiter
 }
 
 const (
@@ -80,6 +84,7 @@ const (
 type reqInfo struct {
 	id       string // request ID, in the X-Request-ID header and the logs
 	session  *auth.Session
+	api      *auth.APISession // the API token of a /api/v2 request
 	settings config.Settings
 	ip       string
 	https    bool
@@ -205,6 +210,17 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			return
 		}
 
+		// The public API authenticates API tokens, never the session
+		// cookie, so CSRF does not apply to it; apiGuard checks the token.
+		if strings.HasPrefix(r.URL.Path, apiPrefix) {
+			h.Set("Cache-Control", "no-store")
+			if r.Method != http.MethodGet && r.Method != http.MethodHead {
+				r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+			}
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), keyReq, ri)))
+			return
+		}
+
 		if s.Demo {
 			if !s.demoOpen(w, r, ri) {
 				return
@@ -288,6 +304,9 @@ func (s *Server) logRequest(r *http.Request, ri *reqInfo, status int, d time.Dur
 	user := ""
 	if ri.session != nil {
 		user = ri.session.User.Email
+	}
+	if ri.api != nil {
+		user = ri.api.User.Email + " (token " + ri.api.Token.Name + ")"
 	}
 	s.Log.Log(r.Context(), level, "http", "request_id", ri.id, "method", r.Method, "path", r.URL.Path, "status", status,
 		"ms", d.Milliseconds(), "ip", ri.ip, "user", user)

@@ -67,3 +67,27 @@ var policy = map[Role]map[Action]bool{
 func Allowed(r Role, a Action) bool {
 	return policy[r][a]
 }
+
+// rank is a role's place in Roles; -1 for one not stored on users.
+func rank(r Role) int {
+	for i, x := range Roles {
+		if x == r {
+			return i
+		}
+	}
+	return -1
+}
+
+// AtMost reports whether role r is no higher than limit. A role that is
+// not one of Roles is never within a limit.
+func AtMost(r, limit Role) bool {
+	return rank(r) >= 0 && rank(r) <= rank(limit)
+}
+
+// Lower returns the less privileged of two roles.
+func Lower(a, b Role) Role {
+	if rank(b) < rank(a) {
+		return b
+	}
+	return a
+}

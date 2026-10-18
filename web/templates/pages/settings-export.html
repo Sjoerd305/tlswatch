@@ -1,0 +1,18 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}
+<div class="page-head"><div><h1>Settings</h1></div></div>
+<div class="grid-settings">
+  {{template "settings-nav" $p}}
+  <div class="stack">
+    <div><h2 class="h2">Export</h2><span class="summary">The targets and domain watches as one YAML document, to keep as configuration or move to another instance.</span></div>
+    <section class="card form">
+      <h3 class="h3">Download</h3>
+      <p class="help">{{$d.Targets}} {{plural $d.Targets "target" "targets"}} and {{$d.Domains}} {{plural $d.Domains "domain watch" "domain watches"}}, each with the settings that differ from the defaults. Channels, CA bundles and nodes are named, not copied, and no credentials are included. History, findings and certificates are not part of it; a <a href="/settings/backup">backup</a> holds everything.</p>
+      <div class="form-foot"><a href="/settings/export.yaml" class="btn btn-primary" download>Download YAML</a></div>
+    </section>
+    <section class="card pad">
+      <h3 class="h3">Import</h3>
+      <p class="help">Paste or upload the document under <a href="/targets/bulk-add">Targets › Add many</a>. You see what it adds, changes and leaves out before anything is saved, and targets missing from the file are removed only when you tick that. Importing an unchanged export changes nothing. Scripts can fetch the same document from <span class="mono">GET /api/v2/export</span> with an API token.</p>
+    </section>
+  </div>
+</div>
+{{end}}

@@ -158,13 +158,36 @@ func (s *Server) bulkAdd(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
+	// A file chosen replaces the text; an export document goes to the
+	// import preview, and a CSV file becomes lines.
+	if text, ok, msg := uploadedText(r); ok {
+		f.Lines = text
+	} else if msg != "" {
+		f.LineErrs = []string{msg}
+		s.renderStatus(w, r, http.StatusBadRequest, "targets-bulk-add", &Page{Title: "Add targets", Nav: "targets", Data: f})
+		return
+	}
+	if core.LooksLikeExport(f.Lines) {
+		s.importPreview(w, r, f, false, "")
+		return
+	}
+	lines := f.Lines
+	if csvLines, isCSV, err := core.CSVToLines(f.Lines); isCSV {
+		if err != nil {
+			msg, _ := usererr.Message(err)
+			f.LineErrs = []string{msg}
+			s.renderStatus(w, r, http.StatusBadRequest, "targets-bulk-add", &Page{Title: "Add targets", Nav: "targets", Data: f})
+			return
+		}
+		lines = csvLines
+	}
 	if f.T.NodeID != 0 && !hasNode(f.Nodes, f.T.NodeID) {
 		f.Errors["node_id"] = "Choose a confirmed node, or This server"
 	}
 	if f.T.Trust == probe.TrustBundle && f.T.BundleID != 0 && !slices.ContainsFunc(f.Bundles, func(b core.Bundle) bool { return b.ID == f.T.BundleID }) {
 		f.Errors["bundle_id"] = "Choose a CA bundle"
 	}
-	eps, lineErrs := parseEndpoints(f.Lines, f.T.Protocol)
+	eps, lineErrs := parseEndpoints(lines, f.T.Protocol)
 	st := info(r).settings
 	var targets []core.Target
 	for _, ep := range eps {

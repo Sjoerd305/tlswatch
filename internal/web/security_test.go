@@ -57,6 +57,9 @@ var publicRoutes = map[string]bool{
 	// The feed's secret token is its credential, as a calendar client
 	// cannot sign in.
 	"GET /calendar/{file}": true,
+	// It describes the public API, not the data; the endpoints are
+	// checked by TestEveryAPIRouteIsGuarded.
+	"GET /api/v2/openapi.json": true,
 }
 
 // concrete fills a pattern's wildcards with IDs that exist nowhere, so an

@@ -232,63 +232,16 @@ func (s *Service) Domain(ctx context.Context, id int64) (Domain, error) {
 // SaveDomain creates or updates a watch and returns its id. A changed name
 // starts the watch over: the cursor and the issuances go.
 func (s *Service) SaveDomain(ctx context.Context, d Domain, user string) (int64, error) {
-	name, err := ct.ValidDomain(d.Name)
-	if err != nil {
-		return 0, usererr.Wrap(err)
-	}
-	d.Name = name
-	if len([]rune(d.Notes)) > 2000 {
-		return 0, usererr.New("Notes are limited to 2000 characters")
-	}
-	now := s.now().Unix()
 	tx, err := s.DB.W.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
 	defer tx.Rollback()
-	if d.ID == 0 {
-		res, err := tx.ExecContext(ctx, `INSERT INTO domains(name, subdomains, tags, notes, all_channels, enabled, created_at, created_by, updated_at)
-			VALUES(?,?,?,?,?,?,?,?,?)`, d.Name, d.Subdomains, strings.Join(d.Tags, ","), d.Notes, d.AllChannels, d.Enabled, now, user, now)
-		if err != nil {
-			return 0, uniqueDomain(err)
-		}
-		d.ID, _ = res.LastInsertId()
-	} else {
-		var oldName string
-		if err := tx.QueryRowContext(ctx, "SELECT name FROM domains WHERE id = ?", d.ID).Scan(&oldName); errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		} else if err != nil {
-			return 0, err
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE domains SET name=?, subdomains=?, tags=?, notes=?, all_channels=?, enabled=?, updated_at=? WHERE id=?`,
-			d.Name, d.Subdomains, strings.Join(d.Tags, ","), d.Notes, d.AllChannels, d.Enabled, now, d.ID); err != nil {
-			return 0, uniqueDomain(err)
-		}
-		if oldName != d.Name {
-			for _, q := range []string{"DELETE FROM issuances WHERE domain_id = ?", "DELETE FROM findings WHERE domain_id = ?",
-				"UPDATE domains SET cursor = '', polled_at = 0, polled_ok = 0, poll_error = '', fail_since = 0 WHERE id = ?"} {
-				if _, err := tx.ExecContext(ctx, q, d.ID); err != nil {
-					return 0, err
-				}
-			}
-		}
-		if !d.Enabled {
-			if _, err := tx.ExecContext(ctx, "UPDATE findings SET resolved_at = ? WHERE domain_id = ? AND resolved_at = 0", now, d.ID); err != nil {
-				return 0, err
-			}
-		}
-	}
-	if _, err := tx.ExecContext(ctx, "DELETE FROM domain_channels WHERE domain_id = ?", d.ID); err != nil {
+	id, err := s.saveDomainTx(ctx, tx, d, user)
+	if err != nil {
 		return 0, err
 	}
-	if !d.AllChannels {
-		for _, c := range d.ChannelIDs {
-			if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO domain_channels(domain_id, channel_id) SELECT ?, id FROM channels WHERE id = ?", d.ID, c); err != nil {
-				return 0, err
-			}
-		}
-	}
-	return d.ID, tx.Commit()
+	return id, tx.Commit()
 }
 
 func uniqueDomain(err error) error {

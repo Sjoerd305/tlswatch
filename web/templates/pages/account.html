@@ -80,6 +80,36 @@
         <button type="submit" class="btn">Create feed</button>
       </form>
     </section>
+    <section class="card form" id="tokens">
+      <h2 class="h3">API tokens</h2>
+      <p class="help">For scripts and other systems: send a token as <span class="mono">Authorization: Bearer</span> to the REST API under <span class="mono">/api/v2</span>, described by <a href="/api/v2/openapi.json" class="mono">/api/v2/openapi.json</a>. A token acts with its role, never more than yours, and does not sign in to these pages. Changes made with it appear in the audit log with its name.</p>
+      {{- with $d.NewToken}}
+      <div class="notice ok" role="status">{{template "notice-icon" "ok"}}<div>Copy the token now; it is not shown again.<div class="fp-row"><span class="mono wrap-any">{{.}}</span><button type="button" class="btn btn-xs" data-copy="{{.}}">copy</button></div></div></div>
+      {{- end}}
+      {{- if $d.TokenError}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.TokenError}}</div></div>{{end}}
+      {{- if $d.Tokens}}
+      <table class="tbl compact">
+        <thead><tr><th>Name</th><th>Role</th><th>Expires</th><th>Last used</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody>
+        {{- range $d.Tokens}}
+          <tr><td>{{.Name}} <span class="mono muted">{{.Prefix}}…</span></td><td>{{.Role}}</td>
+            <td class="mono">{{if not .ExpiresAt}}never{{else if .Expired $p.Now.Unix}}<span class="st sm crit">expired</span>{{else}}{{date $p.Loc .ExpiresAt}}{{end}}</td>
+            <td class="mono">{{if .LastUsed}}{{when $p.Loc $p.Now .LastUsed}}{{if .LastIP}} · {{.LastIP}}{{end}}{{else}}never{{end}}</td>
+            <td><form method="post" action="/account/tokens/{{.ID}}/delete" data-confirm="Revoke {{.Name}}? Whatever uses it stops working.">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-xs">Revoke</button></form></td></tr>
+        {{- end}}
+        </tbody>
+      </table>
+      {{- end}}
+      <form method="post" action="/account/tokens" class="row">
+        {{template "csrf" $p.CSRF}}
+        <label class="label" for="tkname">Name</label><input id="tkname" name="name" class="input w150" maxlength="80" placeholder="deploy pipeline" required>
+        <label class="label" for="tkrole">Role</label>
+        <select id="tkrole" name="role" class="input w-auto">{{range $d.TokenRoles}}<option value="{{.}}"{{if eq . "viewer"}} selected{{end}}>{{.}}</option>{{end}}</select>
+        <label class="label" for="tkexp">Expires after</label>
+        <select id="tkexp" name="expiry" class="input w-auto">{{range $d.TokenTTLs}}<option value="{{.Days}}"{{if eq .Days 90}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+        <button type="submit" class="btn">Create token</button>
+      </form>
+    </section>
   </div>
 </div>
 {{end}}

@@ -237,7 +237,7 @@ func (s *Service) CountUsers(ctx context.Context) (int, error) {
 }
 
 // UpdateUser changes a user's name, role, method and status. Disabling a
-// user ends their sessions; switching to single sign-on (Google or OpenID
+// user ends their sessions and revokes their API tokens; switching to single sign-on (Google or OpenID
 // Connect) removes the password, TOTP, the sessions and the password
 // links. The last enabled admin can be neither demoted nor disabled.
 func (s *Service) UpdateUser(ctx context.Context, id int64, name string, role authz.Role, method string, enabled bool) error {
@@ -285,6 +285,13 @@ func (s *Service) UpdateUser(ctx context.Context, id int64, name string, role au
 			return err
 		}
 	}
+	// Disabling revokes the API tokens: enabling again does not bring
+	// them back.
+	if !enabled {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM api_tokens WHERE user_id = ?", id); err != nil {
+			return err
+		}
+	}
 	if method != MethodLocal {
 		for _, q := range []string{"DELETE FROM tokens WHERE user_id = ? AND kind = 'invite'", "DELETE FROM recovery_codes WHERE user_id = ?"} {
 			if _, err := tx.ExecContext(ctx, q, id); err != nil {
@@ -307,9 +314,9 @@ func (s *Service) Unlock(ctx context.Context, id int64) error {
 	return nil
 }
 
-// DeleteUser removes a user with their sessions and one-time links. The
-// audit log keeps their e-mail address. The last enabled admin cannot be
-// deleted.
+// DeleteUser removes a user with their sessions, one-time links and API
+// tokens. The audit log keeps their e-mail address. The last enabled admin
+// cannot be deleted.
 func (s *Service) DeleteUser(ctx context.Context, id int64) error {
 	tx, err := s.DB.W.BeginTx(ctx, nil)
 	if err != nil {
@@ -333,7 +340,7 @@ func (s *Service) DeleteUser(ctx context.Context, id int64) error {
 			return ErrLastAdmin
 		}
 	}
-	for _, q := range []string{"DELETE FROM sessions WHERE user_id = ?", "DELETE FROM tokens WHERE user_id = ?", "DELETE FROM recovery_codes WHERE user_id = ?", "DELETE FROM users WHERE id = ?"} {
+	for _, q := range []string{"DELETE FROM sessions WHERE user_id = ?", "DELETE FROM tokens WHERE user_id = ?", "DELETE FROM recovery_codes WHERE user_id = ?", "DELETE FROM api_tokens WHERE user_id = ?", "DELETE FROM users WHERE id = ?"} {
 		if _, err := tx.ExecContext(ctx, q, id); err != nil {
 			return err
 		}
