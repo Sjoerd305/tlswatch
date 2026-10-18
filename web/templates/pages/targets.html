@@ -18,6 +18,7 @@
   <span class="chips" data-chip-group="#targets">{{template "chips" $d.Status}}</span>
   {{- if $d.Tags}}<span class="divider"></span><span class="chips" data-chip-group="#targets">{{template "chips" $d.Tags}}</span>{{end}}
   {{- if $d.Grades}}<span class="divider"></span><span class="chips" data-chip-group="#targets">{{template "chips" $d.Grades}}</span>{{end}}
+  {{- if $d.PQ}}<span class="divider"></span><span class="chips" data-chip-group="#targets">{{template "chips" $d.PQ}}</span>{{end}}
   {{- if $d.Nodes}}<span class="divider"></span><span class="chips" data-chip-group="#targets">{{template "chips" $d.Nodes}}</span>{{end}}
   <noscript><button type="submit" class="btn btn-xs">Filter</button></noscript>
   <span class="spacer small"><a href="{{$d.GroupHref}}">{{if $d.Group}}ungroup{{else}}group by tag{{end}}</a></span>

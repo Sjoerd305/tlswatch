@@ -11,8 +11,28 @@ import (
 
 // GradeRules is the version of the rules table below. It is stored next to
 // every grade, so a tightened rule set re-grades on the next test and the
-// history shows which rules a grade was given under.
-const GradeRules = 1
+// history shows which rules a grade was given under. Version 2 adds the
+// post-quantum key exchange as a reason; no letter changed.
+const GradeRules = 2
+
+// The post-quantum reasons. Like StapledReason they are shown with the
+// grade but never lower it.
+const (
+	PQYesReason = "post-quantum key exchange: yes"
+	PQNoReason  = "post-quantum key exchange: no"
+)
+
+// Neutral reports a grade reason that does not lower the grade.
+func Neutral(reason string) bool {
+	return reason == StapledReason || reason == PQYesReason || reason == PQNoReason
+}
+
+// PQ states of a target.
+const (
+	PQYes      = "yes"
+	PQNo       = "no"
+	PQUntested = "" // shown as "untested"
+)
 
 // Grades, best first. There is no A+ and no D: four grades sort a list and
 // settle a discussion with a vendor; finer steps invite disputes about
@@ -67,6 +87,7 @@ type AddressGrade struct {
 	Versions   []string
 	Classes    []probe.SuiteClass
 	SuiteNames []string
+	PQ         string // PQYes, PQNo, or PQUntested
 }
 
 // gradeAddress applies the rules to one address whose configuration test
@@ -151,6 +172,13 @@ func gradeAddress(a probe.Address) AddressGrade {
 	if probe.StapleOf(a).Status == probe.StapleGood {
 		g.Reasons = append(g.Reasons, StapledReason)
 	}
+	if a.PQChecked {
+		g.PQ = PQNo
+		if a.PQ {
+			g.PQ = PQYes
+		}
+		g.Reasons = append(g.Reasons, map[bool]string{true: PQYesReason, false: PQNoReason}[a.PQ])
+	}
 	return g
 }
 
@@ -221,8 +249,20 @@ func (e *evaluation) grade(ok []probe.Address) {
 		return
 	}
 
-	// The grade: every address, the lowest counts for the target.
+	// The grade: every address, the lowest counts for the target. The
+	// target negotiates post-quantum key exchange when every address does.
 	e.out.GradeChecked, e.out.GradeRules = true, GradeRules
+	// An address that does not settles it; one without a verdict leaves
+	// it untested unless another one does not.
+	e.out.PQ = PQYes
+	for _, a := range ok {
+		switch {
+		case a.PQChecked && !a.PQ:
+			e.out.PQ = PQNo
+		case !a.PQChecked && e.out.PQ == PQYes:
+			e.out.PQ = PQUntested
+		}
+	}
 	for _, a := range ok {
 		g := gradeAddress(a)
 		e.out.AddressGrades = append(e.out.AddressGrades, g)
@@ -246,7 +286,7 @@ func (e *evaluation) grade(ok []probe.Address) {
 	}
 	if e.prev.Grade != "" && e.prev.Grade != e.out.Grade {
 		why := ""
-		lowering := slices.DeleteFunc(slices.Clone(e.out.GradeReasons), func(r string) bool { return r == StapledReason })
+		lowering := slices.DeleteFunc(slices.Clone(e.out.GradeReasons), Neutral)
 		if GradeRank(e.out.Grade) < GradeRank(e.prev.Grade) && len(lowering) > 0 {
 			why = ": " + strings.Join(lowering, ", ")
 		}

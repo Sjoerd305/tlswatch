@@ -234,13 +234,13 @@ func (j ProbeJob) Request(received time.Time) probe.Request {
 
 // Timeout is how long the server waits for a leased job: the target's
 // timeout for every attempt, plus one timeout per handshake of the
-// configuration test (two legacy versions, four suite classes) and slack
-// for the round trip.
+// configuration test (two legacy versions, four suite classes, the
+// post-quantum handshake) and slack for the round trip.
 func (j ProbeJob) Timeout() time.Duration {
 	d := time.Duration(j.TimeoutMS) * time.Millisecond
 	t := d*time.Duration(j.Retries+1) + 30*time.Second
 	if j.Legacy {
-		t += 6 * d
+		t += 7 * d
 	}
 	return t
 }
@@ -269,6 +269,7 @@ type Address struct {
 	Error           string          `json:"error,omitempty"`
 	TLSVersion      string          `json:"tls_version,omitempty"`
 	Cipher          string          `json:"cipher,omitempty"`
+	Group           string          `json:"group,omitempty"`
 	Chain           [][]byte        `json:"chain,omitempty"`
 	Verified        bool            `json:"verified,omitempty"`
 	VerifyError     string          `json:"verify_error,omitempty"`
@@ -282,6 +283,8 @@ type Address struct {
 	Suites          []string        `json:"suites,omitempty"`
 	SuiteNames      []string        `json:"suite_names,omitempty"`
 	OCSP            []byte          `json:"ocsp,omitempty"` // the stapled OCSP response
+	PQChecked       bool            `json:"pq_checked,omitempty"`
+	PQ              bool            `json:"pq,omitempty"`
 }
 
 // EncodeResult converts a probe result for the wire.
@@ -289,11 +292,11 @@ func EncodeResult(r probe.Result) *ProbeResult {
 	out := &ProbeResult{DurationMS: r.Duration.Milliseconds(), DNSError: r.DNSError, SkippedIPv6: r.SkippedIPv6, Addresses: []Address{}}
 	for _, a := range r.Addresses {
 		out.Addresses = append(out.Addresses, Address{
-			IP: a.IP, OK: a.OK, ErrorKind: a.ErrorKind, Error: a.Error, TLSVersion: a.TLSVersion, Cipher: a.Cipher,
+			IP: a.IP, OK: a.OK, ErrorKind: a.ErrorKind, Error: a.Error, TLSVersion: a.TLSVersion, Cipher: a.Cipher, Group: a.Group,
 			Chain: der(a.Chain), Verified: a.Verified, VerifyError: a.VerifyError, VerifiedChain: der(a.VerifiedChain),
 			HostnameChecked: a.HostnameChecked, HostnameOK: a.HostnameOK, DurationMS: a.Duration.Milliseconds(),
 			LegacyChecked: a.LegacyChecked, Legacy: a.Legacy,
-			SuitesChecked: a.SuitesChecked, Suites: classNames(a.Suites), SuiteNames: a.SuiteNames, OCSP: a.OCSP,
+			SuitesChecked: a.SuitesChecked, Suites: classNames(a.Suites), SuiteNames: a.SuiteNames, OCSP: a.OCSP, PQChecked: a.PQChecked, PQ: a.PQ,
 		})
 	}
 	return out
@@ -350,10 +353,10 @@ func (p ProbeResult) Decode(req probe.Request, started time.Time) (probe.Result,
 	r := probe.Result{Host: req.Host, Port: req.Port, Protocol: req.Protocol, ServerName: req.ServerName, StartedAt: started,
 		Duration: time.Duration(p.DurationMS) * time.Millisecond, DNSError: p.DNSError, SkippedIPv6: p.SkippedIPv6}
 	for _, w := range p.Addresses {
-		a := probe.Address{IP: w.IP, OK: w.OK, ErrorKind: w.ErrorKind, Error: w.Error, TLSVersion: w.TLSVersion, Cipher: w.Cipher,
+		a := probe.Address{IP: w.IP, OK: w.OK, ErrorKind: w.ErrorKind, Error: w.Error, TLSVersion: w.TLSVersion, Cipher: w.Cipher, Group: core.Clip(w.Group, core.ShortMax),
 			Verified: w.Verified, VerifyError: w.VerifyError, Duration: time.Duration(w.DurationMS) * time.Millisecond,
 			LegacyChecked: w.LegacyChecked, Legacy: w.Legacy,
-			SuitesChecked: w.SuitesChecked, Suites: parseClasses(w.Suites), SuiteNames: w.SuiteNames, OCSP: w.OCSP}
+			SuitesChecked: w.SuitesChecked, Suites: parseClasses(w.Suites), SuiteNames: w.SuiteNames, OCSP: w.OCSP, PQChecked: w.PQChecked, PQ: w.PQ}
 		var err error
 		if a.Chain, err = parseChain(w.Chain); err != nil {
 			return r, fmt.Errorf("address %s: chain: %w", w.IP, err)

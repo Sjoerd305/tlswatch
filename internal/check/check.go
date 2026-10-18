@@ -368,13 +368,17 @@ type Outcome struct {
 	GradeReasons  []string
 	GradeRules    int
 	AddressGrades []AddressGrade
-	Answered      bool // at least one address completed a handshake
-	FailStreak    int
-	OkStreak      int
-	DNSFail       int
-	DNSOk         int
-	Addresses     map[string]AddressOutcome
-	Error         string // the addresses that failed, when any did
+	// PQ is whether the target negotiates post-quantum key exchange, when
+	// GradeChecked: PQYes when every address does, PQNo when one does
+	// not, PQUntested when an address got no verdict.
+	PQ         string
+	Answered   bool // at least one address completed a handshake
+	FailStreak int
+	OkStreak   int
+	DNSFail    int
+	DNSOk      int
+	Addresses  map[string]AddressOutcome
+	Error      string // the addresses that failed, when any did
 	// Waiting lists network kinds that failed this check but are not open
 	// yet: the debounce wants more consecutive failures.
 	Waiting []Kind

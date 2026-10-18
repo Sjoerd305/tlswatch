@@ -975,23 +975,26 @@ func TestGradeOnTargetsListAndPage(t *testing.T) {
 	}
 	if _, err := hs.db.W.Exec(`UPDATE targets SET grade = 'C', grade_reasons = 'accepts 3DES (TLS_RSA_WITH_3DES_EDE_CBC_SHA)', grade_rules = 1,
 		config_test = '[{"IP":"192.0.2.1","Grade":"C","Reasons":["accepts 3DES (TLS_RSA_WITH_3DES_EDE_CBC_SHA)"],"Versions":null,"Classes":["3des"],"SuiteNames":["TLS_RSA_WITH_3DES_EDE_CBC_SHA"]}]',
-		current_fp = 'fp1', not_after = ?, status = 'healthy', legacy_checked = ?, last_check = ?, last_check_id = 'c1' WHERE id = 1`, now+40*86400, now, now); err != nil {
+		current_fp = 'fp1', not_after = ?, status = 'healthy', legacy_checked = ?, last_check = ?, last_check_id = 'c1', pq = 'no' WHERE id = 1`, now+40*86400, now, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := hs.db.W.Exec(`INSERT INTO observations(target_id, check_id, address, checked_at, status, tls_version) VALUES(1, 'c1', '192.0.2.1', ?, 'ok', 'TLS 1.3')`, now); err != nil {
+	if _, err := hs.db.W.Exec(`INSERT INTO observations(target_id, check_id, address, checked_at, status, tls_version, cipher, kex_group) VALUES(1, 'c1', '192.0.2.1', ?, 'ok', 'TLS 1.3', 'TLS_AES_128_GCM_SHA256', 'X25519')`, now); err != nil {
 		t.Fatal(err)
 	}
 	body := hs.do(authz.Viewer, "GET", "/targets", nil, false).Body.String()
-	for _, want := range []string{`data-grade="C"`, `class="grade warn"`, `data-chip-value="C"`, `Grade C`, `data-sort-grade=`} {
+	for _, want := range []string{`data-grade="C"`, `class="grade warn"`, `data-chip-value="C"`, `Grade C`, `data-sort-grade=`, `data-pq="no"`, `PQ no`, `data-chip-key="pq"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("targets list lacks %q", want)
 		}
+	}
+	if rec := hs.do(authz.Viewer, "GET", "/targets?pq=yes", nil, false); !strings.Contains(rec.Body.String(), ` hidden>`) {
+		t.Error("the PQ filter did not hide the target without post-quantum key exchange")
 	}
 	if rec := hs.do(authz.Viewer, "GET", "/targets?grade=A", nil, false); !strings.Contains(rec.Body.String(), `id="target-1"`) || !strings.Contains(rec.Body.String(), ` hidden>`) {
 		t.Error("a grade filter did not hide the C target")
 	}
 	body = hs.do(authz.Viewer, "GET", "/targets/1", nil, false).Body.String()
-	for _, want := range []string{`class="grade lg warn"`, `accepts 3DES (TLS_RSA_WITH_3DES_EDE_CBC_SHA)`, `accepted TLS_RSA_WITH_3DES_EDE_CBC_SHA`, `TLS 1.0, 1.1 and ciphers`} {
+	for _, want := range []string{`class="grade lg warn"`, `accepts 3DES (TLS_RSA_WITH_3DES_EDE_CBC_SHA)`, `accepted TLS_RSA_WITH_3DES_EDE_CBC_SHA`, `TLS 1.0, 1.1 and ciphers`, `TLS_AES_128_GCM_SHA256 · X25519`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("target page lacks %q", want)
 		}
@@ -1007,10 +1010,14 @@ func TestGradeOnTargetsListAndPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	body = hs.metrics().Body.String()
-	for _, want := range []string{`tlswatch_targets_by_grade{grade="C"} 1`, `tlswatch_targets_by_grade{grade="A"} 0`, `grade="C",target=`} {
+	for _, want := range []string{`tlswatch_targets_by_grade{grade="C"} 1`, `tlswatch_targets_by_grade{grade="A"} 0`, `grade="C",target=`,
+		`tlswatch_targets_pq{state="no"} 1`, `tlswatch_targets_pq{state="yes"} 0`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("metrics lack %q", want)
 		}
+	}
+	if body := hs.do(authz.Viewer, "GET", "/", nil, false).Body.String(); !strings.Contains(body, "0 of 1 target negotiates post-quantum key exchange") {
+		t.Error("overview lacks the post-quantum line")
 	}
 }
 

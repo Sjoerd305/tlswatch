@@ -956,11 +956,17 @@ func TestCRLOnNode(t *testing.T) {
 	}
 }
 
+// The stapled response, the group and the post-quantum verdict cross the
+// wire.
 func TestStapleCrossesTheWire(t *testing.T) {
 	cert := selfSigned(t, "app.internal.example")
-	r := probe.Result{Addresses: []probe.Address{{IP: "10.0.0.5", OK: true, Chain: []*x509.Certificate{cert}, OCSP: []byte{0x30, 0x03, 0x0a, 0x01, 0x06}}}}
+	r := probe.Result{Addresses: []probe.Address{{IP: "10.0.0.5", OK: true, Chain: []*x509.Certificate{cert}, OCSP: []byte{0x30, 0x03, 0x0a, 0x01, 0x06},
+		Group: "X25519MLKEM768", PQChecked: true, PQ: true}}}
 	back, err := EncodeResult(r).Decode(probe.Request{Trust: probe.TrustSelfSigned}, time.Now())
 	if err != nil || !bytes.Equal(back.Addresses[0].OCSP, r.Addresses[0].OCSP) {
 		t.Fatalf("staple lost: %v %+v", err, back.Addresses)
+	}
+	if a := back.Addresses[0]; a.Group != "X25519MLKEM768" || !a.PQChecked || !a.PQ {
+		t.Fatalf("post-quantum verdict lost: %+v", a)
 	}
 }

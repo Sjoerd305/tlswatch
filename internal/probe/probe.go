@@ -116,7 +116,10 @@ type Address struct {
 	Error      string
 	TLSVersion string
 	Cipher     string
-	Chain      []*x509.Certificate // as presented, leaf first
+	// Group is the key exchange group the handshake negotiated
+	// ("X25519MLKEM768", "X25519"), "" when the connection state names none.
+	Group string
+	Chain []*x509.Certificate // as presented, leaf first
 	// Verified reports whether the chain is trusted under the trust mode,
 	// independent of expiry (expiry is reported separately by the checker).
 	// Not attempted for TrustSelfSigned.
@@ -136,6 +139,10 @@ type Address struct {
 	SuitesChecked bool
 	Suites        []SuiteClass
 	SuiteNames    []string
+	// PQChecked reports whether the post-quantum handshake of the
+	// configuration test got a verdict; PQ whether it completed.
+	PQChecked bool
+	PQ        bool
 	// OCSP is the OCSP response the server stapled, DER; nil when none.
 	// StapleOf judges it.
 	OCSP []byte
@@ -287,6 +294,7 @@ func probeAddress(ctx context.Context, req Request, ip net.IP) (Address, bool) {
 	if a.OK && req.Legacy {
 		a.Legacy, a.LegacyChecked = probeLegacy(ctx, req, ip, a.TLSVersion)
 		a.Suites, a.SuiteNames, a.SuitesChecked = probeSuites(ctx, req, ip)
+		a.PQ, a.PQChecked = probePQ(ctx, req, ip, a.Group)
 	}
 	return a, false
 }
@@ -323,6 +331,36 @@ func probeLegacy(ctx context.Context, req Request, ip net.IP, negotiated string)
 		}
 	}
 	return accepted, checked
+}
+
+// PQGroup is the post-quantum hybrid key exchange the configuration test
+// offers on its own.
+const PQGroup = tls.X25519MLKEM768
+
+// probePQ tests whether the address negotiates post-quantum key exchange:
+// one handshake at TLS 1.3 offering X25519MLKEM768 and nothing else. The
+// normal probe settles it when it already negotiated that group. A
+// handshake that could not be attempted leaves it unchecked.
+func probePQ(ctx context.Context, req Request, ip net.IP, negotiated string) (pq, checked bool) {
+	if negotiated == groupName(PQGroup) {
+		return true, true
+	}
+	cfg := clientConfig(req.ServerName)
+	cfg.MinVersion, cfg.MaxVersion = tls.VersionTLS13, tls.VersionTLS13
+	cfg.CurvePreferences = []tls.CurveID{PQGroup}
+	st, err := handshakeWith(ctx, req, ip, cfg)
+	if err != nil {
+		return false, false
+	}
+	return st != nil, true
+}
+
+// groupName names a key exchange group, "" for none.
+func groupName(id tls.CurveID) string {
+	if id == 0 {
+		return ""
+	}
+	return id.String()
 }
 
 // handshakeVersion reports whether the address completes a handshake at
@@ -404,6 +442,7 @@ func probeOnce(ctx context.Context, req Request, ip net.IP) (Address, error) {
 	a.OK = true
 	a.TLSVersion = tls.VersionName(st.Version)
 	a.Cipher = tls.CipherSuiteName(st.CipherSuite)
+	a.Group = groupName(st.CurveID)
 	a.Chain = st.PeerCertificates
 	a.OCSP = st.OCSPResponse
 	verify(&a, req)

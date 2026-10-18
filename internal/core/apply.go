@@ -318,9 +318,9 @@ func storeObservationsTx(ctx context.Context, tx *sql.Tx, targetID, nodeID int64
 			errText = "address not allowed"
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO observations(target_id, check_id, address, checked_at, status, tls_version, cipher,
-			leaf_fp, chain, verified, verify_error, error, duration_ms, node_id, ocsp) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			leaf_fp, chain, verified, verify_error, error, duration_ms, node_id, ocsp, kex_group) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			targetID, checkID, a.IP, checkedAt, status, a.TLSVersion, a.Cipher, leafFP, string(cj), a.Verified, a.VerifyError,
-			errText, a.Duration.Milliseconds(), node, probe.StapleOf(a).Status); err != nil {
+			errText, a.Duration.Milliseconds(), node, probe.StapleOf(a).Status, a.Group); err != nil {
 			return err
 		}
 	}
@@ -457,8 +457,8 @@ func updateTargetTx(ctx context.Context, tx *sql.Tx, t Target, r probe.Result, o
 		if err != nil {
 			return err
 		}
-		set = append(set, "grade=?", "grade_reasons=?", "grade_rules=?", "config_test=?")
-		args = append(args, out.Grade, strings.Join(out.GradeReasons, "\n"), out.GradeRules, string(ct))
+		set = append(set, "grade=?", "grade_reasons=?", "grade_rules=?", "config_test=?", "pq=?")
+		args = append(args, out.Grade, strings.Join(out.GradeReasons, "\n"), out.GradeRules, string(ct), out.PQ)
 	}
 	if out.PinFP != "" {
 		set = append(set, "pinned_fp=?")

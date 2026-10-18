@@ -105,7 +105,7 @@
             <td data-label="Address" class="mono">{{if .Address}}{{.Address}}{{else}}—{{end}}</td>
             <td data-label="Result">{{if eq .Status "ok"}}<span class="st ok">OK</span>{{else if eq .Status "warning"}}<span class="st warn">Warning</span>{{else if eq .Status "critical"}}<span class="st crit">Critical</span>{{else if eq .Status "skipped"}}<span class="st off">Skipped</span>{{else}}<span class="st crit">Failed</span>{{end}}{{if .Error}} <span class="muted small">{{.Error}}</span>{{end}}</td>
             <td data-label="Protocol" class="mono">{{.TLSVersion}}</td>
-            <td data-label="Cipher" class="mono muted small">{{.Cipher}}</td>
+            <td data-label="Cipher" class="mono muted small">{{.Cipher}}{{with .Group}} · {{.}}{{end}}</td>
             <td data-label="Certificate" class="mono small">{{if .LeafFP}}<a href="/certificates?open={{short .LeafFP}}" class="ink" data-row-link>{{short .LeafFP}}…</a>{{end}}</td>
             <td data-label="Time" class="num mono">{{if .DurationMS}}{{.DurationMS}} ms{{end}}</td>
           </tr>

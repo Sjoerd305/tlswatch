@@ -71,6 +71,7 @@ type targetsData struct {
 	Status    []Chip
 	Tags      []Chip
 	Grades    []Chip
+	PQ        []Chip // post-quantum key exchange, once a target was tested
 	Nodes     []Chip // "Probe from" chips, when there are nodes
 	ShowNode  bool   // the node column
 	Query     string
@@ -95,7 +96,7 @@ func (s *Server) targets(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	status, tag, text := q.Get("status"), q.Get("tag"), strings.ToLower(strings.TrimSpace(q.Get("q")))
-	nodeF, gradeF := q.Get("node"), q.Get("grade")
+	nodeF, gradeF, pqF := q.Get("node"), q.Get("grade"), q.Get("pq")
 	d := targetsData{Query: q.Get("q"), Sort: sortFrom(r, "days", targetSortKeys...)}
 	counts := map[string]int{}
 	for _, t := range ts {
@@ -140,6 +141,20 @@ func (s *Server) targets(w http.ResponseWriter, r *http.Request) {
 			d.Grades[i].Href = chipHref(r, "grade", d.Grades[i].Value)
 		}
 	}
+	// Post-quantum chips, once a target got a verdict.
+	perPQ := map[string]int{}
+	for _, t := range ts {
+		perPQ[pqToken(t)]++
+	}
+	if perPQ["yes"]+perPQ["no"] > 0 {
+		d.PQ = append(d.PQ, Chip{Key: "pq", Value: "", Label: "PQ any", Count: len(ts), On: pqF == ""},
+			Chip{Key: "pq", Value: "yes", Label: "PQ yes", Count: perPQ["yes"], On: pqF == "yes"},
+			Chip{Key: "pq", Value: "no", Label: "PQ no", Count: perPQ["no"], On: pqF == "no"},
+			Chip{Key: "pq", Value: "untested", Label: "PQ untested", Count: perPQ["untested"], On: pqF == "untested"})
+		for i := range d.PQ {
+			d.PQ[i].Href = chipHref(r, "pq", d.PQ[i].Value)
+		}
+	}
 	d.ShowNode = len(nodes) > 0
 	if d.ShowNode {
 		perNode := map[string]int{}
@@ -163,7 +178,8 @@ func (s *Server) targets(w http.ResponseWriter, r *http.Request) {
 	// works without JavaScript; rows are rendered hidden, not dropped.
 	now := s.now()
 	for _, t := range ts {
-		row := targetRow{T: t, Now: now, ShowNode: d.ShowNode, Hidden: !targetMatches(t, status, tag, text) || nodeF != "" && nodeToken(t) != nodeF || gradeF != "" && gradeToken(t) != gradeF}
+		row := targetRow{T: t, Now: now, ShowNode: d.ShowNode, Hidden: !targetMatches(t, status, tag, text) || nodeF != "" && nodeToken(t) != nodeF || gradeF != "" && gradeToken(t) != gradeF ||
+			pqF != "" && pqToken(t) != pqF}
 		if !row.Hidden {
 			d.Shown++
 		}
@@ -265,6 +281,16 @@ func (r targetRow) NodeToken() string { return nodeToken(r.T) }
 
 // GradeToken is the row's "grade" chip value: the grade, or "none".
 func (r targetRow) GradeToken() string { return gradeToken(r.T) }
+
+// PQToken is the row's "pq" chip value: yes, no or untested.
+func (r targetRow) PQToken() string { return pqToken(r.T) }
+
+func pqToken(t core.Target) string {
+	if t.PQ == "" {
+		return "untested"
+	}
+	return t.PQ
+}
 
 func gradeToken(t core.Target) string {
 	if t.Grade == "" {

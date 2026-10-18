@@ -83,6 +83,9 @@
     <section class="card">
       <div class="sec"><h2>Last 24 hours</h2>{{if $o.Last24h.Checks}}<span class="meta mono">{{clock $p.Loc $o.Last24h.From}} → {{clock $p.Loc $o.Last24h.To}}</span>{{end}}</div>
       <div class="li"><span>{{$o.Last24h.Targets}} {{plural $o.Last24h.Targets "target" "targets"}}, {{$o.Last24h.Addresses}} {{plural $o.Last24h.Addresses "address" "addresses"}} probed · {{$o.Last24h.Unreachable}} unreachable · {{$o.Last24h.DNSFailed}} DNS {{plural $o.Last24h.DNSFailed "failure" "failures"}} · {{$o.Last24h.Alerts}} {{plural $o.Last24h.Alerts "alert" "alerts"}} sent{{if $o.Last24h.AlertVia}} ({{$o.Last24h.AlertVia}}){{end}}</span></div>
+      {{- if $o.PQTested}}
+      <div class="li"><span>{{$o.PQ}} of {{$o.PQTested}} {{plural $o.PQTested "target" "targets"}} {{plural $o.PQTested "negotiates" "negotiate"}} post-quantum key exchange</span></div>
+      {{- end}}
       {{- if $o.NextCheck}}<div class="li muted"><span>Next check {{whenTime $p.Loc $p.Now $o.NextCheck}}</span></div>{{end}}
     </section>
   </div>

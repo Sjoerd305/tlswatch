@@ -9,6 +9,7 @@ type Metrics struct {
 	AlertsByState    map[string]int // pending and failed alerts in the outbox
 	CertificateTimes []TargetExpiry
 	TargetsByGrade   map[string]int // enabled targets by configuration grade
+	TargetsByPQ      map[string]int // enabled targets by post-quantum state: yes, no, untested
 	TargetGrades     []TargetGrade
 }
 
@@ -25,7 +26,7 @@ type TargetExpiry struct {
 
 // Metrics gathers the counts and expiry times for /metrics.
 func (s *Service) Metrics(ctx context.Context) (Metrics, error) {
-	m := Metrics{TargetsByStatus: map[string]int{}, OpenBySeverity: map[string]int{}, AlertsByState: map[string]int{}, TargetsByGrade: map[string]int{}}
+	m := Metrics{TargetsByStatus: map[string]int{}, OpenBySeverity: map[string]int{}, AlertsByState: map[string]int{}, TargetsByGrade: map[string]int{}, TargetsByPQ: map[string]int{}}
 	counts := []struct {
 		q    string
 		into map[string]int
@@ -35,6 +36,7 @@ func (s *Service) Metrics(ctx context.Context) (Metrics, error) {
 			WHERE f.resolved_at = 0 AND (t.enabled = 1 OR f.node_id IS NOT NULL OR d.enabled = 1) GROUP BY f.severity`, m.OpenBySeverity},
 		{"SELECT state, COUNT(*) FROM alerts WHERE state IN ('pending', 'failed') GROUP BY state", m.AlertsByState},
 		{"SELECT grade, COUNT(*) FROM targets WHERE enabled = 1 AND grade != '' GROUP BY grade", m.TargetsByGrade},
+		{"SELECT CASE pq WHEN '' THEN 'untested' ELSE pq END, COUNT(*) FROM targets WHERE enabled = 1 GROUP BY 1", m.TargetsByPQ},
 	}
 	for _, c := range counts {
 		rows, err := s.DB.R.QueryContext(ctx, c.q)

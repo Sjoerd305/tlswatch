@@ -30,7 +30,7 @@
 
 {{/* target-row: one row of the targets table. frag{P, Item: targetRow} */}}
 {{define "target-row"}}{{$p := .P}}{{$r := .Item}}{{$t := $r.T}}
-<tr id="target-{{$t.ID}}" data-search="{{$r.Search}}" data-status="{{$r.StatusToken}}" data-tag="{{join $t.Tags " "}}" data-node="{{$r.NodeToken}}" data-grade="{{$r.GradeToken}}"{{$r.SortAttrs}}{{if not $t.Enabled}} class="muted"{{end}}{{if $r.Hidden}} hidden{{end}}>
+<tr id="target-{{$t.ID}}" data-search="{{$r.Search}}" data-status="{{$r.StatusToken}}" data-tag="{{join $t.Tags " "}}" data-node="{{$r.NodeToken}}" data-grade="{{$r.GradeToken}}" data-pq="{{$r.PQToken}}"{{$r.SortAttrs}}{{if not $t.Enabled}} class="muted"{{end}}{{if $r.Hidden}} hidden{{end}}>
   {{- if $p.Can "targets.edit"}}<td class="chk m-lead" data-label=""><label class="rowcheck"><input type="checkbox" name="id" value="{{$t.ID}}" form="bulk-targets" aria-label="Select {{$t.Name}}"></label></td>{{end}}
   <td data-label="Status" class="m-lead">{{if waiting $t}}<span class="st off" title="The node is offline; last checked {{when $p.Loc $p.Now $t.LastCheck}}">Waiting for node</span>{{else}}{{template "status" $t.Status}}{{end}}</td>
   <td data-label="Name" class="m-lead"><span class="cap w200" title="{{$t.Name}}"><a href="/targets/{{$t.ID}}" class="ink strong" data-row-link>{{$t.Name}}</a></span></td>

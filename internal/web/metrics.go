@@ -56,6 +56,10 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	for _, g := range check.Grades {
 		p.sample("tlswatch_targets_by_grade", map[string]string{"grade": g}, float64(m.TargetsByGrade[g]))
 	}
+	p.metric("tlswatch_targets_pq", "gauge", "Enabled targets by whether they negotiate post-quantum key exchange (X25519MLKEM768).")
+	for _, st := range []string{"yes", "no", "untested"} {
+		p.sample("tlswatch_targets_pq", map[string]string{"state": st}, float64(m.TargetsByPQ[st]))
+	}
 	if len(m.TargetGrades) > 0 {
 		p.metric("tlswatch_target_grade", "gauge", "Each enabled target's TLS configuration grade as a label; the value ranks it, 4 for A down to 1 for F.")
 		for _, g := range m.TargetGrades {

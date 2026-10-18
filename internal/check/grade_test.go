@@ -181,3 +181,39 @@ func TestGradeChangeIsAnEvent(t *testing.T) {
 		t.Fatal("unchanged grade recorded as an event")
 	}
 }
+
+// Post-quantum key exchange is a reason that never moves the letter; the
+// target's state is "no" when any address says no, untested when one got
+// no verdict and none said no.
+func TestPostQuantumReason(t *testing.T) {
+	iss := newIssuer(t, "Test CA", "Test CA R1")
+	leaf := leafCert(t, iss, 60, "a.example")
+	pq := func(ip string, checked, yes bool) probe.Address {
+		a := testedAddr(ip, "TLS 1.3", leaf, nil)
+		a.PQChecked, a.PQ = checked, yes
+		return a
+	}
+	o := Evaluate(manual, Previous{Open: open(), Grade: GradeA}, result(pq("192.0.2.1", true, false)), now)
+	if o.Grade != GradeA || !slices.Equal(o.GradeReasons, []string{PQNoReason}) || o.PQ != PQNo || len(o.Events) != 0 {
+		t.Fatalf("no PQ: %s %v %q %+v", o.Grade, o.GradeReasons, o.PQ, o.Events)
+	}
+	for _, c := range []struct {
+		addrs []probe.Address
+		want  string
+	}{
+		{[]probe.Address{pq("192.0.2.1", true, true), pq("192.0.2.2", true, true)}, PQYes},
+		{[]probe.Address{pq("192.0.2.1", true, true), pq("192.0.2.2", false, false)}, PQUntested},
+		{[]probe.Address{pq("192.0.2.1", false, false), pq("192.0.2.2", true, false)}, PQNo},
+	} {
+		if o := Evaluate(manual, Previous{Open: open()}, result(c.addrs...), now); o.PQ != c.want {
+			t.Errorf("%+v: %q, want %q", c.addrs, o.PQ, c.want)
+		}
+	}
+	// A drop names what lowered the grade, not the post-quantum note.
+	a := pq("192.0.2.1", true, false)
+	a.Suites, a.SuiteNames = []probe.SuiteClass{probe.Class3DES}, []string{"TLS_RSA_WITH_3DES_EDE_CBC_SHA"}
+	o = Evaluate(manual, Previous{Open: open(), Grade: GradeA}, result(a), now)
+	if ev, _ := find(o.Events, GradeChanged); strings.Contains(ev.Details, "post-quantum") || !strings.HasPrefix(ev.Details, "grade A → C: accepts 3DES") {
+		t.Fatalf("drop: %q", ev.Details)
+	}
+}

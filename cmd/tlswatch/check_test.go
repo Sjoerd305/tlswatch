@@ -71,7 +71,7 @@ func TestCheckReportStatus(t *testing.T) {
 
 func TestCheckReportGrade(t *testing.T) {
 	req := probe.Request{Host: "example.org", Port: 443, Protocol: probe.TLS}
-	r := probe.Result{Addresses: []probe.Address{{IP: "192.0.2.1", TLSVersion: "TLS 1.3", SuitesChecked: true,
+	r := probe.Result{Addresses: []probe.Address{{IP: "192.0.2.1", TLSVersion: "TLS 1.3", SuitesChecked: true, Group: "X25519", PQChecked: true,
 		Suites: []probe.SuiteClass{probe.Class3DES, probe.ClassCBC}, SuiteNames: []string{"TLS_RSA_WITH_3DES_EDE_CBC_SHA", "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA"}}}}
 	out := check.Outcome{GradeChecked: true, Grade: check.GradeC, GradeRules: check.GradeRules,
 		AddressGrades: []check.AddressGrade{{IP: "192.0.2.1", Grade: check.GradeC, Reasons: []string{"accepts 3DES (TLS_RSA_WITH_3DES_EDE_CBC_SHA)"}}}}
@@ -84,7 +84,7 @@ func TestCheckReportGrade(t *testing.T) {
 		t.Fatalf("address: %+v weak %v", a, a.WeakSuites)
 	}
 	b, _ := json.Marshal(res)
-	for _, want := range []string{`"grade":"C"`, `"weak_suites_accepted":[`, `"grade_reasons":[`} {
+	for _, want := range []string{`"grade":"C"`, `"weak_suites_accepted":[`, `"grade_reasons":[`, `"pq_kex":false`, `"key_exchange_group":"X25519"`} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("json lacks %s: %s", want, b)
 		}

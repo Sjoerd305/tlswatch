@@ -72,9 +72,12 @@ type Overview struct {
 	Open        []Finding
 	Changes     []Finding
 	Last24h     RunSummary
-	LastCheck   int64
-	NextCheck   int64
-	MinWarn     int
+	// PQ counts the enabled targets that negotiate post-quantum key
+	// exchange, of PQTested whose configuration test settled it.
+	PQ, PQTested int
+	LastCheck    int64
+	NextCheck    int64
+	MinWarn      int
 }
 
 // Overview gathers the home screen: counts from aggregate queries, and
@@ -123,8 +126,9 @@ func (s *Service) Overview(ctx context.Context) (Overview, error) {
 	err = s.DB.R.QueryRowContext(ctx, `SELECT
 		COALESCE(SUM(enabled = 1 AND status = ? AND not_after > 0 AND not_after < ?), 0),
 		COALESCE(MAX(last_check), 0),
-		COALESCE(MIN(CASE WHEN enabled = 1 AND next_check > 0 THEN next_check END), 0)
-		FROM targets`, StatusHealthy, now.Add(30*24*time.Hour).Unix()).Scan(&o.DueWithin30, &o.LastCheck, &o.NextCheck)
+		COALESCE(MIN(CASE WHEN enabled = 1 AND next_check > 0 THEN next_check END), 0),
+		COALESCE(SUM(enabled = 1 AND pq = 'yes'), 0), COALESCE(SUM(enabled = 1 AND pq != ''), 0)
+		FROM targets`, StatusHealthy, now.Add(30*24*time.Hour).Unix()).Scan(&o.DueWithin30, &o.LastCheck, &o.NextCheck, &o.PQ, &o.PQTested)
 	if err != nil {
 		return o, err
 	}

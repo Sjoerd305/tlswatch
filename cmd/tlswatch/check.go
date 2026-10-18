@@ -41,6 +41,7 @@ type checkAddress struct {
 	OK         bool   `json:"ok"`
 	TLSVersion string `json:"tls_version,omitempty"`
 	Cipher     string `json:"cipher,omitempty"`
+	Group      string `json:"key_exchange_group,omitempty"`
 	SHA256     string `json:"sha256,omitempty"`
 	Verified   bool   `json:"verified"`
 	// Legacy lists the TLS versions under 1.2 the address accepted;
@@ -51,8 +52,11 @@ type checkAddress struct {
 	WeakSuites   *[]string `json:"weak_suites_accepted,omitempty"`
 	Grade        string    `json:"grade,omitempty"`
 	GradeReasons []string  `json:"grade_reasons,omitempty"`
-	Error        string    `json:"error,omitempty"`
-	DurationMS   int64     `json:"duration_ms"`
+	// PQKex is whether the address negotiates post-quantum key exchange
+	// (X25519MLKEM768); absent when not tested.
+	PQKex      *bool  `json:"pq_kex,omitempty"`
+	Error      string `json:"error,omitempty"`
+	DurationMS int64  `json:"duration_ms"`
 }
 
 type checkFinding struct {
@@ -191,6 +195,11 @@ func checkReport(req probe.Request, r probe.Result, out check.Outcome, now time.
 		ca := checkAddress{Address: a.IP, OK: a.OK, TLSVersion: a.TLSVersion, Cipher: a.Cipher, Verified: a.Verified, Error: a.Error, DurationMS: a.Duration.Milliseconds()}
 		if a.OK {
 			ca.SHA256 = probe.Fingerprint(a.Chain[0])
+		}
+		ca.Group = a.Group
+		if a.PQChecked {
+			pq := a.PQ
+			ca.PQKex = &pq
 		}
 		if a.LegacyChecked || len(a.Legacy) > 0 {
 			l := append([]string{}, a.Legacy...)

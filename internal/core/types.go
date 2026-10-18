@@ -148,7 +148,10 @@ type Target struct {
 	Grade        string
 	GradeReasons []string
 	GradeRules   int
-	ConfigTest   []check.AddressGrade
+	// PQ is whether the target negotiates post-quantum key exchange:
+	// check.PQYes, check.PQNo, or "" untested.
+	PQ         string
+	ConfigTest []check.AddressGrade
 
 	// Joined for display.
 	Cert *Certificate
