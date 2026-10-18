@@ -78,11 +78,17 @@ func TestScanProgress(t *testing.T) {
 	defer srv.Close()
 	_, p, _ := net.SplitHostPort(srv.Listener.Addr().String())
 	port, _ := strconv.Atoi(p)
+	// Reports every 100 ms, between connects a second apart: the timing of
+	// one ticker against the other decides nothing.
+	saved := scanReportEvery
+	scanReportEvery = 100 * time.Millisecond
+	t.Cleanup(func() { scanReportEvery = saved })
 	var got ScanResult
-	calls := 0
+	calls, early := 0, false
 	req := ScanRequest{Addresses: []netip.Addr{netip.MustParseAddr("127.0.0.1"), netip.MustParseAddr("127.0.0.2")}, Ports: []int{port},
 		Rate: 1, Timeout: time.Second, AllowLocal: true, Progress: func(part ScanResult) {
 			calls++
+			early = early || got.Probed+part.Probed < 2
 			got.Probed += part.Probed
 			got.Hits = append(got.Hits, part.Hits...)
 		}}
@@ -90,9 +96,9 @@ func TestScanProgress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// At one connect a second the scan takes two seconds: a report comes
-	// before the end, and the rest at the end.
-	if calls < 2 || got.Probed != 2 || len(got.Hits) == 0 || res.Probed != 0 || len(res.Hits) != 0 {
+	// At one connect a second the scan takes two seconds: reports come
+	// before the second connect, and the rest at the end.
+	if !early || calls < 2 || got.Probed != 2 || len(got.Hits) == 0 || res.Probed != 0 || len(res.Hits) != 0 {
 		t.Fatalf("%d reports, %+v; returned %+v", calls, got, res)
 	}
 }

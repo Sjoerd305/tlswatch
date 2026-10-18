@@ -69,6 +69,10 @@ type ScanResult struct {
 	Refused int
 }
 
+// scanReportEvery is how often a scan hands its progress over; tests
+// shorten it.
+var scanReportEvery = time.Second
+
 // ErrScanTooLarge refuses a request past the limits.
 var ErrScanTooLarge = errors.New("scan too large")
 
@@ -123,7 +127,7 @@ func Scan(ctx context.Context, req ScanRequest) (ScanResult, error) {
 		ticking.Add(1)
 		go func() {
 			defer ticking.Done()
-			t := time.NewTicker(time.Second)
+			t := time.NewTicker(scanReportEvery)
 			defer t.Stop()
 			for {
 				select {
