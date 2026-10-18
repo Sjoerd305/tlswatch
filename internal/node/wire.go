@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/sjoerd305/tlswatch/internal/core"
+	"github.com/sjoerd305/tlswatch/internal/crl"
 	"github.com/sjoerd305/tlswatch/internal/probe"
 )
 
@@ -37,12 +38,13 @@ const (
 	KindCancel = "cancel"
 	KindUpdate = "update"
 	KindScan   = core.KindScan
+	KindCRL    = core.KindCRL
 )
 
 // Kinds are the job kinds this version runs, reported in the facts so the
 // server sends a node nothing it cannot do. Every node runs the first
 // three; an older node, whose facts list none, runs no others.
-var Kinds = []string{KindProbe, KindCancel, KindUpdate, KindScan}
+var Kinds = []string{KindProbe, KindCancel, KindUpdate, KindScan, KindCRL}
 
 // ErrUnsupported is the answer of a node to a job kind it does not know.
 const ErrUnsupported = "unsupported kind"
@@ -95,7 +97,19 @@ type Job struct {
 	Cancel string     `json:"cancel,omitempty"` // KindCancel: the job to stop
 	Update *UpdateJob `json:"update,omitempty"`
 	Scan   *ScanJob   `json:"scan,omitempty"`
+	CRL    *CRLJob    `json:"crl,omitempty"`
 }
+
+// CRLJob asks a node to fetch the CRL at URL and return its bytes; the
+// server verifies them.
+type CRLJob struct {
+	URL        string `json:"url"`
+	AllowLocal bool   `json:"allow_local,omitempty"`
+}
+
+// Timeout is how long the server waits for a leased CRL fetch: the fetch's
+// own limit, and slack for the round trip of up to 50 MB.
+func (CRLJob) Timeout() time.Duration { return crl.Timeout + 60*time.Second }
 
 // ScanJob is one chunk of a discovery scan.
 type ScanJob struct {
@@ -236,6 +250,7 @@ type Result struct {
 	Error string       `json:"error,omitempty"` // the job could not run at all
 	Probe *ProbeResult `json:"probe,omitempty"`
 	Scan  *ScanResult  `json:"scan,omitempty"`
+	CRL   []byte       `json:"crl,omitempty"` // KindCRL: the CRL as fetched
 }
 
 // ProbeResult is a probe result with the chains as DER (base64 in JSON).
@@ -266,6 +281,7 @@ type Address struct {
 	SuitesChecked   bool            `json:"suites_checked,omitempty"`
 	Suites          []string        `json:"suites,omitempty"`
 	SuiteNames      []string        `json:"suite_names,omitempty"`
+	OCSP            []byte          `json:"ocsp,omitempty"` // the stapled OCSP response
 }
 
 // EncodeResult converts a probe result for the wire.
@@ -277,7 +293,7 @@ func EncodeResult(r probe.Result) *ProbeResult {
 			Chain: der(a.Chain), Verified: a.Verified, VerifyError: a.VerifyError, VerifiedChain: der(a.VerifiedChain),
 			HostnameChecked: a.HostnameChecked, HostnameOK: a.HostnameOK, DurationMS: a.Duration.Milliseconds(),
 			LegacyChecked: a.LegacyChecked, Legacy: a.Legacy,
-			SuitesChecked: a.SuitesChecked, Suites: classNames(a.Suites), SuiteNames: a.SuiteNames,
+			SuitesChecked: a.SuitesChecked, Suites: classNames(a.Suites), SuiteNames: a.SuiteNames, OCSP: a.OCSP,
 		})
 	}
 	return out
@@ -337,7 +353,7 @@ func (p ProbeResult) Decode(req probe.Request, started time.Time) (probe.Result,
 		a := probe.Address{IP: w.IP, OK: w.OK, ErrorKind: w.ErrorKind, Error: w.Error, TLSVersion: w.TLSVersion, Cipher: w.Cipher,
 			Verified: w.Verified, VerifyError: w.VerifyError, Duration: time.Duration(w.DurationMS) * time.Millisecond,
 			LegacyChecked: w.LegacyChecked, Legacy: w.Legacy,
-			SuitesChecked: w.SuitesChecked, Suites: parseClasses(w.Suites), SuiteNames: w.SuiteNames}
+			SuitesChecked: w.SuitesChecked, Suites: parseClasses(w.Suites), SuiteNames: w.SuiteNames, OCSP: w.OCSP}
 		var err error
 		if a.Chain, err = parseChain(w.Chain); err != nil {
 			return r, fmt.Errorf("address %s: chain: %w", w.IP, err)

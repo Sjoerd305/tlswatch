@@ -70,6 +70,8 @@ func phrase(a AlertData) string {
 		return "renewal overdue"
 	case "distrusted_ca":
 		return "chain roots in a distrusted CA"
+	case "revoked":
+		return "certificate revoked"
 	case "expired":
 		return "certificate expired"
 	case "chain_untrusted":

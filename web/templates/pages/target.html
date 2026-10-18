@@ -59,6 +59,18 @@
         <dt>Seen</dt><dd>since {{date $p.Loc $c.FirstSeen}}{{if $d.AlsoOn}} · also on {{range $i, $s := $d.AlsoOn}}{{if $i}}, {{end}}<a href="/targets/{{$s.TargetID}}">{{$s.TargetName}}</a>{{end}}{{end}}</dd>
         <dt>SHA-256</dt><dd class="mono fp-row"><span class="ellipsis" title="{{$c.Fingerprint}}">{{$c.Fingerprint}}</span><button type="button" class="btn btn-xs" data-copy="{{$c.Fingerprint}}">copy</button><a class="btn btn-xs" href="/certificates/{{$c.Fingerprint}}/pem?download=1" data-copy-url="/certificates/{{$c.Fingerprint}}/pem">pem</a></dd>
         <dt>Hostname</dt><dd>{{if not $t.ServerName}}<span class="muted">not checked, no server name</span>{{else}}{{$mm := false}}{{range $d.Findings}}{{if and .Open (eq (print .Kind) "hostname_mismatch")}}{{$mm = true}}{{end}}{{end}}{{if $mm}}<span class="st sm crit">does not match {{$t.ServerName}}</span>{{else}}<span class="st sm ok">matches {{$t.ServerName}}</span>{{end}}{{end}}</dd>
+        {{- with $d.Revocation}}
+        <dt>Revocation</dt><dd class="wrap-any">
+          {{- if .Listed}}<span class="st sm crit">revoked {{date $p.Loc .Entry.RevokedAt}}{{with .Entry.Reason}} · {{.}}{{end}}</span>
+          {{- else if eq .Stapled "revoked"}}<span class="st sm crit">revoked, says the stapled OCSP response</span>
+          {{- else if not .URL}}<span class="muted">no CRL distribution point</span>
+          {{- else if not .CRL}}<span class="muted">CRL not fetched yet</span>
+          {{- else if .CRL.FetchedAt}}<span class="st sm ok">not revoked</span> <span class="muted">· CRL of {{date $p.Loc .CRL.ThisUpdate}}, fetched {{when $p.Loc $p.Now .CRL.FetchedAt}}{{with .CRL.NodeName}} by node {{.}}{{end}}{{with .CRL.Error}} · last fetch failed: {{.}}{{end}}</span>
+          {{- else}}<span class="st sm off">CRL not fetched</span> <span class="muted">· {{.CRL.Error}}</span>
+          {{- end}}
+          {{- if and .Stapled (ne .Stapled "revoked")}} <span class="muted">· OCSP stapled, {{.Stapled}}</span>{{end}}
+          {{- with .URL}}<div class="muted small mono" title="CRL distribution point">{{.}}</div>{{end}}</dd>
+        {{- end}}
       </dl>
     </section>
     {{- end}}

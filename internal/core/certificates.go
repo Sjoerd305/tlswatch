@@ -65,11 +65,12 @@ type Observation struct {
 	VerifyError string
 	Error       string
 	DurationMS  int64
+	OCSP        string // the stapled OCSP response's status, "" for none
 }
 
 // LastCheck returns the observations of a target's most recent check.
 func (s *Service) LastCheck(ctx context.Context, targetID int64) ([]Observation, error) {
-	rows, err := s.DB.R.QueryContext(ctx, `SELECT id, check_id, address, checked_at, status, tls_version, cipher, leaf_fp, chain, verified, verify_error, error, duration_ms
+	rows, err := s.DB.R.QueryContext(ctx, `SELECT id, check_id, address, checked_at, status, tls_version, cipher, leaf_fp, chain, verified, verify_error, error, duration_ms, ocsp
 		FROM observations WHERE target_id = ?1 AND check_id = (SELECT last_check_id FROM targets WHERE id = ?1) ORDER BY id`, targetID)
 	if err != nil {
 		return nil, err
@@ -79,7 +80,7 @@ func (s *Service) LastCheck(ctx context.Context, targetID int64) ([]Observation,
 	for rows.Next() {
 		var o Observation
 		var chain string
-		if err := rows.Scan(&o.ID, &o.CheckID, &o.Address, &o.CheckedAt, &o.Status, &o.TLSVersion, &o.Cipher, &o.LeafFP, &chain, &o.Verified, &o.VerifyError, &o.Error, &o.DurationMS); err != nil {
+		if err := rows.Scan(&o.ID, &o.CheckID, &o.Address, &o.CheckedAt, &o.Status, &o.TLSVersion, &o.Cipher, &o.LeafFP, &chain, &o.Verified, &o.VerifyError, &o.Error, &o.DurationMS, &o.OCSP); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal([]byte(chain), &o.Chain)

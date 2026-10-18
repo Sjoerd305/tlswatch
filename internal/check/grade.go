@@ -3,6 +3,7 @@ package check
 import (
 	"crypto/tls"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/sjoerd305/tlswatch/internal/probe"
@@ -147,6 +148,9 @@ func gradeAddress(a probe.Address) AddressGrade {
 			lower(GradeC, d.SigAlg+" signature on "+nameOf(c))
 		}
 	}
+	if probe.StapleOf(a).Status == probe.StapleGood {
+		g.Reasons = append(g.Reasons, StapledReason)
+	}
 	return g
 }
 
@@ -242,8 +246,9 @@ func (e *evaluation) grade(ok []probe.Address) {
 	}
 	if e.prev.Grade != "" && e.prev.Grade != e.out.Grade {
 		why := ""
-		if GradeRank(e.out.Grade) < GradeRank(e.prev.Grade) && len(e.out.GradeReasons) > 0 {
-			why = ": " + strings.Join(e.out.GradeReasons, ", ")
+		lowering := slices.DeleteFunc(slices.Clone(e.out.GradeReasons), func(r string) bool { return r == StapledReason })
+		if GradeRank(e.out.Grade) < GradeRank(e.prev.Grade) && len(lowering) > 0 {
+			why = ": " + strings.Join(lowering, ", ")
 		}
 		e.out.Events = append(e.out.Events, Finding{Kind: GradeChanged, Severity: Info,
 			Details: fmt.Sprintf("grade %s → %s%s", e.prev.Grade, e.out.Grade, why)})

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/sjoerd305/tlswatch/internal/core"
+	"github.com/sjoerd305/tlswatch/internal/crl"
 	"github.com/sjoerd305/tlswatch/internal/probe"
 )
 
@@ -284,6 +285,10 @@ func (c *Client) Run(ctx context.Context) error {
 				if j.Scan != nil {
 					c.startScan(jobCtx, j)
 				}
+			case KindCRL:
+				if j.CRL != nil {
+					c.startCRL(jobCtx, j)
+				}
 			case KindCancel:
 				c.mu.Lock()
 				if cancel, ok := c.cancels[j.Cancel]; ok {
@@ -480,6 +485,45 @@ func (c *Client) startScan(ctx context.Context, j Job) {
 		c.Log.Info("scanned", "job", j.ID, "addresses", len(req.Addresses), "ports", len(req.Ports), "connects", r.Probed,
 			"refused", r.Refused, "found", len(r.Hits))
 		c.deliver(j.ID, Result{Scan: EncodeScan(r)})
+	}()
+}
+
+// startCRL fetches a CRL in the background and returns its bytes, which
+// the server verifies. The node's allowlist and its local-address switch
+// bound the fetch as they bound a probe.
+func (c *Client) startCRL(ctx context.Context, j Job) {
+	jctx, cancel := context.WithCancel(ctx)
+	c.mu.Lock()
+	c.cancels[j.ID] = cancel
+	c.mu.Unlock()
+	c.running.Add(1)
+	go func() {
+		defer c.running.Done()
+		defer func() {
+			cancel()
+			c.mu.Lock()
+			delete(c.cancels, j.ID)
+			c.mu.Unlock()
+		}()
+		local := j.CRL.AllowLocal && c.AllowLocal
+		client := crl.NewClient(func(ip net.IP) error {
+			if !local && probe.IsLocalIP(ip) {
+				return errors.New("loopback and link-local addresses are not fetched")
+			}
+			return c.allow(ip)
+		})
+		data, err := crl.Fetch(jctx, client, j.CRL.URL)
+		if jctx.Err() != nil {
+			c.Log.Info("job cancelled", "job", j.ID)
+			return
+		}
+		if err != nil {
+			c.Log.Warn("crl not fetched", "job", j.ID, "url", j.CRL.URL, "err", err)
+			c.deliver(j.ID, Result{Error: err.Error()})
+			return
+		}
+		c.Log.Info("crl fetched", "job", j.ID, "url", j.CRL.URL, "bytes", len(data))
+		c.deliver(j.ID, Result{CRL: data})
 	}()
 }
 

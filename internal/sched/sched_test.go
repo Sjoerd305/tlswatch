@@ -311,6 +311,10 @@ func (f *fakeNodes) Probe(_ context.Context, _ int64, req probe.Request) (probe.
 		Addresses: []probe.Address{{IP: "10.0.0.1", ErrorKind: probe.ErrConnect, Error: "refused"}}}, nil
 }
 
+func (f *fakeNodes) FetchCRL(context.Context, int64, string) ([]byte, error) {
+	return nil, errors.New("no CRL here")
+}
+
 func (f *fakeNodes) Scan(_ context.Context, _ int64, req probe.ScanRequest) (probe.ScanResult, error) {
 	if !f.online.Load() {
 		return probe.ScanResult{}, core.ErrNodeOffline

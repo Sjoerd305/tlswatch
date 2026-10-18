@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sjoerd305/tlswatch/internal/core"
+	"github.com/sjoerd305/tlswatch/internal/crl"
 	"github.com/sjoerd305/tlswatch/internal/probe"
 )
 
@@ -89,6 +91,7 @@ type job struct {
 type outcome struct {
 	res  probe.Result
 	scan probe.ScanResult
+	crl  []byte
 	err  error
 }
 
@@ -252,6 +255,27 @@ func (d *Dispatcher) Scan(ctx context.Context, nodeID int64, req probe.ScanReque
 	return o.scan, o.err
 }
 
+// FetchCRL fetches a CRL on a node, for a private CA whose CRL only the
+// node's network reaches, and returns its bytes; the caller verifies them.
+// A node too old for the job is refused before anything is queued.
+func (d *Dispatcher) FetchCRL(ctx context.Context, nodeID int64, url string) ([]byte, error) {
+	d.init()
+	if !d.Online(nodeID) {
+		return nil, core.ErrNodeOffline
+	}
+	d.mu.Lock()
+	n := d.state(nodeID).meta
+	d.mu.Unlock()
+	if !n.CanFetchCRL() {
+		return nil, errors.New("the node runs a version that cannot fetch CRLs; update it under Settings › Nodes")
+	}
+	j := &job{id: newID(), node: nodeID, done: make(chan outcome, 1)}
+	j.wire = Job{ID: j.id, Kind: KindCRL, CRL: &CRLJob{URL: url, AllowLocal: d.Core.CurrentSettings(ctx).General.AllowLocal}}
+	j.timeout = j.wire.CRL.Timeout()
+	o := d.run(ctx, j)
+	return o.crl, o.err
+}
+
 // run queues j for its node and waits for the outcome. A waiter that gives
 // up takes a queued job back; a leased one is cancelled on the node.
 func (d *Dispatcher) run(ctx context.Context, j *job) outcome {
@@ -348,7 +372,7 @@ func (d *Dispatcher) complete(nodeID int64, id string, res Result) {
 		d.mu.Unlock()
 		return
 	}
-	req, leasedAt, scan := j.req, j.leasedAt, j.wire.Scan
+	req, leasedAt, scan, isCRL := j.req, j.leasedAt, j.wire.Scan, j.wire.CRL != nil
 	d.mu.Unlock()
 	// The certificates are parsed outside the lock: a result is up to a
 	// few megabytes of DER, and every poll waits on the lock.
@@ -356,6 +380,11 @@ func (d *Dispatcher) complete(nodeID int64, id string, res Result) {
 	switch {
 	case res.Error != "":
 		o.err = &nodeError{msg: core.Clip(res.Error, core.TextMax)}
+	case isCRL:
+		o.crl, o.err = res.CRL, nil
+		if len(res.CRL) > crl.MaxSize {
+			o.crl, o.err = nil, crl.ErrTooLarge
+		}
 	case scan != nil && res.Scan != nil:
 		o.scan, o.err = res.Scan.Decode(*scan)
 	case scan == nil && res.Probe != nil:

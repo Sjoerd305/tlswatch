@@ -136,6 +136,9 @@ type Address struct {
 	SuitesChecked bool
 	Suites        []SuiteClass
 	SuiteNames    []string
+	// OCSP is the OCSP response the server stapled, DER; nil when none.
+	// StapleOf judges it.
+	OCSP []byte
 }
 
 // LegacyVersions are the deprecated TLS versions Request.Legacy tests for,
@@ -402,6 +405,7 @@ func probeOnce(ctx context.Context, req Request, ip net.IP) (Address, error) {
 	a.TLSVersion = tls.VersionName(st.Version)
 	a.Cipher = tls.CipherSuiteName(st.CipherSuite)
 	a.Chain = st.PeerCertificates
+	a.OCSP = st.OCSPResponse
 	verify(&a, req)
 	return a, nil
 }

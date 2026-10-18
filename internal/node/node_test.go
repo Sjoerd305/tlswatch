@@ -910,3 +910,57 @@ func TestScanOnNode(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCRLOnNode(t *testing.T) {
+	e := setup(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	body := bytes.Repeat([]byte{0x30}, 5<<20) // bigger than any other result
+	crlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(body) }))
+	defer crlSrv.Close()
+	c := e.client(t, "v1.2.0")
+	n := e.enrolled(t, c)
+	if !n.CanFetchCRL() {
+		t.Fatalf("facts do not list the crl kind: %+v", n.Facts.Kinds)
+	}
+	done := make(chan error, 1)
+	go func() { done <- c.Run(ctx) }()
+	fctx, fcancel := context.WithTimeout(ctx, 10*time.Second)
+	defer fcancel()
+
+	// The CRL server is on loopback: refused unless both the server's
+	// settings and the node allow local addresses.
+	if _, err := e.disp.FetchCRL(fctx, n.ID, crlSrv.URL+"/ca.crl"); err == nil || !strings.Contains(err.Error(), "loopback") {
+		t.Fatalf("loopback fetched: %v", err)
+	}
+	if err := e.core.Settings.SaveGeneral(ctx, config.General{BaseURL: e.srv.URL, AllowLocal: true}); err != nil {
+		t.Fatal(err)
+	}
+	c.AllowLocal = true
+	got, err := e.disp.FetchCRL(fctx, n.ID, crlSrv.URL+"/ca.crl")
+	if err != nil || !bytes.Equal(got, body) {
+		t.Fatalf("fetch: %d bytes, %v", len(got), err)
+	}
+
+	// A node whose facts do not list the kind gets no job.
+	n.Facts.Kinds = []string{KindProbe, KindCancel, KindUpdate}
+	e.disp.mu.Lock()
+	e.disp.state(n.ID).meta = n
+	e.disp.mu.Unlock()
+	if _, err := e.disp.FetchCRL(fctx, n.ID, crlSrv.URL+"/ca.crl"); err == nil || !strings.Contains(err.Error(), "cannot fetch CRLs") {
+		t.Fatalf("old node: %v", err)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStapleCrossesTheWire(t *testing.T) {
+	cert := selfSigned(t, "app.internal.example")
+	r := probe.Result{Addresses: []probe.Address{{IP: "10.0.0.5", OK: true, Chain: []*x509.Certificate{cert}, OCSP: []byte{0x30, 0x03, 0x0a, 0x01, 0x06}}}}
+	back, err := EncodeResult(r).Decode(probe.Request{Trust: probe.TrustSelfSigned}, time.Now())
+	if err != nil || !bytes.Equal(back.Addresses[0].OCSP, r.Addresses[0].OCSP) {
+		t.Fatalf("staple lost: %v %+v", err, back.Addresses)
+	}
+}

@@ -76,6 +76,16 @@ func (s *Service) Evaluate(ctx context.Context, t Target, r probe.Result, st con
 		if prev.Recent, err = s.recentLeaves(ctx, t.ID); err != nil {
 			return check.Outcome{}, err
 		}
+		if prev.Open[check.Revoked] {
+			if err := s.DB.R.QueryRowContext(ctx, "SELECT fingerprint FROM findings WHERE target_id = ? AND kind = ? AND resolved_at = 0",
+				t.ID, string(check.Revoked)).Scan(&prev.RevokedFP); err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return check.Outcome{}, err
+			}
+		}
+	}
+	var err error
+	if prev.CRL, err = s.crlStatus(ctx, r); err != nil {
+		return check.Outcome{}, err
 	}
 	eff := t.Effective(st.Defaults)
 	ct := check.Target{
@@ -271,9 +281,9 @@ func storeObservationsTx(ctx context.Context, tx *sql.Tx, targetID, nodeID int64
 			errText = "address not allowed"
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO observations(target_id, check_id, address, checked_at, status, tls_version, cipher,
-			leaf_fp, chain, verified, verify_error, error, duration_ms, node_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			leaf_fp, chain, verified, verify_error, error, duration_ms, node_id, ocsp) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			targetID, checkID, a.IP, checkedAt, status, a.TLSVersion, a.Cipher, leafFP, string(cj), a.Verified, a.VerifyError,
-			errText, a.Duration.Milliseconds(), node); err != nil {
+			errText, a.Duration.Milliseconds(), node, probe.StapleOf(a).Status); err != nil {
 			return err
 		}
 	}
@@ -337,7 +347,7 @@ func applyFindingsTx(ctx context.Context, tx *sql.Tx, targetID int64, out check.
 			return err
 		}
 		sum.Opened = append(sum.Opened, cf.Kind)
-		if overdue && cf.Kind == check.Expiring && cf.Severity == check.Warning {
+		if overdue && cf.Kind == check.Expiring && cf.Severity == check.Warning || cf.Kind.Silent() {
 			continue
 		}
 		if err := al.send(ctx, nf, notify.EventOpen); err != nil {

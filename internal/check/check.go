@@ -23,6 +23,7 @@ const (
 	Expiring           Kind = "expiring"
 	RenewalOverdue     Kind = "renewal_overdue"
 	DistrustedCA       Kind = "distrusted_ca"
+	Revoked            Kind = "revoked"
 	Expired            Kind = "expired"
 	NotYetValid        Kind = "not_yet_valid"
 	ChainUntrusted     Kind = "chain_untrusted"
@@ -37,6 +38,9 @@ const (
 	TLSUnavailable     Kind = "tls_unavailable"
 	Unreachable        Kind = "unreachable"
 	DNSFailed          Kind = "dns_failed"
+	// RevocationUnknown is info and never alerted: the CRL of a served leaf
+	// could not be fetched or verified for days.
+	RevocationUnknown Kind = "revocation_unknown"
 	// GradeChanged is an event (info, recorded as resolved): the target's
 	// configuration grade moved since the last test.
 	GradeChanged Kind = "grade_changed"
@@ -53,7 +57,7 @@ const (
 )
 
 // Kinds lists every kind, for filters.
-var Kinds = []Kind{Expiring, RenewalOverdue, DistrustedCA, Expired, NotYetValid, ChainUntrusted, SelfSigned, HostnameMismatch, WeakSignature, LegacyProtocol, WeakConfiguration, CertificateChanged, IssuerChanged, GradeChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed, NodeOffline, UnexpectedCertificate, CTSourceFailed, CertificateIssued}
+var Kinds = []Kind{Expiring, RenewalOverdue, DistrustedCA, Revoked, RevocationUnknown, Expired, NotYetValid, ChainUntrusted, SelfSigned, HostnameMismatch, WeakSignature, LegacyProtocol, WeakConfiguration, CertificateChanged, IssuerChanged, GradeChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed, NodeOffline, UnexpectedCertificate, CTSourceFailed, CertificateIssued}
 
 // Label is the human name of a kind.
 func (k Kind) Label() string {
@@ -62,6 +66,8 @@ func (k Kind) Label() string {
 		return "Renewal overdue"
 	case DistrustedCA:
 		return "Distrusted CA"
+	case RevocationUnknown:
+		return "Revocation unknown"
 	case NotYetValid:
 		return "Not yet valid"
 	case ChainUntrusted:
@@ -113,6 +119,8 @@ func (k Kind) Short() string {
 		return "renewal"
 	case DistrustedCA:
 		return "distrusted"
+	case RevocationUnknown:
+		return "revocation"
 	case NotYetValid:
 		return "not yet valid"
 	case ChainUntrusted:
@@ -149,6 +157,10 @@ func (k Kind) Short() string {
 func (k Kind) AckResolves() bool {
 	return k == CertificateChanged || k == IssuerChanged || k == UnexpectedCertificate
 }
+
+// Silent reports whether a finding of the kind is never alerted, whatever
+// a channel's floor.
+func (k Kind) Silent() bool { return k == RevocationUnknown }
 
 // Network reports whether the kind is network-shaped (debounced).
 func (k Kind) Network() bool { return k == Unreachable || k == DNSFailed }
@@ -283,6 +295,22 @@ type Previous struct {
 	DNSOk      int
 	Open       map[Kind]bool
 	Grade      string // the stored configuration grade, "" for none yet
+	// CRL is what the cached CRLs say of the served leaves, by
+	// fingerprint; a leaf without a usable CRL is absent.
+	CRL map[string]CRLStatus
+	// RevokedFP is the leaf the open revoked finding is about.
+	RevokedFP string
+}
+
+// CRLStatus is what the cached CRL of a leaf says of it.
+type CRLStatus struct {
+	URL       string
+	Revoked   bool
+	RevokedAt time.Time
+	Reason    string
+	// Unknown is why the CRL could not be fetched or verified, set once
+	// that failed on UnknownAfter days in a row.
+	Unknown string
 }
 
 // Finding is a desired open finding (or an event).
@@ -432,6 +460,7 @@ func Evaluate(t Target, prev Previous, r probe.Result, now time.Time) Outcome {
 	e.inconsistent(ok)
 	e.facts(ok)
 	e.renewal()
+	e.revocation(ok)
 	e.legacy(ok)
 	e.grade(ok)
 	e.expectedIssuer(info)

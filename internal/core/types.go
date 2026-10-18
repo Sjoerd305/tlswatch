@@ -363,8 +363,11 @@ type Service struct {
 	// Transparency source uses; nil and "" mean the real ones.
 	CTClient *http.Client
 	CTBase   string
+	// CRLClient fetches CRLs from this server; nil builds the real one.
+	CRLClient *http.Client
 
 	bundles bundleCache
+	crls    crlLocks
 }
 
 func (s *Service) now() time.Time {

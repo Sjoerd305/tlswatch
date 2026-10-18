@@ -335,6 +335,8 @@ type targetDetail struct {
 	// DistrustSev is the severity of the open distrusted_ca finding, "" for
 	// none: the chain view colours the distrusted link by it.
 	DistrustSev string
+	// Revocation is the current leaf's CRL and stapling status.
+	Revocation core.Revocation
 }
 
 func (s *Server) targetDetail(w http.ResponseWriter, r *http.Request) {
@@ -368,6 +370,9 @@ func (s *Server) loadTargetDetail(ctx context.Context, t core.Target, st config.
 			d.Chain, d.ChainOK, d.ChainNote = s.Core.Chain(ctx, o), o.Verified, o.VerifyError
 			break
 		}
+	}
+	if d.Revocation, err = s.Core.TargetRevocation(ctx, t, d.Last); err != nil {
+		return d, err
 	}
 	if d.History, err = s.Core.History(ctx, t); err != nil {
 		return d, err

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sjoerd305/tlswatch/internal/core"
+	"github.com/sjoerd305/tlswatch/internal/crl"
 )
 
 // ServeHTTP answers the agent protocol under /agent/. These routes sit
@@ -73,10 +74,19 @@ func (d *Dispatcher) clientIP(r *http.Request) string {
 // maxBody caps a node's request: a result holds up to eight chains.
 const maxBody = 4 << 20
 
-// readJSON decodes a request body, gzipped or not. The cap applies to the
-// body as sent and again to what it inflates to.
+// maxCRLBody caps the result of a CRL job: the CRL in base64, and room
+// for the envelope.
+const maxCRLBody = crl.MaxSize/3*4 + 64<<10
+
+// readJSON decodes a request body, gzipped or not, of at most maxBody.
 func readJSON(w http.ResponseWriter, r *http.Request, v any) error {
-	body := http.MaxBytesReader(w, r.Body, maxBody)
+	return readJSONMax(w, r, v, maxBody)
+}
+
+// readJSONMax decodes a request body, gzipped or not. The cap applies to
+// the body as sent and again to what it inflates to.
+func readJSONMax(w http.ResponseWriter, r *http.Request, v any, limit int64) error {
+	body := http.MaxBytesReader(w, r.Body, limit)
 	switch r.Header.Get("Content-Encoding") {
 	case "":
 	case "gzip":
@@ -85,7 +95,7 @@ func readJSON(w http.ResponseWriter, r *http.Request, v any) error {
 			return err
 		}
 		defer gz.Close()
-		body = http.MaxBytesReader(w, gz, maxBody)
+		body = http.MaxBytesReader(w, gz, limit)
 	default:
 		return errors.New("unsupported content encoding")
 	}
@@ -173,7 +183,13 @@ func (d *Dispatcher) poll(w http.ResponseWriter, r *http.Request, n core.Node) {
 // acknowledged and discarded.
 func (d *Dispatcher) result(w http.ResponseWriter, r *http.Request, n core.Node, id string) {
 	var res Result
-	if err := readJSON(w, r, &res); err != nil {
+	limit := int64(maxBody)
+	d.mu.Lock()
+	if j, ok := d.jobs[id]; ok && j.node == n.ID && !j.leasedAt.IsZero() && j.wire.CRL != nil {
+		limit = maxCRLBody
+	}
+	d.mu.Unlock()
+	if err := readJSONMax(w, r, &res, limit); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the result could not be read"})
 		return
 	}

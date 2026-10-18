@@ -42,6 +42,8 @@ type NodeProber interface {
 	Probe(ctx context.Context, nodeID int64, req probe.Request) (probe.Result, error)
 	// Scan runs one chunk of a discovery scan on the node.
 	Scan(ctx context.Context, nodeID int64, req probe.ScanRequest) (probe.ScanResult, error)
+	// FetchCRL fetches a CRL on the node and returns its bytes.
+	FetchCRL(ctx context.Context, nodeID int64, url string) ([]byte, error)
 }
 
 type queue []*item
@@ -592,6 +594,13 @@ func (s *Scheduler) checkTarget(ctx context.Context, id int64, legacy bool) (cor
 	if ctx.Err() != nil {
 		return t, ctx.Err()
 	}
+	// A CRL a day old or missing is fetched before the checks, so a
+	// revocation shows on the first observation after it is listed.
+	var onNode core.NodeCRLFetch
+	if s.Nodes != nil {
+		onNode = s.Nodes.FetchCRL
+	}
+	s.Core.RefreshCRLs(ctx, t, r, onNode)
 	sum, err := s.Core.Apply(ctx, t, r)
 	if err != nil {
 		return t, err
