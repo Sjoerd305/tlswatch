@@ -85,7 +85,7 @@ func (s *Server) domains(w http.ResponseWriter, r *http.Request) {
 		d.Tags = append(d.Tags, Chip{Key: "tag", Value: t, Label: t, Count: tagCounts[t], On: tag == t})
 	}
 	if tag != "" {
-		d.Tags = append([]Chip{{Key: "tag", Value: "", Label: "Any tag"}}, d.Tags...)
+		d.Tags = append([]Chip{{Key: "tag", Value: "", Label: "Any tag", Bare: true}}, d.Tags...)
 	}
 	for i := range d.Status {
 		d.Status[i].Href = chipHref(r, "status", d.Status[i].Value)

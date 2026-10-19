@@ -207,7 +207,7 @@ func sortedChips(key string, m map[string]int, on string) []Chip {
 		return out[i].Label < out[j].Label
 	})
 	if on != "" {
-		out = append([]Chip{{Key: key, Value: "", Label: "Any " + key}}, out...)
+		out = append([]Chip{{Key: key, Value: "", Label: "Any " + key, Bare: true}}, out...)
 	}
 	return out
 }

@@ -358,12 +358,10 @@ func (s *Server) apiTargets(w http.ResponseWriter, r *http.Request) {
 		s.apiFailErr(w, r, err, "")
 		return
 	}
-	q := r.URL.Query()
-	status, tag, text := q.Get("status"), q.Get("tag"), strings.ToLower(strings.TrimSpace(q.Get("q")))
-	nodeF, gradeF, pqF := q.Get("node"), q.Get("grade"), q.Get("pq")
+	f := targetFilterFrom(r.URL.Query())
 	var out []core.Target
 	for _, t := range ts {
-		if targetMatches(t, status, tag, text) && (nodeF == "" || nodeToken(t) == nodeF) && (gradeF == "" || gradeToken(t) == gradeF) && (pqF == "" || pqToken(t) == pqF) {
+		if f.matches(t, "") {
 			out = append(out, t)
 		}
 	}

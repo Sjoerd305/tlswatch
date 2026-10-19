@@ -387,6 +387,8 @@ The UI is an operations console: the home screen answers "what needs attention n
 
 **Grouping** is by free-form tags (`customer:contoso`, `site:amsterdam`, `sip`), shown as badges, filterable, and usable as a column to group the targets list. Tags are enough for 10 to 100 targets and scale by convention; a fixed group hierarchy is deliberately left out. Every target has a notes field for owner, ticket number or renewal procedure.
 
+**Filter chips** combine across groups: one active chip per group, and a row shows when it matches all of them and the filter text. A chip's count is the number of rows it would show given the filter text and the other groups' active chips, its own group left out, so the counts follow every filter as it changes, live with JavaScript and on the server-rendered page without it. A chip that would show nothing stays in place, dimmed with a count of 0, so a combination like grade F and tag mail is visibly empty before it is chosen. The "Any tag" and "Any issuer" chips carry no count.
+
 | Screen | Role | Content |
 | --- | --- | --- |
 | Sign in | all | One card: e-mail and password, "Sign in with <provider>" and "Sign in with Google" below when configured. A local account with TOTP gets a second card for the code (or a recovery code). Neutral error messages. |

@@ -51,7 +51,7 @@
  * Status     .st + .ok .warn .crit .off .info (dot + word) · .st.sm (12px)
  *            .pill + .ok .warn .crit .off .info · .tag (mono tag badge)
  *            .tags (.line keeps them on one line)
- *            .chip · .chip.on · .chip .x (count)
+ *            .chip · .chip.on · .chip.zero (would show nothing) · .chip .x (count)
  * Lifetime   .bar (110px) · .bar.full (100%, 8px)
  *            .bar > .f + .ok/.warn/.crit/.off · .p0 … .p100 (fill width)
  *            .lifetime (wrapper on detail page) · .lifetime-legend
@@ -423,6 +423,7 @@ a.tag:hover{text-decoration:none;color:var(--ink)}
 .chip.on,.chip.on:hover{background:var(--chip-on-bg);color:var(--chip-on-fg);border-color:var(--chip-on-bg)}
 .chip .x{color:var(--muted);font-size:11px;font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
 .chip.on .x{color:var(--chip-on-x)}
+.chip.zero{opacity:.45}
 .chip .st,.chip .st.sm{font-size:12px}
 
 /* ---------- Lifetime bar ---------- */

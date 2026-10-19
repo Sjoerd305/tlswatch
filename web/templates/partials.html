@@ -4,7 +4,7 @@
 
 {{define "bar"}}<div class="bar{{if .Wide}} {{.Wide}}{{end}}" role="img" aria-label="{{.Used}}% of lifetime used"><span class="f {{.Class}} p{{.Used}}"></span></div>{{end}}
 
-{{define "chips"}}{{range .}}<a class="chip{{if .On}} on{{end}}" href="{{.Href}}" data-chip-key="{{.Key}}" data-chip-value="{{.Value}}">{{if .Class}}<span class="st sm {{.Class}}">{{.Label}}</span>{{else}}{{.Label}}{{end}}{{if or .Count .Class}} <span class="x">{{.Count}}</span>{{end}}</a>{{end}}{{end}}
+{{define "chips"}}{{range .}}<a class="chip{{if .On}} on{{else if and .Value (not .Count)}} zero{{end}}" href="{{.Href}}" data-chip-key="{{.Key}}" data-chip-value="{{.Value}}">{{if .Class}}<span class="st sm {{.Class}}">{{.Label}}</span>{{else}}{{.Label}}{{end}}{{if not .Bare}} <span class="x">{{.Count}}</span>{{end}}</a>{{end}}{{end}}
 
 {{define "sevchips"}}{{range .}}<a class="chip{{if .On}} on{{end}}" href="{{.Href}}" data-chip-key="{{.Key}}" data-chip-value="{{.Value}}"><span class="pill {{.Class}}">{{.Label}}</span> <span class="x">{{.Count}}</span></a>{{end}}{{end}}
 

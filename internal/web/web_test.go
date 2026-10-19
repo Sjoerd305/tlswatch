@@ -993,6 +993,14 @@ func TestGradeOnTargetsListAndPage(t *testing.T) {
 	if rec := hs.do(authz.Viewer, "GET", "/targets?grade=A", nil, false); !strings.Contains(rec.Body.String(), `id="target-1"`) || !strings.Contains(rec.Body.String(), ` hidden>`) {
 		t.Error("a grade filter did not hide the C target")
 	}
+	// Chip counts follow the other groups' filters: under grade A the PQ no
+	// chip counts nothing and is dimmed, while the grade chips keep theirs.
+	body = hs.do(authz.Viewer, "GET", "/targets?grade=A", nil, false).Body.String()
+	for _, want := range []string{`class="chip zero"`, `data-chip-value="no">PQ no <span class="x">0</span>`, `Grade C</span> <span class="x">1</span>`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("grade-filtered targets list lacks %q", want)
+		}
+	}
 	body = hs.do(authz.Viewer, "GET", "/targets/1", nil, false).Body.String()
 	for _, want := range []string{`class="grade lg warn"`, `accepts 3DES (TLS_RSA_WITH_3DES_EDE_CBC_SHA)`, `accepted TLS_RSA_WITH_3DES_EDE_CBC_SHA`, `TLS 1.0, 1.1 and ciphers`, `TLS_AES_128_GCM_SHA256 · X25519`} {
 		if !strings.Contains(body, want) {

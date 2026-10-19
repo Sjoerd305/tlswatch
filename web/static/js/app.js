@@ -11,6 +11,8 @@
 //     .chip[data-chip-key][data-chip-value] (<a href="?key=value"> for no-JS);
 //     one active (.on) chip per group, value "" means all. A row matches when
 //     its data-<key> attribute (space-separated tokens) contains the value.
+//     A chip's .x shows the rows it would show given the other groups'
+//     chips and the filter text; .zero dims a chip that would show none.
 //   select[data-chip-select="#table"][data-chip-key]
 //                                      a chip group as a select (many values);
 //                                      its value filters like an active chip
@@ -171,6 +173,27 @@ function applyFilter(tableSel, updateUrl) {
         const next = row.nextElementSibling;
         if (next instanceof HTMLTableRowElement && next.classList.contains("detail")) {
             next.hidden = !match || row.getAttribute("aria-expanded") !== "true";
+        }
+    }
+    // Each chip counts the rows it would show: the filter text and the other
+    // groups' active chips apply, its own group's does not. A chip that would
+    // show nothing is dimmed.
+    const texts = rows.map((row) => query === "" || (row.dataset["search"] ?? "").toLowerCase().includes(query));
+    for (const group of $$(`[data-chip-group="${tableSel}"]`)) {
+        for (const chip of $$("[data-chip-key]", group)) {
+            const count = $(".x", chip);
+            if (count === null)
+                continue;
+            const key = chip.dataset["chipKey"] ?? "";
+            const value = chip.dataset["chipValue"] ?? "";
+            const rest = active.filter(([k]) => k !== key);
+            let n = 0;
+            rows.forEach((row, i) => {
+                if (texts[i] && (value === "" || rowHasToken(row, key, value)) && rest.every(([k, v]) => rowHasToken(row, k, v)))
+                    n++;
+            });
+            count.textContent = String(n);
+            chip.classList.toggle("zero", n === 0 && value !== "" && !chip.classList.contains("on"));
         }
     }
     const counter = $(`[data-count-for="${tableSel}"]`);
