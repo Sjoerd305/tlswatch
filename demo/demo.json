@@ -157,6 +157,14 @@
         "badssl"
       ],
       "notes": "A disabled target: kept, but not checked."
+    },
+    {
+      "host": "revoked.badssl.com",
+      "port": 443,
+      "tags": [
+        "badssl"
+      ],
+      "notes": "badssl.com serves this one broken on purpose, for testing TLS clients."
     }
   ],
   "domains": [
