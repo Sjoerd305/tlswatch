@@ -38,8 +38,11 @@ type Client struct {
 	Workers    int    // probes at once; the server leases no more
 	Allow      []netip.Prefix
 	AllowLocal bool
-	Version    string
-	Container  bool
+	// AllowFrom is where Allow was read, core.NodeLimitsFlag or
+	// core.NodeLimitsEnv, reported so the server can say where to change it.
+	AllowFrom string
+	Version   string
+	Container bool
 	// Insecure is a plain http:// server (a lab): nothing it sends is
 	// authenticated, so the node never replaces its binary from it.
 	Insecure bool
@@ -112,7 +115,7 @@ func (c *Client) Enrolled() bool {
 // Enrol exchanges an install token for the node's credential and writes
 // it to the credential file (0600). It returns the node's number.
 func (c *Client) Enrol(ctx context.Context, token string) (int64, error) {
-	body, _ := json.Marshal(EnrolRequest{Token: strings.TrimSpace(token), Pool: c.workers(), Facts: GatherFacts(c.Version, c.Container)})
+	body, _ := json.Marshal(EnrolRequest{Token: strings.TrimSpace(token), Pool: c.workers(), Facts: c.facts()})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Server+Prefix+"/enrol", bytes.NewReader(body))
 	if err != nil {
 		return 0, err
@@ -390,7 +393,7 @@ type factsLater struct{ wait time.Duration }
 func (e factsLater) Error() string { return "facts reported too soon; again in " + e.wait.String() }
 
 func (c *Client) sendFacts(ctx context.Context) error {
-	body, _ := json.Marshal(GatherFacts(c.Version, c.Container))
+	body, _ := json.Marshal(c.facts())
 	resp, err := c.do(ctx, http.MethodPost, c.Server+Prefix+"/facts", body, nil)
 	if err != nil {
 		return err
@@ -542,6 +545,20 @@ func (c *Client) deliver(id string, res Result) {
 
 func endpoint(r probe.Request) string {
 	return net.JoinHostPort(r.Host, fmt.Sprint(r.Port))
+}
+
+// facts are the system facts with the node's limits.
+func (c *Client) facts() Facts {
+	f := GatherFacts(c.Version, c.Container)
+	l := &core.NodeLimits{AllowLocal: c.AllowLocal, From: c.AllowFrom, EnvFile: systemdEnvFile()}
+	if l.From == "" {
+		l.From = core.NodeLimitsEnv
+	}
+	for _, p := range c.Allow {
+		l.Allow = append(l.Allow, p.String())
+	}
+	f.Limits = l
+	return f
 }
 
 // allow applies the node's allowlist: what the server must not be able to

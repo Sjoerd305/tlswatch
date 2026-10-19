@@ -26,6 +26,18 @@ func InContainer() bool {
 	return false
 }
 
+// systemdEnvFile is the environment file the install script's unit reads,
+// when the node runs under systemd and the file is there; empty otherwise.
+func systemdEnvFile() string {
+	if os.Getenv("INVOCATION_ID") == "" {
+		return ""
+	}
+	if _, err := os.Stat(installEnv); err != nil {
+		return ""
+	}
+	return installEnv
+}
+
 // GatherFacts collects the system facts: hostname, operating system,
 // kernel, architecture, container or not, version, interfaces with their
 // addresses, the IPv6 route and the clock. They identify the machine to

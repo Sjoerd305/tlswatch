@@ -64,6 +64,40 @@ type NodeFacts struct {
 	// ClockOffsetMS is the node's clock minus the server's, computed by
 	// the server when the facts arrive.
 	ClockOffsetMS int64 `json:"clock_offset_ms"`
+	// Limits are what the node allows itself to probe; nil for nodes from
+	// before the report.
+	Limits *NodeLimits `json:"limits,omitempty"`
+}
+
+// NodeLimits are the node-side bounds on what it probes, reported so an
+// admin sees whether a node is restricted. They are set on the node only;
+// the server shows them and cannot change them.
+type NodeLimits struct {
+	Allow      []string `json:"allow"` // CIDRs; empty means any address
+	AllowLocal bool     `json:"allow_local"`
+	// From is where the allowlist was read: NodeLimitsFlag or
+	// NodeLimitsEnv.
+	From string `json:"from"`
+	// EnvFile is the environment file systemd started the node with, when
+	// it did.
+	EnvFile string `json:"env_file,omitempty"`
+}
+
+// Where a node's allowlist was read.
+const (
+	NodeLimitsFlag = "flag" // the -allow flag
+	NodeLimitsEnv  = "env"  // TLSWATCH_NODE_ALLOW
+)
+
+// AllowText is the allowlist for the audit log.
+func (l *NodeLimits) AllowText() string {
+	switch {
+	case l == nil:
+		return "unreported"
+	case len(l.Allow) == 0:
+		return "any"
+	}
+	return strings.Join(l.Allow, ",")
 }
 
 // NodeInterface is one non-loopback interface with its addresses (CIDR).
@@ -79,6 +113,7 @@ const (
 	TextMax       = 300 // an error message
 	addrMax       = 64  // addresses per interface
 	interfacesMax = 64
+	allowMax      = 256 // allowlist entries
 )
 
 // Clip cuts s to at most n bytes, on a rune boundary, and drops control
@@ -125,6 +160,18 @@ func (f NodeFacts) Clipped() NodeFacts {
 	}
 	for i, k := range f.Kinds {
 		f.Kinds[i] = Clip(k, ShortMax)
+	}
+	if f.Limits != nil {
+		l := *f.Limits
+		if len(l.Allow) > allowMax {
+			l.Allow = l.Allow[:allowMax]
+		}
+		allow := make([]string, 0, len(l.Allow))
+		for _, a := range l.Allow {
+			allow = append(allow, Clip(a, ShortMax))
+		}
+		l.Allow, l.From, l.EnvFile = allow, Clip(l.From, ShortMax), Clip(l.EnvFile, ShortMax)
+		f.Limits = &l
 	}
 	return f
 }
@@ -595,8 +642,8 @@ func (s *Service) TouchNode(ctx context.Context, id int64, seen time.Time, versi
 	return err
 }
 
-// SaveNodeFacts stores the facts a node reported. A changed hostname or
-// set of addresses goes to the audit log with the old and new values, so a
+// SaveNodeFacts stores the facts a node reported. A changed hostname, set
+// of addresses or allowlist goes to the audit log with the old and new values, so a
 // node that moved or was cloned shows.
 func (s *Service) SaveNodeFacts(ctx context.Context, n Node, f NodeFacts) error {
 	f = f.Clipped()
@@ -611,6 +658,16 @@ func (s *Service) SaveNodeFacts(ctx context.Context, n Node, f NodeFacts) error 
 	}
 	if oa, na := old.addrSet(), f.addrSet(); !slices.Equal(oa, na) {
 		changes = append(changes, fmt.Sprintf("addresses %s → %s", strings.Join(oa, ","), strings.Join(na, ",")))
+	}
+	// A node that reported before and now probes more, or less, shows; the
+	// first report after an update does not count as a change.
+	if old.Limits != nil {
+		if oa, na := old.Limits.AllowText(), f.Limits.AllowText(); oa != na {
+			changes = append(changes, fmt.Sprintf("allowlist %s → %s", oa, na))
+		}
+		if f.Limits != nil && old.Limits.AllowLocal != f.Limits.AllowLocal {
+			changes = append(changes, fmt.Sprintf("local addresses %t → %t", old.Limits.AllowLocal, f.Limits.AllowLocal))
+		}
 	}
 	if len(changes) > 0 {
 		s.Audit(ctx, "", "node.facts", nodeObject(n), strings.Join(changes, "; "))

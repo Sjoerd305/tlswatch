@@ -223,14 +223,19 @@ func TestNodeFlagsAndEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	if c.Server != "https://tlswatch.example.nl" || c.Data != "/srv/node" || c.Workers != 8 || len(c.Allow) != 2 ||
-		!c.AllowLocal || !c.NoUpdate || !c.AllowUnsigned || c.Insecure || *f.token != "tok" || c.Version != version {
+		!c.AllowLocal || !c.NoUpdate || !c.AllowUnsigned || c.Insecure || *f.token != "tok" || c.Version != version ||
+		c.AllowFrom != core.NodeLimitsEnv {
 		t.Fatalf("client from the environment: %+v", c)
 	}
 	fs, f = nodeFlagSet("node", false)
 	if err := fs.Parse([]string{"-workers", "2", "-server", "http://lab:8080", "-insecure", "-allow", ""}); err != nil {
 		t.Fatal(err)
 	}
-	if c, err = nodeClient(f); err != nil || c.Workers != 2 || c.Server != "http://lab:8080" || !c.Insecure || len(c.Allow) != 0 {
+	// The node reports which of the two set the allowlist, so the server
+	// can say where to change it.
+	f.allowFlag = flagGiven(fs, "allow")
+	if c, err = nodeClient(f); err != nil || c.Workers != 2 || c.Server != "http://lab:8080" || !c.Insecure || len(c.Allow) != 0 ||
+		c.AllowFrom != core.NodeLimitsFlag {
 		t.Fatalf("flags over the environment: %+v %v", c, err)
 	}
 	// enrol has no probing or update flags.

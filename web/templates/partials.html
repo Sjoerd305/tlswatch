@@ -175,6 +175,24 @@
 </dl>
 {{end}}
 
+{{/* node-limits: what a node allows itself to probe and where that is set on it; read-only, the server cannot change it. frag{P, Item: core.Node} */}}
+{{define "node-limits"}}{{$p := .P}}{{$n := .Item}}{{$l := $n.Facts.Limits}}
+<section class="card clip">
+  <div class="sec"><h2>Probe limits</h2><span class="meta">set on the node</span></div>
+  {{- if $l}}
+  <div class="li">
+    <dl class="kv narrow">
+      <dt>May probe</dt><dd>{{range $l.Allow}}<div class="mono">{{.}}</div>{{else}}any address{{end}}</dd>
+      <dt>Local addresses</dt><dd>{{if not $l.AllowLocal}}refused{{else if $p.Settings.General.AllowLocal}}allowed{{else}}allowed by the node, refused by <a href="/settings/general">Settings › General</a>{{end}}</dd>
+    </dl>
+  </div>
+  <div class="li"><span class="help">This server cannot change these: the node keeps them so that whoever controls the server cannot widen what it probes. {{if eq $l.From "flag"}}Change the <span class="mono">-allow</span> and <span class="mono">-allow-local</span> flags of the command that starts the node, and restart it.{{else if $l.EnvFile}}Set <span class="mono">TLSWATCH_NODE_ALLOW</span> (CIDRs, comma separated; empty means any) and <span class="mono">TLSWATCH_NODE_ALLOW_LOCAL</span> in <span class="mono">{{$l.EnvFile}}</span> on the node, then run <span class="mono">systemctl restart tlswatch-node</span>.{{else if $n.Facts.Container}}Set <span class="mono">TLSWATCH_NODE_ALLOW</span> (CIDRs, comma separated; empty means any) and <span class="mono">TLSWATCH_NODE_ALLOW_LOCAL</span> in the container's environment (<span class="mono">-e</span>) and recreate the container.{{else}}Set <span class="mono">TLSWATCH_NODE_ALLOW</span> (CIDRs, comma separated; empty means any) and <span class="mono">TLSWATCH_NODE_ALLOW_LOCAL</span> in the environment the node starts with, or the <span class="mono">-allow</span> flag, and restart it.{{end}} The change shows here a few minutes after the restart.</span></div>
+  {{- else}}
+  <div class="empty"><span>Not reported: this node runs a version from before the report. Update it to see its allowlist here.</span></div>
+  {{- end}}
+</section>
+{{end}}
+
 {{define "env-note"}}<span class="readonly-note">set by environment ({{.}})</span>{{end}}
 
 {{/* target-trust-fields, target-schedule-fields, target-org-fields: the settings a target shares with others, used by the target form and the bulk add form. dict "P" page "F" targetForm */}}

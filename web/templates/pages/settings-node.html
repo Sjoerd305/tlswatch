@@ -27,6 +27,7 @@
   <div class="sec"><h2>Reported by the machine</h2><span class="meta">enrolled {{since $p.Now $n.EnrolledAt}}</span></div>
   <div class="li">{{template "node-facts" (frag $p $n)}}</div>
 </section>
+{{template "node-limits" (frag $p $n)}}
 <form class="card form" method="post" action="/settings/nodes/{{$n.ID}}/confirm">
   {{template "csrf" $p.CSRF}}
   <div class="field"><label class="label" for="nname">Name</label><input id="nname" name="name" class="input" value="{{$d.Name}}" maxlength="80" required><span class="help">Shown under "Probe from" on targets, for example the customer or site.</span></div>
@@ -119,6 +120,7 @@
       </div>
       <div class="li"><form method="post" action="/settings/nodes/{{$n.ID}}/rotate" data-confirm="Revoke the current credential now and make a new install command? The node stops until the command runs on it.">{{template "csrf" $p.CSRF}}<button type="submit" class="btn-link">Rotate credential</button></form></div>
     </section>
+    {{template "node-limits" (frag $p $n)}}
     <section class="card form">
       <h3 class="h3">Remove from the machine</h3>
       {{template "cmd" $d.Uninstall}}

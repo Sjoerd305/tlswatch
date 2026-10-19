@@ -740,6 +740,28 @@ func TestAllowlist(t *testing.T) {
 
 func parse(s string) net.IP { return net.ParseIP(s) }
 
+// The node reports its allowlist and where it was set, and the server
+// keeps it with the facts for the node page.
+func TestLimitsReported(t *testing.T) {
+	e := setup(t)
+	c := e.client(t, "v1.2.0")
+	allow, err := ParseAllow("10.0.0.0/8,192.0.2.7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Allow, c.AllowLocal, c.AllowFrom = allow, true, core.NodeLimitsFlag
+	n := e.enrolled(t, c)
+	l := n.Facts.Limits
+	if l == nil || strings.Join(l.Allow, ",") != "10.0.0.0/8,192.0.2.7/32" || !l.AllowLocal || l.From != core.NodeLimitsFlag {
+		t.Fatalf("limits: %+v", l)
+	}
+	// Without a list the node probes anything, read from the environment.
+	c = e.client(t, "v1.2.0")
+	if l := c.facts().Limits; l == nil || len(l.Allow) != 0 || l.From != core.NodeLimitsEnv || l.AllowLocal {
+		t.Fatalf("no allowlist: %+v", l)
+	}
+}
+
 func TestIsRelease(t *testing.T) {
 	for v, want := range map[string]bool{"v1.2.0": true, "v0.10.3": true, "v1.2.0-rc1": false, "v0.2.0-5-g5efacf7": false, "v1.2.0-dirty": false,
 		"v0.2.0-5-g5efacf7-dirty": false, "2026.10.15-5efacf7": false, "dev": false, "0123456789ab": false} {

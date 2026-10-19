@@ -97,6 +97,12 @@ cat >"$ROOT$ENVFILE" <<EOF
 # tlswatch node, written by the install script from $SERVER
 TLSWATCH_NODE_SERVER=$SERVER
 TLSWATCH_NODE_DATA=$DATA
+# CIDRs this node may probe, comma separated; empty means any. The server
+# shows this list on the node's page but cannot change it. Restart the
+# service after a change: systemctl restart tlswatch-node
+#TLSWATCH_NODE_ALLOW=10.0.0.0/8,192.168.0.0/16
+# Also allow loopback and link-local addresses (Settings › General must too).
+#TLSWATCH_NODE_ALLOW_LOCAL=false
 # The node replaces its binary only with a release signed by the tlswatch
 # release key. TLSWATCH_NODE_NO_UPDATE=true keeps it on this binary;
 # TLSWATCH_NODE_ALLOW_UNSIGNED_UPDATE=true also follows development builds.

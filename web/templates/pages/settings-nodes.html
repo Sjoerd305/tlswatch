@@ -22,7 +22,7 @@
         {{- range $d.Rows}}{{$n := .N}}
           <tr{{if not $n.Enabled}} class="muted"{{end}}>
             <td data-label="Status" class="m-lead">{{template "node-status" .}}</td>
-            <td data-label="Name" class="m-lead"><a href="/settings/nodes/{{$n.ID}}" class="ink strong" data-row-link>{{if eq $n.State "enrolling"}}{{if $n.Name}}{{$n.Name}}{{else}}New node{{end}}{{else}}{{$n.Label}}{{end}}</a></td>
+            <td data-label="Name" class="m-lead"><a href="/settings/nodes/{{$n.ID}}" class="ink strong" data-row-link>{{if eq $n.State "enrolling"}}{{if $n.Name}}{{$n.Name}}{{else}}New node{{end}}{{else}}{{$n.Label}}{{end}}</a>{{with $n.Facts.Limits}}{{if .Allow}} <span class="tag" title="Probes only {{join .Allow ", "}}">allowlist</span>{{end}}{{end}}</td>
             <td data-label="Hostname" class="mono">{{or $n.Facts.Hostname "—"}}</td>
             <td data-label="Last seen" class="mono muted">{{if .S.LastSeen.IsZero}}never{{else}}{{since $p.Now .S.LastSeen.Unix}}{{end}}</td>
             <td data-label="Version" class="mono">{{or $n.Version "—"}}{{if .Note}} <span class="st sm {{.NoteClass}}">{{.Note}}</span>{{end}}</td>

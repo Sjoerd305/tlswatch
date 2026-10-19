@@ -400,6 +400,33 @@ func TestNodeFactsAuditIgnoresLinkLocal(t *testing.T) {
 	}
 }
 
+// A node that starts probing more, or less, shows in the audit log; its
+// first report of the limits, after an update, is not a change.
+func TestNodeFactsAuditAllowlist(t *testing.T) {
+	e := newEnv(t)
+	n := e.confirmedNode("edge")
+	report := func(l *NodeLimits) {
+		n, _ = e.svc.Node(e.ctx, n.ID)
+		if err := e.svc.SaveNodeFacts(e.ctx, n, NodeFacts{Hostname: "edge", Limits: l}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report(nil)
+	before := e.count("SELECT COUNT(*) FROM audit WHERE action = 'node.facts'")
+	report(&NodeLimits{Allow: []string{"10.0.0.0/8"}, From: NodeLimitsEnv})
+	report(&NodeLimits{Allow: []string{"10.0.0.0/8"}, From: NodeLimitsEnv, EnvFile: "/etc/tlswatch-node.env"})
+	if got := e.count("SELECT COUNT(*) FROM audit WHERE action = 'node.facts'"); got != before {
+		t.Fatalf("%d audit entries without a change of the allowlist", got-before)
+	}
+	report(&NodeLimits{From: NodeLimitsEnv, AllowLocal: true})
+	if got := e.count("SELECT COUNT(*) FROM audit WHERE action = 'node.facts' AND details LIKE '%allowlist 10.0.0.0/8 → any%' AND details LIKE '%local addresses false → true%'"); got != 1 {
+		t.Fatalf("a widened allowlist: %d entries", got)
+	}
+	if n, _ = e.svc.Node(e.ctx, n.ID); n.Facts.Limits == nil || !n.Facts.Limits.AllowLocal {
+		t.Fatalf("limits not stored: %+v", n.Facts.Limits)
+	}
+}
+
 // "N targets wait" counts the enabled targets only.
 func TestNodeOfflineCountsEnabledTargets(t *testing.T) {
 	e := newEnv(t)

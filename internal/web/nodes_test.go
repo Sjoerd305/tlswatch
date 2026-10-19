@@ -52,11 +52,13 @@ func TestAddNodeFlow(t *testing.T) {
 	// The machine enrols: the page shows what it reported.
 	if _, _, err := c.EnrolNode(ctx, tok, core.Enrolment{Address: "198.51.100.7", Version: "test",
 		Facts: core.NodeFacts{Hostname: "probe-ams1", OS: "Ubuntu 24.04 LTS", Arch: "linux/amd64",
-			Interfaces: []core.NodeInterface{{Name: "eth0", Addrs: []string{"10.0.3.2/24"}}}}}); err != nil {
+			Interfaces: []core.NodeInterface{{Name: "eth0", Addrs: []string{"10.0.3.2/24"}}},
+			Limits:     &core.NodeLimits{Allow: []string{"10.0.3.0/24", "10.9.0.0/16"}, From: core.NodeLimitsEnv, EnvFile: "/etc/tlswatch-node.env"}}}); err != nil {
 		t.Fatal(err)
 	}
 	page = hs.do(authz.Admin, http.MethodGet, loc, nil, false).Body.String()
-	for _, want := range []string{"probe-ams1", "Ubuntu 24.04 LTS", "10.0.3.2/24", "198.51.100.7", "Confirm node", `value="probe-ams1"`} {
+	for _, want := range []string{"probe-ams1", "Ubuntu 24.04 LTS", "10.0.3.2/24", "198.51.100.7", "Confirm node", `value="probe-ams1"`,
+		"Probe limits", "10.0.3.0/24", "10.9.0.0/16", "/etc/tlswatch-node.env", "systemctl restart tlswatch-node"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("arrival screen lacks %q", want)
 		}
@@ -84,6 +86,12 @@ func TestAddNodeFlow(t *testing.T) {
 	nodes := hs.do(authz.Admin, http.MethodGet, "/settings/nodes", nil, false).Body.String()
 	if !strings.Contains(nodes, "Amsterdam DC") || !strings.Contains(nodes, "probe-ams1") {
 		t.Error("nodes list lacks the node")
+	}
+	if !strings.Contains(nodes, `title="Probes only 10.0.3.0/24, 10.9.0.0/16">allowlist</span>`) {
+		t.Error("nodes list does not mark the restricted node")
+	}
+	if page := hs.do(authz.Admin, http.MethodGet, loc, nil, false).Body.String(); !strings.Contains(page, "Probe limits") || !strings.Contains(page, "10.9.0.0/16") {
+		t.Error("confirmed node page lacks its limits")
 	}
 	// Deleting it moves its target to this server.
 	if page := hs.do(authz.Admin, http.MethodGet, loc+"/delete", nil, false).Body.String(); !strings.Contains(page, "Move 1 to this server") {

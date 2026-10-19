@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sjoerd305/tlswatch/internal/config"
+	"github.com/sjoerd305/tlswatch/internal/core"
 	"github.com/sjoerd305/tlswatch/internal/node"
 )
 
@@ -33,6 +34,9 @@ type nodeFlags struct {
 	workers                    *int
 	allowLocal, insecure       *bool
 	noUpdate, allowUnsigned    *bool
+	// allowFlag is -allow given on the command line rather than read from
+	// TLSWATCH_NODE_ALLOW.
+	allowFlag bool
 	// envErr holds the environment variables that did not parse; the node
 	// refuses to start with them rather than ignore a setting.
 	envErr []error
@@ -112,6 +116,13 @@ func parseNodeFlags(fs *flag.FlagSet, args []string) error {
 	return nil
 }
 
+// flagGiven reports whether the flag name was on the command line.
+func flagGiven(fs *flag.FlagSet, name string) bool {
+	given := false
+	fs.Visit(func(f *flag.Flag) { given = given || f.Name == name })
+	return given
+}
+
 func envOr(k, def string) string {
 	if v := os.Getenv(k); v != "" {
 		return v
@@ -136,6 +147,10 @@ func nodeClient(f nodeFlags) (*node.Client, error) {
 		if c.Allow, err = node.ParseAllow(*f.allow); err != nil {
 			return nil, fmt.Errorf("-allow: %w", err)
 		}
+		c.AllowFrom = core.NodeLimitsEnv
+		if f.allowFlag {
+			c.AllowFrom = core.NodeLimitsFlag
+		}
 		c.AllowLocal = *f.allowLocal
 		c.NoUpdate, c.AllowUnsigned = *f.noUpdate, *f.allowUnsigned
 	}
@@ -155,6 +170,7 @@ func nodeCmd(args []string) error {
 	if err := parseNodeFlags(fs, args); err != nil {
 		return err
 	}
+	f.allowFlag = flagGiven(fs, "allow")
 	c, err := nodeClient(f)
 	if err != nil {
 		return err
