@@ -48,7 +48,8 @@ var wrapperAction = map[string]authz.Action{
 // publicRoutes are the only routes reachable without the role check.
 var publicRoutes = map[string]bool{
 	"GET /healthz": true, "GET /metrics": true, "GET /favicon.ico": true,
-	"GET /login": true, "POST /login": true, "POST /logout": true,
+	"GET /robots.txt": true, // demo mode only: a fixed text that keeps crawlers out
+	"GET /login":      true, "POST /login": true, "POST /logout": true,
 	"GET /login/code": true, "POST /login/code": true, // after the password, before the session
 	"GET /auth/google": true, "GET /auth/google/callback": true,
 	"GET /auth/oidc": true, "GET /auth/oidc/callback": true,

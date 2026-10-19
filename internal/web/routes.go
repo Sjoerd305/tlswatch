@@ -19,6 +19,9 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /metrics", s.metrics)
 	mux.HandleFunc("GET /favicon.ico", s.favicon)
+	if s.Demo {
+		mux.HandleFunc("GET /robots.txt", s.robots)
+	}
 
 	// Signed out.
 	mux.HandleFunc("GET /login", s.loginPage)

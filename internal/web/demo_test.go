@@ -135,3 +135,27 @@ func TestDemoTheme(t *testing.T) {
 		t.Errorf("no theme cookie: %q", rec.Header().Get("Set-Cookie"))
 	}
 }
+
+// No instance is indexed; a public demo also keeps crawlers out, while a
+// real instance, behind its sign-in, has no robots.txt.
+func TestNoIndex(t *testing.T) {
+	hs := newHarness(t)
+	if rec := hs.do(authz.Viewer, "GET", "/robots.txt", nil, false); rec.Code != http.StatusNotFound {
+		t.Errorf("robots.txt outside demo mode = %d, want 404", rec.Code)
+	}
+	for _, p := range []string{"/login", "/setup", "/", "/static/app.css"} {
+		if got := hs.do(authz.Viewer, "GET", p, nil, false).Header().Get("X-Robots-Tag"); got != "noindex, nofollow" {
+			t.Errorf("GET %s X-Robots-Tag = %q", p, got)
+		}
+	}
+	hs.demoMode()
+	rec := hs.do(authz.Demo, "GET", "/robots.txt", nil, false)
+	if rec.Code != http.StatusOK || rec.Body.String() != "User-agent: *\nDisallow: /\n" {
+		t.Errorf("robots.txt = %d %q", rec.Code, rec.Body.String())
+	}
+	for _, p := range []string{"/", "/targets", "/robots.txt"} {
+		if got := hs.do(authz.Demo, "GET", p, nil, false).Header().Get("X-Robots-Tag"); got != "noindex, nofollow" {
+			t.Errorf("GET %s X-Robots-Tag = %q", p, got)
+		}
+	}
+}

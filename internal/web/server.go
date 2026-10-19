@@ -198,6 +198,8 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		if ri.https {
 			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
+		// No instance belongs in search results, not even its sign-in page.
+		h.Set("X-Robots-Tag", "noindex, nofollow")
 
 		if strings.HasPrefix(r.URL.Path, "/static/") {
 			s.static.ServeHTTP(w, r)
@@ -665,6 +667,18 @@ const demoRefusal = "This is a demo: it shows the data, and nothing can be chang
 // setup, invitations, the account and the settings. A visit lands on the
 // overview.
 var demoClosed = []string{"/login", "/logout", "/setup", "/invite", "/auth/", "/account", "/settings"}
+
+// demoRobots is the demo's robots.txt: no crawling at all, as a public
+// demo's crawlers would otherwise walk every filter and sort of every page.
+// A real instance has none: a crawler only reaches its sign-in page, and it
+// must be let in to read the noindex there.
+const demoRobots = "User-agent: *\nDisallow: /\n"
+
+func (s *Server) robots(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	_, _ = w.Write([]byte(demoRobots))
+}
 
 // demoOpen makes the request a demo visitor's, or answers it: a closed
 // page redirects to the overview, and any write but the theme is refused.
