@@ -9,6 +9,7 @@ import (
 	"encoding/asn1"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/pem"
 	"slices"
 	"strings"
 	"testing"
@@ -197,6 +198,50 @@ func TestDistrustCrossSign(t *testing.T) {
 	withDistrusts(t, removal("Apple"))
 	if hits := Distrusted(chain, verified); len(hits) != 1 {
 		t.Fatalf("Apple: %+v", hits)
+	}
+}
+
+// emSignECCRootG3 is emSign ECC Root CA - G3 as Mozilla shipped it until
+// 20 October 2026; Chrome lists another encoding of the same key.
+const emSignECCRootG3 = `-----BEGIN CERTIFICATE-----
+MIICTjCCAdOgAwIBAgIKPPYHqWhwDtqLhDAKBggqhkjOPQQDAzBrMQswCQYDVQQGEwJJTjETMBEG
+A1UECxMKZW1TaWduIFBLSTElMCMGA1UEChMcZU11ZGhyYSBUZWNobm9sb2dpZXMgTGltaXRlZDEg
+MB4GA1UEAxMXZW1TaWduIEVDQyBSb290IENBIC0gRzMwHhcNMTgwMjE4MTgzMDAwWhcNNDMwMjE4
+MTgzMDAwWjBrMQswCQYDVQQGEwJJTjETMBEGA1UECxMKZW1TaWduIFBLSTElMCMGA1UEChMcZU11
+ZGhyYSBUZWNobm9sb2dpZXMgTGltaXRlZDEgMB4GA1UEAxMXZW1TaWduIEVDQyBSb290IENBIC0g
+RzMwdjAQBgcqhkjOPQIBBgUrgQQAIgNiAAQjpQy4LRL1KPOxst3iAhKAnjlfSU2fySU0WXTsuwYc
+58Byr+iuL+FBVIcUqEqy6HyC5ltqtdyzdc6LBtCGI79G1Y4PPwT01xySfvalY8L1X44uT6EYGQIr
+MgqCZH0Wk9GjQjBAMB0GA1UdDgQWBBR8XQKEE9TMipuBzhccLikenEhjQjAOBgNVHQ8BAf8EBAMC
+AQYwDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAwNpADBmAjEAvvNhzwIQHWSVB7gYboiFBS+D
+CBeQyh+KTOgNG3qxrdWBCUfvO6wIBHxcmbHtRwfSAjEAnbpV/KlK6O3t5nYBQnvI+GDZjVGLVTv7
+jHvrZQnD+JbNR6iC8hZVdyR+EhCVBCyj
+-----END CERTIFICATE-----`
+
+// The eMudhra rows match the real root by its key and key ID, and the
+// programs that removed it no longer count it as a root they trust.
+func TestDistrustEMudhra(t *testing.T) {
+	b, _ := pem.Decode([]byte(emSignECCRootG3))
+	root, err := x509.ParseCertificate(b.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := anchorOf(root)
+	var programs []string
+	for _, ev := range DistrustsOf(root, false) {
+		if ev.CA == "eMudhra" {
+			programs = append(programs, ev.Program)
+			if ev.Anchors[0].SKI != a.SKI {
+				t.Errorf("%s: key ID %s, the root has %s", ev.Program, ev.Anchors[0].SKI, a.SKI)
+			}
+		}
+	}
+	if !slices.Equal(programs, []string{"Mozilla", "Chrome"}) {
+		t.Fatalf("eMudhra events for the root: %v", programs)
+	}
+	for _, p := range programs {
+		if programRoots[p][a.SPKI] {
+			t.Errorf("%s still lists the root as trusted", p)
+		}
 	}
 }
 

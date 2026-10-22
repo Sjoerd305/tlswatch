@@ -2,8 +2,10 @@
 
 Newest first, one line per change.
 
-## Unreleased
+## v0.1.2 — 2026-10-22
 
+- Built with Go 1.27.3, whose certificate verifier refuses chains through the eight compromised eMudhra intermediates (EM DV/OV/EV TLS CA - G3B and - G3C, EM OV CS CA - G3B and - G3C, blocked by their key, so the cross-signs under AAA Certificate Services too). A target served through one of them now reports `chain_untrusted` instead of passing. The build image is pinned to `golang:1.27.3-alpine`.
+- Distrust calendar: Mozilla's removal of emSign ECC Root CA - G3 from NSS on 20 October 2026 and Chrome's from its root store on 27 October 2026, after eight of eMudhra's intermediates had their keys compromised. Certificates under that root report `distrusted_ca`, a warning for Chrome until the 27th and critical for Mozilla already. The root no longer counts as trusted by either program for cross-signs. `DistrustTable` is 2.
 - Filter chip counts follow the other filters. On Targets, Domains, Certificates and the domain page, each chip counts the rows it would show under the filter text and the other groups' active chips, updated live as filters change; a chip that would show nothing is dimmed with a count of 0.
 - No instance is indexed by search engines: every response carries `X-Robots-Tag: noindex, nofollow`, and a demo also serves a `robots.txt` that disallows all crawling.
 

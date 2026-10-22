@@ -83,7 +83,7 @@ func (ev DistrustEvent) issued(leaf *x509.Certificate) time.Time {
 // raises it. Every check evaluates the table in the binary, so a new table
 // applies to every target at its next check, on the server, without a node
 // update.
-const DistrustTable = 1
+const DistrustTable = 2
 
 // DistrustsOf returns the events whose anchors include c itself, or with
 // issuer set, c's issuer.

@@ -14,6 +14,8 @@ import (
 // for removals are when the root left the Chrome Root Store source, as
 // Chrome announces no release for them. Mozilla's 2027 root-age date is its
 // published target; the release that ships it may come a few weeks later.
+// The eMudhra removals were added on 22 October 2026: Mozilla's date is
+// the day the root left NSS, and Chrome's the release Chrome announced.
 
 // distrustAnchors are the CA certificates the events cover, by fingerprint.
 var distrustAnchors = map[string]Anchor{
@@ -40,6 +42,7 @@ var distrustAnchors = map[string]Anchor{
 	"4348a0e9444c78cb265e058d5e8944b4d84f9662bd26db257f8934a443c70161": {Name: "DigiCert Global Root CA", SPKI: "aff988906dde12955d9bebbf928fdcc31cce328d5b9384f21c8941ca26e20391", SKI: "03de503556d14cbb66f0a3e21b1bc397b23dd155"},
 	"7431e5f4c3c1ce4690774f0b61e05440883ba9a01ed00ba6abd7806ed3b118cf": {Name: "DigiCert High Assurance EV Root CA", SPKI: "5a889647220e54d6bd8a16817224520bb5c78e58984bd570506388b9de0f075f", SKI: "b13ec36903f8bf4701d498261a0802ef63642bc3"},
 	"bc4d809b15189d78db3e1d8cf4f9726a795da1643ca5f1358e1ddb0edc0d7eb3": {Name: "emSign ECC Root CA - C3", SPKI: "eabc185c4e82d942b1a5978ba3c0181487d6b3b9974e5c49f72f6d0bd9637150", SKI: "fb5a48d0802040f2a8e90007691977a7e6c3f4cf"},
+	"86a1ecba089c4a8d3bbe2734c612ba341d813e043cf9e8a862cd5c57a36bbe6b": {Name: "emSign ECC Root CA - G3", SPKI: "8d417db2dd8bf5e3084d1e3f196d583849d81bdd4c00c70b9d39369e96b8c782", SKI: "7c5d028413d4cc8a9b81ce171c2e291e9c486342"},
 	"125609aa301da0a249b97a8239cb6a34216f44dcac9f3954b14292f2e8c8608f": {Name: "emSign Root CA - C1", SPKI: "b7408b4d2be0238ba37004dd34e276c6019bd2f24c9db7d4980f5f6c359a4bcc", SKI: "fea1e0701e2a0339525a42be5c91857a18aa4db5"},
 	"73c176434f1bc6d5adf45b0e76e727287c8de57616c1e6e6141a2b2cbc7d8e4c": {Name: "Entrust Root Certification Authority", SPKI: "6dbfae00d37b9cd73f8fb47de65917af00e0dddf42dbceac20c17c0275ee2095", SKI: "6890e467a4a65380c78666a4f1f74b43fb84bd6d"},
 	"02ed0eb28c14da45165c566791700d6451d7fb56f0b2ab1d3b8eb070e56edff5": {Name: "Entrust Root Certification Authority - EC1", SPKI: "fea2b7d645fba73d753c1ec9a7870c40e1f7b0c561e927b985bf711866e36f22", SKI: "b763e71add8de908a65583a4e06a504165114249"},
@@ -157,15 +160,20 @@ var Distrusts = []DistrustEvent{
 		Anchors: of("4348a0e9444c78cb265e058d5e8944b4d84f9662bd26db257f8934a443c70161", "7431e5f4c3c1ce4690774f0b61e05440883ba9a01ed00ba6abd7806ed3b118cf", "3e9099b5015e8f486c00bcea9d111ee721faba355a89bcf1df69561e3dc6325c", "85a0dd7dd720adb7ff05f83d542b209dc7ff4528f7d677b18389fea5e5c49e86", "62dd0be9b9f50a163ea0f8e75c053b1eca57ea55c8688f647c6881f2c8357b95", "dd6936fe21f8f077c123a1a521c12224f72255b73e03a7260693e8a24b0fa389", "f1c1b50ae5a20dd8030ec9f6bc24823dd367b5255759b4e71b61fce9f7375d73", "eaa962c4fa4a6bafebe415196d351ccd888d4f53f3fa8ae6d7c466a94e6042bb", "e3b6a2db2ed7ce48842f7ac53241c7b71d54144bfb40c11f3f1d0b42f5eea12d", "97552015f5ddfc3c8788c006944555408894450084f100867086bc1a2bb58dc8", "945bbc825ea554f489d1fd51a73ddf2ea624ac7019a05205225c22a78ccfa8b4", "55903859c8c0c3ebb8759ece4e2557225ff5758bbd38ebd48276601e1bd58097")},
 	{CA: "Atos", Program: "Chrome", Effective: at("2026-06-20T00:00:00Z"), Description: "removed from the Chrome Root Store", Link: "https://chromium.googlesource.com/chromium/src/+/main/net/data/ssl/chrome_root_store/root_store.textproto",
 		Anchors: of("f356bea244b7a91eb35d53ca9ad7864ace018e2d35d5f8f96ddf68a6f41aa474")},
+	{CA: "eMudhra", Program: "Mozilla", Effective: at("2026-10-20T00:00:00Z"), Description: "removed from NSS in an emergency after eight of its intermediates' keys were compromised", Link: "https://bugzilla.mozilla.org/show_bug.cgi?id=2084101",
+		Anchors: of("86a1ecba089c4a8d3bbe2734c612ba341d813e043cf9e8a862cd5c57a36bbe6b")},
+	{CA: "eMudhra", Program: "Chrome", Effective: at("2026-10-27T00:00:00Z"), Description: "removed from the Chrome Root Store after eight of its intermediates' keys were compromised", Link: "https://blog.google/security/protecting-chrome-and-android-users-from-compromised-emudhra-intermediate-ca-certificates/",
+		Anchors: of("86a1ecba089c4a8d3bbe2734c612ba341d813e043cf9e8a862cd5c57a36bbe6b")},
 }
 
 // programRoots are the public key hashes of the roots each program trusts
 // for websites today: Chrome's root_store.textproto as of 9 October 2026
 // (100 anchors) and the server-auth roots of Firefox 155's certdata.txt
-// (121). A chain that also leads to one of them is anchored there by that
-// program, whatever old root the server sends a cross-sign from. Apple
-// and Microsoft publish no such list, so their events judge the anchor
-// alone.
+// (121), both less emSign ECC Root CA - G3, which they removed on 20
+// October 2026. A chain that also leads to one of them is anchored there
+// by that program, whatever old root the server sends a cross-sign from.
+// Apple and Microsoft publish no such list, so their events judge the
+// anchor alone.
 var programRoots = map[string]map[string]bool{
 	"Chrome":  keySet(chromeRootKeys),
 	"Mozilla": keySet(mozillaRootKeys),
@@ -200,7 +208,7 @@ const chromeRootKeys = `
 	7e0ead76bb6819dc2f54511a84354f6e8b307b9dd82058ea6c004f01d9dda5df 7f4296fc5b6a4e3b35d3c369623e364ab1af381d8fa7121533c9d6c633ea2461
 	808d68b3fab4884a5f971ace7d10550d7a95a163774f3ec36afffb213fbe4c74 82b5f84daf47a59c7ab521e4982aefa40a53406a3aec26039efa6b2e0e7244c1
 	871a9194f4eed5b312ff40c84c1d524aed2f778bbff25f138cf81f680a7adc67 8bb593a93be1d0e8a822bb887c547890c3e706aad2dab76254f97fb36b82fc26
-	8d417db2dd8bf5e3084d1e3f196d583849d81bdd4c00c70b9d39369e96b8c782 8d767764b3cbda08929d072a22a561f4dcdd1bc57d3cbddc948c47d2b47f9122
+	8d767764b3cbda08929d072a22a561f4dcdd1bc57d3cbddc948c47d2b47f9122
 	8e8046ec4cac015a507ce0d2d0154a4b40e8e42b3165cfa546571435112d17e5 952c2039c0243eb515dd73d83fc3643184874feb0862a9837731ed9b4742e17a
 	9847e5653e5e9e847516e5cb818606aa7544a19be67fd7366d506988e8d84347 9a52ff6a3cb6e353a08567e0dc9c395b300d60a22292ab8c18c1656b2983ae90
 	9d37e4a989eab3882d116052fc8b58446702cb593726e4604c3795940c7103e2 a02fafa192c8cb81cb1341554f9c05b71cca2a890b0d1298d683647c961efbdf
@@ -259,7 +267,7 @@ const mozillaRootKeys = `
 	808d68b3fab4884a5f971ace7d10550d7a95a163774f3ec36afffb213fbe4c74 82b5f84daf47a59c7ab521e4982aefa40a53406a3aec26039efa6b2e0e7244c1
 	8685ad850f7f56cd16943bcb70b434e7356e1b8bdc613406e2ea8de46092b636 86a68f050034126a540d39db2c5f917ef66a94fb9619fa1ecd827cea46ba0cb0
 	871a9194f4eed5b312ff40c84c1d524aed2f778bbff25f138cf81f680a7adc67 8bb593a93be1d0e8a822bb887c547890c3e706aad2dab76254f97fb36b82fc26
-	8d417db2dd8bf5e3084d1e3f196d583849d81bdd4c00c70b9d39369e96b8c782 8d767764b3cbda08929d072a22a561f4dcdd1bc57d3cbddc948c47d2b47f9122
+	8d767764b3cbda08929d072a22a561f4dcdd1bc57d3cbddc948c47d2b47f9122
 	8e8046ec4cac015a507ce0d2d0154a4b40e8e42b3165cfa546571435112d17e5 92c46879626ef2cc1ecea50c72fb5e385844095f21cbf3b283cb82e6b9fc6a58
 	952c2039c0243eb515dd73d83fc3643184874feb0862a9837731ed9b4742e17a 9847e5653e5e9e847516e5cb818606aa7544a19be67fd7366d506988e8d84347
 	9a52ff6a3cb6e353a08567e0dc9c395b300d60a22292ab8c18c1656b2983ae90 9d37e4a989eab3882d116052fc8b58446702cb593726e4604c3795940c7103e2
