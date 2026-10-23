@@ -81,12 +81,12 @@ func (s *Service) Evaluate(ctx context.Context, t Target, r probe.Result, st con
 		for rows.Next() {
 			var k string
 			if err := rows.Scan(&k); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return check.Outcome{}, err
 			}
 			prev.Open[check.Kind(k)] = true
 		}
-		rows.Close()
+		_ = rows.Close()
 		if prev.Recent, err = s.recentLeaves(ctx, t.ID); err != nil {
 			return check.Outcome{}, err
 		}
@@ -465,6 +465,7 @@ func updateTargetTx(ctx context.Context, tx *sql.Tx, t Target, r probe.Result, o
 		args = append(args, out.PinFP)
 	}
 	args = append(args, t.ID)
+	// #nosec G202 -- set holds the "column=?" literals above; the values are in args
 	_, err := tx.ExecContext(ctx, "UPDATE targets SET "+strings.Join(set, ", ")+" WHERE id=?", args...)
 	return err
 }
@@ -546,12 +547,12 @@ func (s *Service) refreshStatusTx(ctx context.Context, tx *sql.Tx, id int64) (st
 		for rows.Next() {
 			var f check.Finding
 			if err := rows.Scan(&f.Kind, &f.Severity); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return "", err
 			}
 			open = append(open, f)
 		}
-		rows.Close()
+		_ = rows.Close()
 		if err := rows.Err(); err != nil {
 			return "", err
 		}

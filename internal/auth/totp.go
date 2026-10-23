@@ -367,12 +367,12 @@ func ReencryptTOTP(ctx context.Context, tx *sql.Tx, old, new *secret.Key) (n int
 	for rows.Next() {
 		var r row
 		if err := rows.Scan(&r.id, &r.email, &r.blob); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return 0, nil, err
 		}
 		all = append(all, r)
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return 0, nil, err
 	}

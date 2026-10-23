@@ -71,7 +71,7 @@ func open(path string, migrate bool) (*DB, error) {
 	}
 	w.SetMaxOpenConns(1)
 	if err := w.Ping(); err != nil {
-		w.Close()
+		_ = w.Close()
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 	if fresh {
@@ -79,27 +79,27 @@ func open(path string, migrate bool) (*DB, error) {
 		// hashes and sealed credentials, so only the owner reads it. The
 		// WAL and shm files take the main file's mode.
 		if err := os.Chmod(path, 0o600); err != nil {
-			w.Close()
+			_ = w.Close()
 			return nil, fmt.Errorf("open database: %w", err)
 		}
 	}
 	d := &DB{W: w, Path: path}
 	if migrate {
 		if err := d.Migrate(context.Background()); err != nil {
-			w.Close()
+			_ = w.Close()
 			return nil, err
 		}
 	}
 	r, err := sql.Open("sqlite", dsnR)
 	if err != nil {
-		w.Close()
+		_ = w.Close()
 		return nil, err
 	}
 	if path == ":memory:" {
 		// Shared-cache in-memory databases need the writer to keep the
 		// database alive; reads share its single connection to avoid
 		// table-lock errors.
-		r.Close()
+		_ = r.Close()
 		r = w
 	} else {
 		r.SetMaxOpenConns(8)
@@ -260,7 +260,7 @@ func (d *DB) Restore(ctx context.Context, path string, guard func(context.Contex
 			return fmt.Errorf("restore: %w", err)
 		}
 		if _, err := b.Step(-1); err != nil {
-			b.Finish()
+			_ = b.Finish()
 			return fmt.Errorf("restore: %w", err)
 		}
 		return b.Finish()

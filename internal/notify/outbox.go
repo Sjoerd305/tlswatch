@@ -151,7 +151,7 @@ func (d *Dispatcher) Flush(ctx context.Context) error {
 		var k batchKey
 		if err := rows.Scan(&p.id, &k.channel, &k.delivered, &p.ref, &p.createdAt, &p.attempts, &p.msg.Subject, &p.msg.Body, &p.msg.HTML,
 			&p.msg.Event, &p.msg.FindingID); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return err
 		}
 		if p.msg.Event == EventDigest || solo(kinds[k.channel]) {
@@ -162,7 +162,7 @@ func (d *Dispatcher) Flush(ctx context.Context) error {
 		}
 		batches[k] = append(batches[k], p)
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return err
 	}
@@ -410,7 +410,7 @@ func (d *Dispatcher) SendNow(ctx context.Context, chIDs []int64, event string, m
 	for _, id := range chIDs {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO alerts(channel_id, event, created_at, next_attempt, subject, body, html) VALUES(?,?,?,?,?,?,?)`,
 			id, event, now.Unix(), now.Unix(), m.Subject, m.Body, m.HTML); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return err
 		}
 	}

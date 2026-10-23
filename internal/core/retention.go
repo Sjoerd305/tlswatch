@@ -77,12 +77,12 @@ func (s *Service) pruneCertificates(ctx context.Context, cut int64) error {
 	for rows.Next() {
 		var fp string
 		if err := rows.Scan(&fp); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return err
 		}
 		candidates[fp] = true
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil || len(candidates) == 0 {
 		return err
 	}
@@ -93,7 +93,7 @@ func (s *Service) pruneCertificates(ctx context.Context, cut int64) error {
 	for rows.Next() {
 		var leaf, chain string
 		if err := rows.Scan(&leaf, &chain); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return err
 		}
 		delete(candidates, leaf)
@@ -103,7 +103,7 @@ func (s *Service) pruneCertificates(ctx context.Context, cut int64) error {
 			delete(candidates, strings.TrimPrefix(ref, "root:"))
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return err
 	}

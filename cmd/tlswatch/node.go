@@ -200,7 +200,7 @@ func nodeCmd(args []string) error {
 	if errors.Is(err, node.ErrRestart) {
 		stop()
 		c.Log.Info("starting the new binary", "path", self)
-		// #nosec G204 -- this program's own path and arguments
+		// #nosec G204 G702 -- this program's own path and arguments
 		if err := syscall.Exec(self, os.Args, os.Environ()); err != nil {
 			// systemd (Restart=always) or the container's restart policy
 			// starts it instead.

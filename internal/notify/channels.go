@@ -341,12 +341,12 @@ func Reencrypt(ctx context.Context, tx *sql.Tx, old, new *secret.Key) (n int, un
 	for rows.Next() {
 		var r row
 		if err := rows.Scan(&r.id, &r.name, &r.blob); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return 0, nil, err
 		}
 		all = append(all, r)
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return 0, nil, err
 	}
@@ -384,7 +384,7 @@ func (s *Channels) List(ctx context.Context) ([]Channel, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	rows.Close()
+	_ = rows.Close()
 	since := s.now().Add(-30 * 24 * time.Hour).Unix()
 	for i := range out {
 		c := &out[i]

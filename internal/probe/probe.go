@@ -469,7 +469,7 @@ var cipherSuites = func() []uint16 {
 func clientConfig(serverName string) *tls.Config {
 	return &tls.Config{
 		ServerName:         strings.TrimSuffix(serverName, "."),
-		InsecureSkipVerify: true, //nolint:gosec // the chain is verified explicitly in verify()
+		InsecureSkipVerify: true, // #nosec G402 -- the chain is verified explicitly in verify()
 		MinVersion:         tls.VersionTLS10,
 		CipherSuites:       cipherSuites,
 	}
@@ -619,7 +619,7 @@ func HasIPv6Route() bool {
 	c, err := net.Dial("udp6", "[2001:4860:4860::8888]:53")
 	v6route.ok = err == nil
 	if c != nil {
-		c.Close()
+		_ = c.Close()
 	}
 	v6route.checked = time.Now()
 	return v6route.ok

@@ -450,6 +450,17 @@ func readCookie(r *http.Request, base string, https bool) (*http.Cookie, error) 
 	return r.Cookie(cookieName(base, https))
 }
 
+// setCookie sets a cookie the way every cookie of the UI is set: HttpOnly,
+// SameSite=Lax and Secure over HTTPS. Secure follows the request's scheme
+// rather than being always on, because an instance on plain HTTP (a fresh
+// install before its base URL is set, a loopback listener) would never get
+// a Secure cookie back and nobody could sign in. maxAge 0 is a session
+// cookie, -1 deletes.
+func setCookie(w http.ResponseWriter, https bool, name, value, path string, maxAge int) {
+	// #nosec G124 -- Secure follows the scheme, see above
+	http.SetCookie(w, &http.Cookie{Name: name, Value: value, Path: path, HttpOnly: true, Secure: https, SameSite: http.SameSiteLaxMode, MaxAge: maxAge})
+}
+
 // preCSRF returns (and sets) the double-submit token for signed-out forms.
 func (s *Server) preCSRF(w http.ResponseWriter, r *http.Request) string {
 	https := info(r).https
@@ -457,17 +468,17 @@ func (s *Server) preCSRF(w http.ResponseWriter, r *http.Request) string {
 		return c.Value
 	}
 	v := randomString(24)
-	http.SetCookie(w, &http.Cookie{Name: cookieName(csrfCookie, https), Value: v, Path: "/", HttpOnly: true, Secure: https, SameSite: http.SameSiteLaxMode, MaxAge: 86400})
+	setCookie(w, https, cookieName(csrfCookie, https), v, "/", 86400)
 	return v
 }
 
 func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request, raw string) {
 	https := info(r).https
-	http.SetCookie(w, &http.Cookie{Name: cookieName(sessionCookie, https), Value: raw, Path: "/", HttpOnly: true, Secure: https, SameSite: http.SameSiteLaxMode})
+	setCookie(w, https, cookieName(sessionCookie, https), raw, "/", 0)
 }
 
 func (s *Server) clearCookie(w http.ResponseWriter, name string, ri *reqInfo) {
-	http.SetCookie(w, &http.Cookie{Name: cookieName(name, ri.https), Value: "", Path: "/", HttpOnly: true, Secure: ri.https, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	setCookie(w, ri.https, cookieName(name, ri.https), "", "/", -1)
 }
 
 // baseURL is the configured public URL, or one derived from the request.
@@ -607,7 +618,7 @@ func (s *Server) setFlash(w http.ResponseWriter, r *http.Request, notice, kind s
 		kind = "ok"
 	}
 	v := base64.RawURLEncoding.EncodeToString([]byte(kind + "|" + notice))
-	http.SetCookie(w, &http.Cookie{Name: flashCookie, Value: v, Path: "/", HttpOnly: true, Secure: info(r).https, SameSite: http.SameSiteLaxMode, MaxAge: 60})
+	setCookie(w, info(r).https, flashCookie, v, "/", 60)
 }
 
 // flash reads and clears the notice set by back.

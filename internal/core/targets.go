@@ -80,11 +80,12 @@ const targetOrder = " ORDER BY t.enabled DESC, CASE WHEN t.not_after = 0 THEN 1 
 func (s *Service) queryTargets(ctx context.Context, where string, limit int, args ...any) ([]Target, error) {
 	q := "SELECT " + targetCols + targetFrom
 	if where != "" {
-		q += " WHERE " + where
+		q += " WHERE " + where // #nosec G202 -- a clause of this package's own; its values are in args
 	}
 	q += targetOrder
 	if limit > 0 {
-		q += fmt.Sprintf(" LIMIT %d", limit)
+		q += " LIMIT ?"
+		args = append(args, limit)
 	}
 	rows, err := s.DB.R.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -106,7 +107,7 @@ func (s *Service) queryTargets(ctx context.Context, where string, limit int, arg
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	rows.Close()
+	_ = rows.Close()
 	certs, err := s.certificatesByFP(ctx, fps)
 	if err != nil {
 		return nil, err
@@ -125,6 +126,7 @@ func (s *Service) certificatesByFP(ctx context.Context, fps []any) (map[string]C
 	if len(fps) == 0 {
 		return m, nil
 	}
+	// #nosec G202 -- a constant column list and one placeholder per value
 	rows, err := s.DB.R.QueryContext(ctx, "SELECT "+certListCols+" FROM certificates WHERE fingerprint IN (?"+strings.Repeat(",?", len(fps)-1)+")", fps...)
 	if err != nil {
 		return nil, err
@@ -553,6 +555,7 @@ func (s *Service) Schedule(ctx context.Context) (map[int64]Slotted, error) {
 // the legacy test is forgotten, the debounce streaks start over and the
 // next check is due now.
 func newVantageTx(ctx context.Context, tx *sql.Tx, where string, args ...any) error {
+	// #nosec G202 -- where is a clause of this package's own; its values are in args
 	_, err := tx.ExecContext(ctx, `UPDATE targets SET legacy_checked = 0, legacy_accepted = '', grade = '', grade_reasons = '', grade_rules = 0, config_test = '', pq = '', fail_streak = 0, ok_streak = 0,
 		dns_fail_streak = 0, dns_ok_streak = 0, next_check = 0 WHERE `+where, args...)
 	return err
@@ -563,7 +566,7 @@ func newVantageTx(ctx context.Context, tx *sql.Tx, where string, args ...any) er
 func Slot(id int64, interval time.Duration) time.Duration {
 	h := fnv.New64a()
 	fmt.Fprintf(h, "tlswatch-%d", id)
-	return time.Duration(h.Sum64()%uint64(interval/time.Second)) * time.Second
+	return time.Duration(h.Sum64()%uint64(interval/time.Second)) * time.Second // #nosec G115 -- below the interval, which is positive
 }
 
 // NextCheck returns the next slot of the target after a check at now.

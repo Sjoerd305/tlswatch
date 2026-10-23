@@ -335,12 +335,12 @@ func (s *Service) Remind(ctx context.Context) (int, error) {
 		}
 		al := s.newAlerter(tx, st, t, chans, now)
 		if err := al.send(ctx, f, notify.EventRemind); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return queued, err
 		}
 		queued += al.queued
 		if _, err := tx.ExecContext(ctx, "UPDATE findings SET last_alert_at = ? WHERE id = ?", now.Unix(), f.ID); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return queued, err
 		}
 		if err := tx.Commit(); err != nil {

@@ -59,7 +59,7 @@ func (s *Server) providerConfig(r *http.Request, provider string) (auth.OIDCConf
 
 func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
 	if info(r).session != nil {
-		http.Redirect(w, r, safeNext(r.URL.Query().Get("next")), http.StatusSeeOther)
+		http.Redirect(w, r, safeNext(r.URL.Query().Get("next")), http.StatusSeeOther) // #nosec G710 -- safeNext keeps only a path on this origin
 		return
 	}
 	if s.needsSetup(r) {
@@ -85,8 +85,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	u, err := s.Auth.Login(r.Context(), email, r.PostFormValue("password"), info(r).ip)
 	if errors.Is(err, auth.ErrSecondFactor) {
 		https := info(r).https
-		http.SetCookie(w, &http.Cookie{Name: cookieName(mfaCookie, https), Value: s.Auth.SealMFA(u.ID, d.Next), Path: "/", HttpOnly: true,
-			Secure: https, SameSite: http.SameSiteLaxMode, MaxAge: 300})
+		setCookie(w, https, cookieName(mfaCookie, https), s.Auth.SealMFA(u.ID, d.Next), "/", 300)
 		http.Redirect(w, r, "/login/code", http.StatusSeeOther)
 		return
 	}
@@ -179,7 +178,7 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, u auth.Use
 	}
 	s.setSessionCookie(w, r, raw)
 	if u.Theme != "" {
-		http.SetCookie(w, &http.Cookie{Name: themeCookie, Value: u.Theme, Path: "/", Secure: info(r).https, SameSite: http.SameSiteLaxMode, MaxAge: 365 * 86400})
+		setCookie(w, info(r).https, themeCookie, u.Theme, "/", 365*86400)
 	}
 	s.Log.Info("signed in", "user", u.Email, "method", u.Method)
 	http.Redirect(w, r, safeNext(next), http.StatusSeeOther)
@@ -211,8 +210,7 @@ func (s *Server) ssoStart(provider string) http.HandlerFunc {
 			s.serverError(w, r, err)
 			return
 		}
-		http.SetCookie(w, &http.Cookie{Name: oidcCookie, Value: s.Auth.SealState(st), Path: "/auth/" + provider, HttpOnly: true,
-			Secure: info(r).https, SameSite: http.SameSiteLaxMode, MaxAge: 600})
+		setCookie(w, info(r).https, oidcCookie, s.Auth.SealState(st), "/auth/"+provider, 600)
 		http.Redirect(w, r, redirect, http.StatusFound)
 	}
 }
@@ -222,7 +220,7 @@ func (s *Server) ssoStart(provider string) http.HandlerFunc {
 func (s *Server) ssoCallback(provider string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie(oidcCookie)
-		http.SetCookie(w, &http.Cookie{Name: oidcCookie, Value: "", Path: "/auth/" + provider, MaxAge: -1, HttpOnly: true, Secure: info(r).https})
+		setCookie(w, info(r).https, oidcCookie, "", "/auth/"+provider, -1)
 		if err != nil {
 			http.Redirect(w, r, "/login?error=expired", http.StatusSeeOther)
 			return

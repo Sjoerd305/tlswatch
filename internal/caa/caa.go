@@ -272,7 +272,7 @@ func exchange(ctx context.Context, network, server string, q []byte, id uint16, 
 	defer stop()
 	var resp []byte
 	if network == "tcp" {
-		msg := binary.BigEndian.AppendUint16(nil, uint16(len(q)))
+		msg := binary.BigEndian.AppendUint16(nil, uint16(len(q))) // #nosec G115 -- a query of this package's making, a few hundred bytes
 		if _, err := conn.Write(append(msg, q...)); err != nil {
 			return nil, err
 		}
@@ -368,7 +368,7 @@ func decode(b []byte) (Record, error) {
 
 // encode is decode's reverse, for tests and fakes.
 func encode(r Record) []byte {
-	out := []byte{r.Flags, byte(len(r.Tag))}
+	out := []byte{r.Flags, byte(len(r.Tag))} // #nosec G115 -- a tag of this package's making, a few bytes
 	out = append(out, r.Tag...)
 	return append(out, r.Value...)
 }

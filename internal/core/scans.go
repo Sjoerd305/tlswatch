@@ -359,7 +359,7 @@ func (s *Service) ScanResults(ctx context.Context, id int64) ([]ScanResult, erro
 		var t Target
 		var addr string
 		if err := rows.Scan(&t.ID, &t.Name, &t.Host, &t.Port, &addr); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		covered[t.Host+"|"+strconv.Itoa(t.Port)] = t
@@ -367,7 +367,7 @@ func (s *Service) ScanResults(ctx context.Context, id int64) ([]ScanResult, erro
 			covered[addr+"|"+strconv.Itoa(t.Port)] = t
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}

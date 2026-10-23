@@ -69,7 +69,7 @@ func VerifyPassword(encoded, pw string) bool {
 	if err != nil || len(want) == 0 || len(want) > 128 {
 		return false
 	}
-	got := argon2.IDKey([]byte(pw), salt, t, m, p, uint32(len(want)))
+	got := argon2.IDKey([]byte(pw), salt, t, m, p, uint32(len(want))) // #nosec G115 -- at most 128, checked above
 	return subtle.ConstantTimeCompare(got, want) == 1
 }
 

@@ -47,12 +47,12 @@ func (s *Service) Metrics(ctx context.Context) (Metrics, error) {
 			var k string
 			var n int
 			if err := rows.Scan(&k, &n); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return m, err
 			}
 			c.into[k] = n
 		}
-		rows.Close()
+		_ = rows.Close()
 		if err := rows.Err(); err != nil {
 			return m, err
 		}

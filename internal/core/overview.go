@@ -94,7 +94,7 @@ func (s *Service) Overview(ctx context.Context) (Overview, error) {
 		var status string
 		var n int
 		if err := rows.Scan(&status, &n); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return o, err
 		}
 		o.Total += n
@@ -116,7 +116,7 @@ func (s *Service) Overview(ctx context.Context) (Overview, error) {
 			o.Pending = n
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return o, err
 	}

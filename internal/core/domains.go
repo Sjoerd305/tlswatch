@@ -430,7 +430,7 @@ func (s *Service) DomainDue(d Domain, st config.Settings, now time.Time) bool {
 	every := time.Duration(st.CT.IntervalS) * time.Second
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(d.Name))
-	jitter := time.Duration(h.Sum32()%uint32(every/4/time.Second+1)) * time.Second
+	jitter := time.Duration(h.Sum32()%uint32(every/4/time.Second+1)) * time.Second // #nosec G115 -- at most a quarter of the interval
 	if d.FailSince > 0 {
 		jitter = 0
 	}
@@ -717,12 +717,12 @@ func (s *Service) SweepIssuances(ctx context.Context) error {
 	for rows.Next() {
 		i, err := scanIssuance(rows)
 		if err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return err
 		}
 		list = append(list, i)
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return err
 	}
@@ -785,12 +785,12 @@ func (s *Service) MatchIssuances(ctx context.Context, fp string) error {
 	for rows.Next() {
 		i, err := scanIssuance(rows)
 		if err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return err
 		}
 		list = append(list, i)
 	}
-	rows.Close()
+	_ = rows.Close()
 	st := s.CurrentSettings(ctx)
 	for _, i := range list {
 		if err := s.issuanceServed(ctx, i, fp, st); err != nil {
@@ -1055,12 +1055,12 @@ func (s *Service) IssuanceStats(ctx context.Context) (map[string]int, []Domain, 
 		var k string
 		var n int
 		if err := rows.Scan(&k, &n); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, nil, err
 		}
 		by[k] = n
 	}
-	rows.Close()
+	_ = rows.Close()
 	ds, err := s.Domains(ctx)
 	return by, ds, err
 }

@@ -388,12 +388,12 @@ func ReencryptNodeTokens(ctx context.Context, tx *sql.Tx, old, new *secret.Key) 
 	for rows.Next() {
 		var r row
 		if err := rows.Scan(&r.id, &r.blob); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return 0, err
 		}
 		all = append(all, r)
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}

@@ -899,7 +899,7 @@ func (s *Server) apiDomainCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	s.apiAudit(r, "domain.create", fmt.Sprintf("domain %d %s", id, d.Name), fmt.Sprintf("subdomains=%v tags=%s", d.Subdomains, strings.Join(d.Tags, ",")))
 	if d.Enabled {
-		go s.pollDomainSoon(id)
+		s.pollDomainSoon(id)
 	}
 	w.Header().Set("Location", fmt.Sprintf("/api/v2/domains/%d", id))
 	s.writeDomain(w, r, http.StatusCreated, id)

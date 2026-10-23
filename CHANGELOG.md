@@ -2,6 +2,10 @@
 
 Newest first, one line per change.
 
+## Unreleased
+
+- CI runs gosec 2.30.0. The pinned 2.29.0 cannot read the export data of Go 1.27 packages and had analysed nothing since the Go 1.27.3 build, passing quietly. Under the new rules the theme cookie is HttpOnly like every other cookie (no script read it), the single sign-on state is cleared with the SameSite it was set with, an SCT timestamp with its top bit set no longer counts as an issuance date, and list limits are bound as parameters.
+
 ## v0.1.2 — 2026-10-22
 
 - Built with Go 1.27.3, whose certificate verifier refuses chains through the eight compromised eMudhra intermediates (EM DV/OV/EV TLS CA - G3B and - G3C, EM OV CS CA - G3B and - G3C, blocked by their key, so the cross-signs under AAA Certificate Services too). A target served through one of them now reports `chain_untrusted` instead of passing. The build image is pinned to `golang:1.27.3-alpine`.

@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"fmt"
 	"strings"
 )
 
@@ -31,7 +30,8 @@ func (s *Service) AuditLog(ctx context.Context, filter string, limit int) ([]Aud
 	}
 	q += " ORDER BY id DESC"
 	if limit > 0 {
-		q += fmt.Sprintf(" LIMIT %d", limit)
+		q += " LIMIT ?"
+		args = append(args, limit)
 	}
 	rows, err := s.DB.R.QueryContext(ctx, q, args...)
 	if err != nil {

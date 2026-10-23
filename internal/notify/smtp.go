@@ -119,7 +119,7 @@ func (s *SMTPSender) send(ctx context.Context, m Message, done []string) ([]stri
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	tlsConf := &tls.Config{ServerName: s.S.Host, MinVersion: tls.VersionTLS12, RootCAs: s.RootCAs, InsecureSkipVerify: s.S.InsecureSkipVerify} //nolint:gosec // opt-in per channel
+	tlsConf := &tls.Config{ServerName: s.S.Host, MinVersion: tls.VersionTLS12, RootCAs: s.RootCAs, InsecureSkipVerify: s.S.InsecureSkipVerify} // #nosec G402 -- opt-in per channel
 
 	conn, err := s.dial(ctx, tlsConf)
 	if err != nil {

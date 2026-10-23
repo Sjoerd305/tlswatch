@@ -202,12 +202,12 @@ func (s *Service) History(ctx context.Context, t Target) ([]HistoryEntry, error)
 	for rows.Next() {
 		var r row
 		if err := rows.Scan(&r.fp, &r.first, &r.last); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		rs = append(rs, r)
 	}
-	rows.Close()
+	_ = rows.Close()
 	var out []HistoryEntry
 	for _, r := range rs {
 		c, err := s.Certificate(ctx, r.fp)
@@ -290,12 +290,12 @@ func (s *Service) Inventory(ctx context.Context) ([]InventoryItem, error) {
 	for drows.Next() {
 		var fp string
 		if err := drows.Scan(&fp); err != nil {
-			drows.Close()
+			_ = drows.Close()
 			return nil, err
 		}
 		distrusted[fp] = true
 	}
-	drows.Close()
+	_ = drows.Close()
 	crow, err := s.DB.R.QueryContext(ctx, "SELECT "+certListCols+" FROM certificates WHERE fingerprint IN (SELECT DISTINCT leaf_fp FROM observations WHERE leaf_fp != '') ORDER BY not_after")
 	if err != nil {
 		return nil, err

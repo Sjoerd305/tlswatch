@@ -266,18 +266,22 @@ func (s *Server) domainSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Core.Audit(ctx, user(r).Email, "domain.create", fmt.Sprintf("domain %d %s", id, dm.Name), fmt.Sprintf("subdomains=%v tags=%s", dm.Subdomains, strings.Join(dm.Tags, ",")))
-	go s.pollDomainSoon(id)
+	s.pollDomainSoon(id)
 	s.back(w, r, fmt.Sprintf("/domains/%d", id), "Domain added; its first poll runs now.", "ok")
 }
 
 // pollDomainSoon polls a new watch right away, in the background, so the
-// page fills within seconds instead of at the next housekeeping minute.
+// page fills within seconds instead of at the next housekeeping minute. The
+// poll outlives the request that added the watch, so it runs under its own
+// context, not the request's.
 func (s *Server) pollDomainSoon(id int64) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	if err := s.Core.PollDomain(ctx, id); err != nil {
-		s.Log.Warn("ct poll", "domain_id", id, "err", err)
-	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if err := s.Core.PollDomain(ctx, id); err != nil {
+			s.Log.Warn("ct poll", "domain_id", id, "err", err)
+		}
+	}()
 }
 
 func (s *Server) domainEnable(w http.ResponseWriter, r *http.Request) { s.setDomainEnabled(w, r, true) }

@@ -215,12 +215,12 @@ func open() (*app, error) {
 		return nil, err
 	}
 	if err := keyGuard(d, b.SecretKeyFile, a.log); err != nil {
-		d.Close()
+		_ = d.Close()
 		return nil, err
 	}
 	key, created, err := secret.LoadOrCreate(b.SecretKeyFile)
 	if err != nil {
-		d.Close()
+		_ = d.Close()
 		return nil, err
 	}
 	if created {

@@ -739,6 +739,7 @@ func (s *Service) ApplyImport(ctx context.Context, plan ImportPlan, remove bool,
 			if c.Domain {
 				table, object = "domains", fmt.Sprintf("domain %d %s", c.id, c.Label)
 			}
+			// #nosec G202 -- table is one of the two literals above
 			if _, err := tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE id = ?", c.id); err != nil {
 				return res, err
 			}

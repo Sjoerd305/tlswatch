@@ -351,7 +351,7 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, hdr m
 		return nil, err
 	}
 	if resp.StatusCode == http.StatusUnauthorized {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, errUnauthorized
 	}
 	return resp, nil
@@ -540,7 +540,7 @@ func (c *Client) deliver(id string, res Result) {
 		c.Log.Warn("result not delivered", "job", id, "err", err)
 		return
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }
 
 func endpoint(r probe.Request) string {

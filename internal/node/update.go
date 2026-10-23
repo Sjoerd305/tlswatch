@@ -242,7 +242,7 @@ func copyFile(from, to string) error {
 		return err
 	}
 	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
+		_ = out.Close()
 		return err
 	}
 	return out.Close()

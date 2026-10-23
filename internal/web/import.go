@@ -120,7 +120,7 @@ func (s *Server) targetsImport(w http.ResponseWriter, r *http.Request) {
 		s.Sched.CheckSoon(id)
 	}
 	for _, id := range res.Domains {
-		go s.pollDomainSoon(id)
+		s.pollDomainSoon(id)
 	}
 	if res.Added+res.Changed+res.Removed == 0 {
 		s.back(w, r, "/targets", "Nothing to import: everything matches the file.", "info")

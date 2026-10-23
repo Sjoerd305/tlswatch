@@ -102,6 +102,7 @@ func (d *Dispatcher) download(w http.ResponseWriter, r *http.Request, goos, arch
 		return
 	}
 	w.Header().Set(HeaderSHA256, sum)
+	// #nosec G710 -- the release URL is fixed and asset names a platform ServesPlatform allowed
 	http.Redirect(w, r, d.releases()+"/"+d.Version+"/"+asset, http.StatusFound)
 }
 

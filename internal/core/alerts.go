@@ -100,12 +100,12 @@ func (a *alerter) recover(ctx context.Context, f Finding) error {
 	for rows.Next() {
 		var id int64
 		if err := rows.Scan(&id); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return err
 		}
 		ids = append(ids, id)
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil || len(ids) == 0 {
 		return err
 	}

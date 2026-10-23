@@ -454,7 +454,7 @@ func writeFile(path string, r io.Reader) error {
 		return err
 	}
 	if _, err := io.Copy(f, r); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	return f.Close()
@@ -469,7 +469,7 @@ func prepare(ctx context.Context, path string, sealed, instance *secret.Key) err
 		return err
 	}
 	err = check(ctx, d)
-	d.Close()
+	_ = d.Close()
 	if err != nil {
 		return err
 	}

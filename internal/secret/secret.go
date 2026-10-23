@@ -70,7 +70,7 @@ func WriteFile(path string, raw []byte) error {
 		return fmt.Errorf("write secret key: %w", err)
 	}
 	if _, err := f.WriteString(hex.EncodeToString(raw) + "\n"); err != nil {
-		f.Close()
+		_ = f.Close()
 		return fmt.Errorf("write secret key: %w", err)
 	}
 	return f.Close()

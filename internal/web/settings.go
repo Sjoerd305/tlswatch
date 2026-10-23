@@ -341,12 +341,12 @@ func (s *Server) bundleSave(w http.ResponseWriter, r *http.Request) {
 	data := r.FormValue("pem")
 	if f, h, err := r.FormFile("file"); err == nil {
 		if h.Size > 2<<20 {
-			f.Close()
+			_ = f.Close()
 			s.fail(w, r, http.StatusRequestEntityTooLarge, "The upload is too large (2 MB at most).")
 			return
 		}
 		b, _ := io.ReadAll(f)
-		f.Close()
+		_ = f.Close()
 		if len(b) > 0 {
 			data = string(b)
 		}
@@ -1024,7 +1024,7 @@ func (s *Server) accountSave(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	http.SetCookie(w, &http.Cookie{Name: themeCookie, Value: theme, Path: "/", Secure: info(r).https, SameSite: http.SameSiteLaxMode, MaxAge: 365 * 86400})
+	setCookie(w, info(r).https, themeCookie, theme, "/", 365*86400)
 	s.back(w, r, "/account", "Account saved.", "ok")
 }
 
@@ -1046,7 +1046,7 @@ func (s *Server) accountTheme(w http.ResponseWriter, r *http.Request) {
 		s.back(w, r, next, "Choose system, light or dark.", "crit")
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: themeCookie, Value: theme, Path: "/", Secure: info(r).https, SameSite: http.SameSiteLaxMode, MaxAge: 365 * 86400})
+	setCookie(w, info(r).https, themeCookie, theme, "/", 365*86400)
 	http.Redirect(w, r, next, http.StatusSeeOther)
 }
 

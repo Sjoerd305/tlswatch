@@ -152,6 +152,7 @@ func (s *Service) APIAuth(ctx context.Context, raw, ip string) (*APISession, err
 	if !strings.HasPrefix(raw, APITokenPrefix) || len(raw) > 200 {
 		return nil, ErrNoAPIToken
 	}
+	// #nosec G202 -- prefixed joins constant column names
 	row := s.DB.R.QueryRowContext(ctx, "SELECT "+prefixed("a.", apiTokenCols)+", "+prefixed("u.", userCols)+
 		" FROM api_tokens a JOIN users u ON u.id = a.user_id WHERE a.hash = ?", hashToken(raw))
 	var t APIToken

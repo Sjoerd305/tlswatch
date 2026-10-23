@@ -177,6 +177,7 @@ func (s *Service) session(ctx context.Context, raw string, touch bool) (*Session
 		return nil, ErrNoSession
 	}
 	h := hashToken(raw)
+	// #nosec G202 -- prefixed joins constant column names
 	row := s.DB.R.QueryRowContext(ctx,
 		"SELECT "+prefixed("u.", userCols)+", s.csrf, s.created_at, s.last_seen FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.hash = ?", h)
 	sess := &Session{Hash: h}

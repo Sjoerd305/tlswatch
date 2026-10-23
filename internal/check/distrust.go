@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -208,9 +209,12 @@ func EarliestSCT(c *x509.Certificate) (time.Time, bool) {
 				break
 			}
 			if sct := b[2 : 2+n]; len(sct) >= 41 && sct[0] == 0 {
-				t := time.UnixMilli(int64(binary.BigEndian.Uint64(sct[33:41]))).UTC()
-				if earliest.IsZero() || t.Before(earliest) {
-					earliest = t
+				// A timestamp with the top bit set is no timestamp.
+				if ms := binary.BigEndian.Uint64(sct[33:41]); ms <= math.MaxInt64 {
+					t := time.UnixMilli(int64(ms)).UTC()
+					if earliest.IsZero() || t.Before(earliest) {
+						earliest = t
+					}
 				}
 			}
 			b = b[2+n:]
