@@ -13,7 +13,8 @@ tlswatch watches the TLS certificates that are actually served on your hostnames
 - Every address behind a name is probed, so the one stale node behind a load balancer is caught.
 - System store, private CA bundles, or pinned self-signed certificates.
 - Let's Encrypt and other ACME renewals are recognised and not alerted.
-- A daily test for SSL 3.0 and TLS 1.0 and 1.1, which a server on TLS 1.3 can still accept unnoticed, and for RC4, 3DES, RSA key exchange and CBC suites, summed up in a configuration grade A to F per target with its reasons; switchable per target.
+- A daily test for SSL 3.0 and TLS 1.0 and 1.1, which a server on TLS 1.3 can still accept unnoticed, for export-grade, NULL, anonymous, DES, RC4, 3DES, RSA key exchange and CBC suites, and for the size of the Diffie-Hellman group, summed up in a configuration grade A to F per target with its reasons; switchable per target.
+- The certificates the normal handshake does not see: the RSA certificate next to an ECDSA one (or the reverse) and the default served without SNI, each verified and alerted when it breaks the clients that get it. A must-staple certificate served without a good OCSP staple is critical.
 - A certificate inventory: every certificate seen, where it is served, when it expires, exportable as CSV.
 - Alerts on transitions, with reminders, recovery notices, acknowledgements (also in bulk) and an optional weekly digest. Mail has a plain-text and an HTML part.
 - Live pages that update as checks land.

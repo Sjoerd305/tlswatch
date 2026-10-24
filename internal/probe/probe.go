@@ -91,7 +91,8 @@ type Request struct {
 	Allow func(net.IP) error
 	// Legacy runs the configuration test on every answering address: one
 	// handshake per legacy version (SSL 3.0, TLS 1.0 and 1.1) pinned to it,
-	// then one pinned to TLS 1.2 per cipher suite class (see SuiteClasses).
+	// then the cipher suite classes (see SuiteClasses), the DHE group, and
+	// the other certificates the address serves (see probeOthers).
 	Legacy   bool
 	Resolver *net.Resolver
 	Now      func() time.Time
@@ -139,6 +140,14 @@ type Address struct {
 	SuitesChecked bool
 	Suites        []SuiteClass
 	SuiteNames    []string
+	// DHBits is the size of the Diffie-Hellman group the address uses for
+	// DHE suites, 0 when it accepts none; part of the suites test.
+	DHBits int
+	// OthersChecked reports whether the configuration test asked for the
+	// other certificates and got a verdict; Others holds the chains whose
+	// leaf differs from Chain's.
+	OthersChecked bool
+	Others        []OtherChain
 	// PQChecked reports whether the post-quantum handshake of the
 	// configuration test got a verdict; PQ whether it completed.
 	PQChecked bool
@@ -294,9 +303,13 @@ func probeAddress(ctx context.Context, req Request, ip net.IP) (Address, bool) {
 			return a, true
 		}
 	}
+	if a.OK && len(a.OCSP) == 0 && MustStaple(a.Chain[0]) {
+		restaple(ctx, req, ip, &a)
+	}
 	if a.OK && req.Legacy {
+		a.Others, a.OthersChecked = probeOthers(ctx, req, ip, a.Chain[0])
 		a.Legacy, a.LegacyChecked = probeLegacy(ctx, req, ip, a.TLSVersion)
-		a.Suites, a.SuiteNames, a.SuitesChecked = probeSuites(ctx, req, ip)
+		a.Suites, a.SuiteNames, a.DHBits, a.SuitesChecked = probeSuites(ctx, req, ip)
 		a.PQ, a.PQChecked = probePQ(ctx, req, ip, a.Group)
 	}
 	return a, false

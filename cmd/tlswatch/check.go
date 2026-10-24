@@ -36,6 +36,16 @@ type checkResult struct {
 	DNSError   string         `json:"dns_error,omitempty"`
 }
 
+// checkOther is an other certificate an address serves.
+type checkOther struct {
+	Via      string   `json:"via"`
+	KeyType  string   `json:"key_type"`
+	Subject  string   `json:"subject"`
+	SHA256   string   `json:"sha256"`
+	NotAfter string   `json:"not_after"`
+	Problems []string `json:"problems,omitempty"`
+}
+
 type checkAddress struct {
 	Address    string `json:"address"`
 	OK         bool   `json:"ok"`
@@ -49,10 +59,16 @@ type checkAddress struct {
 	// absent when they were not tested or got no verdict. WeakSuites lists
 	// the weak cipher suite classes accepted, with the suite picked for
 	// each; Grade and GradeReasons the configuration grade that follows.
-	Legacy       *[]string `json:"legacy_accepted,omitempty"`
-	WeakSuites   *[]string `json:"weak_suites_accepted,omitempty"`
-	Grade        string    `json:"grade,omitempty"`
-	GradeReasons []string  `json:"grade_reasons,omitempty"`
+	Legacy     *[]string `json:"legacy_accepted,omitempty"`
+	WeakSuites *[]string `json:"weak_suites_accepted,omitempty"`
+	// DHGroupBits is the size of the Diffie-Hellman group the address uses
+	// for DHE suites; absent when it accepts none or was not tested.
+	DHGroupBits int `json:"dh_group_bits,omitempty"`
+	// Others are the other certificates the address serves, by key type
+	// ("other_key") and without SNI ("no_sni"), with the checks they fail.
+	Others       []checkOther `json:"other_certificates,omitempty"`
+	Grade        string       `json:"grade,omitempty"`
+	GradeReasons []string     `json:"grade_reasons,omitempty"`
 	// PQKex is whether the address negotiates post-quantum key exchange
 	// (X25519MLKEM768); absent when not tested.
 	PQKex      *bool  `json:"pq_kex,omitempty"`
@@ -219,9 +235,14 @@ func checkReport(req probe.Request, r probe.Result, out check.Outcome, now time.
 				w = append(w, name)
 			}
 			ca.WeakSuites = &w
+			ca.DHGroupBits = a.DHBits
 		}
 		for _, g := range out.AddressGrades {
 			if g.IP == a.IP {
+				for _, o := range g.Others {
+					ca.Others = append(ca.Others, checkOther{Via: o.Via, KeyType: o.KeyType, Subject: o.Subject, SHA256: o.Fingerprint,
+						NotAfter: o.NotAfter.UTC().Format(time.RFC3339), Problems: o.Problems})
+				}
 				ca.Grade, ca.GradeReasons = g.Grade, g.Reasons
 			}
 		}

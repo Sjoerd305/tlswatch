@@ -48,6 +48,10 @@ type Staple struct {
 	Status    string // "" when nothing was stapled
 	RevokedAt time.Time
 	Reason    int // the RFC 5280 reason code when revoked
+	// NextUpdate is when a good response stops being valid; zero when the
+	// responder gave none. A revocation does not age, but a client that
+	// requires the staple (must-staple) refuses a stale one.
+	NextUpdate time.Time
 }
 
 // StapleOf reads the OCSP response the address stapled, checked against
@@ -67,7 +71,7 @@ func StapleOf(a Address) Staple {
 	}
 	switch r.Status {
 	case ocsp.Good:
-		return Staple{Status: StapleGood}
+		return Staple{Status: StapleGood, NextUpdate: r.NextUpdate}
 	case ocsp.Revoked:
 		return Staple{Status: StapleRevoked, RevokedAt: r.RevokedAt, Reason: r.RevocationReason}
 	}

@@ -40,6 +40,14 @@ const (
 	// RevocationUnknown is info and never alerted: the CRL of a served leaf
 	// could not be fetched or verified for days.
 	RevocationUnknown Kind = "revocation_unknown"
+	// MustStaple: the leaf requires a stapled OCSP response and the server
+	// sent none, or one a client refuses.
+	MustStaple Kind = "must_staple"
+	// AlternateCertificate: the certificate the address serves to clients
+	// of the other key type fails a certificate check; DefaultCertificate
+	// (info, never alerted): the one it serves without SNI does.
+	AlternateCertificate Kind = "alternate_certificate"
+	DefaultCertificate   Kind = "default_certificate"
 	// GradeChanged is an event (info, recorded as resolved): the target's
 	// configuration grade moved since the last test.
 	GradeChanged Kind = "grade_changed"
@@ -61,7 +69,7 @@ const (
 )
 
 // Kinds lists every kind, for filters.
-var Kinds = []Kind{Expiring, RenewalOverdue, DistrustedCA, Revoked, RevocationUnknown, Expired, NotYetValid, ChainUntrusted, SelfSigned, HostnameMismatch, WeakSignature, LegacyProtocol, WeakConfiguration, CertificateChanged, IssuerChanged, GradeChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed, NodeOffline, UnexpectedCertificate, CTSourceFailed, CertificateIssued, CAAViolation, CAAChanged}
+var Kinds = []Kind{Expiring, RenewalOverdue, DistrustedCA, Revoked, RevocationUnknown, MustStaple, Expired, NotYetValid, ChainUntrusted, SelfSigned, HostnameMismatch, AlternateCertificate, DefaultCertificate, WeakSignature, LegacyProtocol, WeakConfiguration, CertificateChanged, IssuerChanged, GradeChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed, NodeOffline, UnexpectedCertificate, CTSourceFailed, CertificateIssued, CAAViolation, CAAChanged}
 
 // Label is the human name of a kind.
 func (k Kind) Label() string {
@@ -72,6 +80,12 @@ func (k Kind) Label() string {
 		return "Distrusted CA"
 	case RevocationUnknown:
 		return "Revocation unknown"
+	case MustStaple:
+		return "Must-staple without staple"
+	case AlternateCertificate:
+		return "Alternate certificate"
+	case DefaultCertificate:
+		return "Default certificate"
 	case NotYetValid:
 		return "Not yet valid"
 	case ChainUntrusted:
@@ -129,6 +143,12 @@ func (k Kind) Short() string {
 		return "distrusted"
 	case RevocationUnknown:
 		return "revocation"
+	case MustStaple:
+		return "staple"
+	case AlternateCertificate:
+		return "alternate"
+	case DefaultCertificate:
+		return "no sni"
 	case NotYetValid:
 		return "not yet valid"
 	case ChainUntrusted:
@@ -170,7 +190,7 @@ func (k Kind) AckResolves() bool {
 
 // Silent reports whether a finding of the kind is never alerted, whatever
 // a channel's floor.
-func (k Kind) Silent() bool { return k == RevocationUnknown }
+func (k Kind) Silent() bool { return k == RevocationUnknown || k == DefaultCertificate }
 
 // Network reports whether the kind is network-shaped (debounced).
 func (k Kind) Network() bool { return k == Unreachable || k == DNSFailed }
@@ -287,7 +307,7 @@ type Target struct {
 	ExpectedIssuer string
 	Debounce       int
 	PinnedFP       string
-	SkipLegacy     bool // the configuration test (SSL 3.0, TLS 1.0 and 1.1, cipher suites) is off
+	SkipLegacy     bool // the configuration test (SSL 3.0, TLS 1.0 and 1.1, cipher suites, other certificates) is off
 }
 
 // Previous is the state left by the last check.
@@ -480,6 +500,7 @@ func Evaluate(t Target, prev Previous, r probe.Result, now time.Time) Outcome {
 	e.renewal()
 	e.revocation(ok)
 	e.legacy(ok)
+	e.others(ok)
 	e.grade(ok)
 	e.expectedIssuer(info)
 	e.changes(info, cur)
@@ -493,6 +514,9 @@ type evaluation struct {
 	now      time.Time
 	debounce int
 	out      Outcome
+	// otherCerts are the other certificates of each address, for the
+	// configuration test's result.
+	otherCerts map[string][]OtherCert
 }
 
 func (e *evaluation) open(f Finding) { e.out.Open = append(e.out.Open, f) }
@@ -957,6 +981,10 @@ func addressFacts(t Target, a probe.Address, th Thresholds, now time.Time) ([]Fi
 	}
 	if len(weak) > 0 {
 		fs = append(fs, Finding{Kind: WeakSignature, Severity: Warning, Fingerprint: fp, Details: "weak signature or key: " + strings.Join(weak, ", ")})
+	}
+	if f, bad := mustStaple(a, now); bad {
+		f.Fingerprint = fp
+		fs = append(fs, f)
 	}
 	// A private PKI is in no root program.
 	if t.Trust == probe.TrustSystem || t.Trust == "" {

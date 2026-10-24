@@ -82,6 +82,13 @@ func TestGradeRules(t *testing.T) {
 		{"RSA 512 key", testedAddr("192.0.2.1", "TLS 1.3", rsaLeaf(t, iss, 512, x509.ECDSAWithSHA256), nil), GradeF, "RSA key of 512 bits"},
 		{"speaks TLS 1.0 at most", testedAddr("192.0.2.1", "TLS 1.0", leaf, []string{"TLS 1.0"}), GradeF, "speaks TLS 1.0 at most"},
 		{"SSL 3.0 next to 1.3", testedAddr("192.0.2.1", "TLS 1.3", leaf, []string{"SSL 3.0"}), GradeF, "accepts SSL 3.0"},
+		{"export suite", testedAddr("192.0.2.1", "TLS 1.3", leaf, nil, probe.ClassExport), GradeF, "accepts export-grade (TLS_TEST_EXPORT)"},
+		{"NULL suite", testedAddr("192.0.2.1", "TLS 1.3", leaf, nil, probe.ClassNull), GradeF, "NULL encryption"},
+		{"anonymous suite", testedAddr("192.0.2.1", "TLS 1.3", leaf, nil, probe.ClassAnon), GradeF, "anonymous key exchange"},
+		{"DES suite", testedAddr("192.0.2.1", "TLS 1.3", leaf, nil, probe.ClassDES), GradeF, "accepts DES"},
+		{"DHE 2048 is fine", dhAddr("192.0.2.1", leaf, 2048), GradeA, ""},
+		{"DHE 1024 is C", dhAddr("192.0.2.1", leaf, 1024), GradeC, "DHE with a 1024-bit group"},
+		{"DHE 512 is F", dhAddr("192.0.2.1", leaf, 512), GradeF, "DHE with a 512-bit group"},
 	}
 	for _, c := range cases {
 		o := Evaluate(manual, Previous{Open: open()}, result(c.addr), now)
@@ -113,6 +120,13 @@ func TestGradeLowestAddressCounts(t *testing.T) {
 	}
 }
 
+// dhAddr is a modern address whose suites test read a DHE group of bits.
+func dhAddr(ip string, leaf *x509.Certificate, bits int) probe.Address {
+	a := testedAddr(ip, "TLS 1.3", leaf, nil)
+	a.DHBits = bits
+	return a
+}
+
 func TestWeakConfigurationFinding(t *testing.T) {
 	iss := newIssuer(t, "Test CA", "Test CA R1")
 	leaf := leafCert(t, iss, 60, "a.example")
@@ -132,6 +146,16 @@ func TestWeakConfigurationFinding(t *testing.T) {
 		{"weak classes open it", manual, Previous{Open: open()},
 			[]probe.Address{testedAddr("192.0.2.1", "TLS 1.3", leaf, nil, probe.Class3DES, probe.ClassNoPFS, probe.ClassCBC)},
 			"3DES (TLS_TEST_3DES), no forward secrecy (TLS_TEST_NO_PFS) accepted", false, true},
+		{"an export suite and a weak DHE group open it", manual, Previous{Open: open()},
+			[]probe.Address{func() probe.Address {
+				a := testedAddr("192.0.2.1", "TLS 1.3", leaf, nil, probe.ClassExport)
+				a.DHBits = 1024
+				return a
+			}()},
+			"export-grade (TLS_TEST_EXPORT), DHE with a 1024-bit group accepted", false, true},
+		{"a weak DHE group on one of two addresses", manual, Previous{Open: open()},
+			[]probe.Address{dhAddr("192.0.2.1", leaf, 1024), dhAddr("192.0.2.2", leaf, 2048)},
+			"DHE with a 1024-bit group accepted on 192.0.2.1", false, true},
 		{"CBC alone does not", manual, Previous{Open: open()},
 			[]probe.Address{testedAddr("192.0.2.1", "TLS 1.3", leaf, nil, probe.ClassCBC)}, "", false, true},
 		{"one of two addresses", manual, Previous{Open: open()},

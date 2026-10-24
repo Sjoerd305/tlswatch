@@ -1002,6 +1002,57 @@ func TestLegacyVerdictNeedsEveryVersion(t *testing.T) {
 	}
 }
 
+// The same for the suites test: a node from before the raw classes and the
+// DHE group sends no test list and gives no full verdict.
+func TestSuitesVerdictNeedsEveryTest(t *testing.T) {
+	cert := selfSigned(t, "app.internal.example")
+	r := probe.Result{Addresses: []probe.Address{{IP: "10.0.0.5", OK: true, Chain: []*x509.Certificate{cert}, SuitesChecked: true, Suites: []probe.SuiteClass{probe.ClassExport}, SuiteNames: []string{"TLS_RSA_EXPORT_WITH_RC4_40_MD5"}, DHBits: 1024}}}
+	w := EncodeResult(r)
+	if got := w.Addresses[0].SuiteClasses; len(got) != len(probe.SuiteClasses)+1 || got[len(got)-1] != "dh_group" {
+		t.Fatalf("tests sent %v", got)
+	}
+	back, err := w.Decode(probe.Request{Trust: probe.TrustSelfSigned}, time.Now())
+	if a := back.Addresses[0]; err != nil || !a.SuitesChecked || a.DHBits != 1024 || len(a.Suites) != 1 || a.Suites[0] != probe.ClassExport {
+		t.Fatalf("current node: %v %+v", err, back.Addresses)
+	}
+	w.Addresses[0].SuiteClasses = nil // an older node
+	back, err = w.Decode(probe.Request{Trust: probe.TrustSelfSigned}, time.Now())
+	if a := back.Addresses[0]; err != nil || a.SuitesChecked || len(a.Suites) != 1 {
+		t.Fatalf("older node: %v %+v", err, back.Addresses)
+	}
+}
+
+// The other certificates cross the wire and are judged on the server; a
+// via the server does not know is dropped, and a node from before the test
+// gives no verdict.
+func TestOtherChainsCrossTheWire(t *testing.T) {
+	main := selfSigned(t, "app.internal.example")
+	alt := selfSigned(t, "old.internal.example")
+	r := probe.Result{Addresses: []probe.Address{{IP: "10.0.0.5", OK: true, Chain: []*x509.Certificate{main}, OthersChecked: true,
+		Others: []probe.OtherChain{{Via: probe.ViaNoSNI, Chain: []*x509.Certificate{alt}, HostnameChecked: true, HostnameOK: true}}}}}
+	w := EncodeResult(r)
+	w.Addresses[0].Others = append(w.Addresses[0].Others, OtherChain{Via: "by_moon_phase", Chain: w.Addresses[0].Others[0].Chain})
+	back, err := w.Decode(probe.Request{Trust: probe.TrustSelfSigned, ServerName: "app.internal.example"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := back.Addresses[0]
+	if !a.OthersChecked || len(a.Others) != 1 || a.Others[0].Via != probe.ViaNoSNI || !a.Others[0].Chain[0].Equal(alt) {
+		t.Fatalf("others: %+v", a)
+	}
+	if o := a.Others[0]; !o.HostnameChecked || o.HostnameOK {
+		t.Fatalf("hostname not judged on the server: %+v", o)
+	}
+	w.Addresses[0].OthersChecked, w.Addresses[0].Others = false, nil // an older node
+	if back, err = w.Decode(probe.Request{Trust: probe.TrustSelfSigned}, time.Now()); err != nil || back.Addresses[0].OthersChecked {
+		t.Fatalf("older node: %v %+v", err, back.Addresses[0])
+	}
+	w.Addresses[0].Others = []OtherChain{{Via: probe.ViaOtherKey, Chain: [][]byte{{0x30, 0x00}}}}
+	if _, err = w.Decode(probe.Request{Trust: probe.TrustSelfSigned}, time.Now()); err == nil {
+		t.Fatal("an unparseable other chain was accepted")
+	}
+}
+
 // The stapled response, the group and the post-quantum verdict cross the
 // wire.
 func TestStapleCrossesTheWire(t *testing.T) {

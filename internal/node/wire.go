@@ -235,13 +235,16 @@ func (j ProbeJob) Request(received time.Time) probe.Request {
 
 // Timeout is how long the server waits for a leased job: the target's
 // timeout for every attempt, plus one timeout per handshake of the
-// configuration test (three legacy versions, four suite classes, the
-// post-quantum handshake) and slack for the round trip.
+// configuration test (three legacy versions, up to five hellos for the
+// raw suite classes, four Go suite classes, the DHE group, the
+// post-quantum handshake, the other certificates by key type and without
+// SNI) and slack for the round trip, which also covers the staple retry
+// of a must-staple leaf.
 func (j ProbeJob) Timeout() time.Duration {
 	d := time.Duration(j.TimeoutMS) * time.Millisecond
 	t := d*time.Duration(j.Retries+1) + 30*time.Second
 	if j.Legacy {
-		t += 8 * d
+		t += 16 * d
 	}
 	return t
 }
@@ -287,9 +290,19 @@ type Address struct {
 	SuitesChecked  bool     `json:"suites_checked,omitempty"`
 	Suites         []string `json:"suites,omitempty"`
 	SuiteNames     []string `json:"suite_names,omitempty"`
-	OCSP           []byte   `json:"ocsp,omitempty"` // the stapled OCSP response
-	PQChecked      bool     `json:"pq_checked,omitempty"`
-	PQ             bool     `json:"pq,omitempty"`
+	// SuiteClasses names the classes the node's suites test covers plus
+	// dhGroupTest for the DHE group; a node from before them sends none,
+	// meaning the four Go classes only. DHBits is the group size found.
+	SuiteClasses []string `json:"suite_classes,omitempty"`
+	DHBits       int      `json:"dh_bits,omitempty"`
+	// OthersChecked and Others are the other certificates the address
+	// serves (by key type, without SNI); a node from before them sends
+	// neither, so the test has no verdict. The server judges the chains.
+	OthersChecked bool         `json:"others_checked,omitempty"`
+	Others        []OtherChain `json:"others,omitempty"`
+	OCSP          []byte       `json:"ocsp,omitempty"` // the stapled OCSP response
+	PQChecked     bool         `json:"pq_checked,omitempty"`
+	PQ            bool         `json:"pq,omitempty"`
 }
 
 // EncodeResult converts a probe result for the wire.
@@ -301,7 +314,9 @@ func EncodeResult(r probe.Result) *ProbeResult {
 			Chain: der(a.Chain), Verified: a.Verified, VerifyError: a.VerifyError, VerifiedChain: der(a.VerifiedChain),
 			HostnameChecked: a.HostnameChecked, HostnameOK: a.HostnameOK, DurationMS: a.Duration.Milliseconds(),
 			LegacyChecked: a.LegacyChecked, Legacy: a.Legacy, LegacyVersions: legacyNames(a.LegacyChecked),
-			SuitesChecked: a.SuitesChecked, Suites: classNames(a.Suites), SuiteNames: a.SuiteNames, OCSP: a.OCSP, PQChecked: a.PQChecked, PQ: a.PQ,
+			SuitesChecked: a.SuitesChecked, Suites: classNames(a.Suites), SuiteNames: a.SuiteNames, SuiteClasses: suiteTests(a.SuitesChecked), DHBits: a.DHBits,
+			OthersChecked: a.OthersChecked, Others: encodeOthers(a.Others),
+			OCSP: a.OCSP, PQChecked: a.PQChecked, PQ: a.PQ,
 		})
 	}
 	return out
@@ -331,6 +346,70 @@ func legacyCovered(names []string) bool {
 	}
 	for _, v := range probe.LegacyVersions {
 		if !slices.Contains(names, probe.VersionName(v)) {
+			return false
+		}
+	}
+	return true
+}
+
+// OtherChain is an other certificate chain as DER, with how it was got.
+type OtherChain struct {
+	Via   string   `json:"via"`
+	Chain [][]byte `json:"chain"`
+}
+
+func encodeOthers(os []probe.OtherChain) []OtherChain {
+	var out []OtherChain
+	for _, o := range os {
+		out = append(out, OtherChain{Via: o.Via, Chain: der(o.Chain)})
+	}
+	return out
+}
+
+// decodeOthers parses the other chains and judges them as the main chain
+// is judged; a via this server does not know is dropped.
+func decodeOthers(ws []OtherChain, ip string, req probe.Request) ([]probe.OtherChain, error) {
+	var out []probe.OtherChain
+	for _, w := range ws {
+		if w.Via != probe.ViaOtherKey && w.Via != probe.ViaNoSNI {
+			continue
+		}
+		chain, err := parseChain(w.Chain)
+		if err != nil {
+			return nil, fmt.Errorf("other chain: %w", err)
+		}
+		if len(chain) == 0 {
+			return nil, fmt.Errorf("other chain without a certificate")
+		}
+		o := probe.OtherChain{Via: w.Via, Chain: chain}
+		o.Judge(func(a *probe.Address) { judge(a, req) }, ip)
+		out = append(out, o)
+	}
+	return out, nil
+}
+
+// dhGroupTest is the entry in SuiteClasses that marks the DHE group test.
+const dhGroupTest = "dh_group"
+
+// suiteTests lists what this build's suites test covers, sent with a
+// checked result so the server knows what "checked" spans.
+func suiteTests(checked bool) []string {
+	if !checked {
+		return nil
+	}
+	return append(classNames(probe.SuiteClasses), dhGroupTest)
+}
+
+// suitesCovered reports whether a node that ran the named tests (none: the
+// four Go classes of older nodes) covered every test this server expects.
+// A result that does not is still "checked" for what it accepted, but not a
+// full verdict: the finding and the grade wait for the node to update.
+func suitesCovered(names []string) bool {
+	if names == nil {
+		names = classNames(probe.GoClasses)
+	}
+	for _, want := range suiteTests(true) {
+		if !slices.Contains(names, want) {
 			return false
 		}
 	}
@@ -391,7 +470,8 @@ func (p ProbeResult) Decode(req probe.Request, started time.Time) (probe.Result,
 		a := probe.Address{IP: w.IP, OK: w.OK, ErrorKind: w.ErrorKind, Error: w.Error, TLSVersion: w.TLSVersion, Cipher: w.Cipher, Group: core.Clip(w.Group, core.ShortMax),
 			Verified: w.Verified, VerifyError: w.VerifyError, Duration: time.Duration(w.DurationMS) * time.Millisecond,
 			LegacyChecked: w.LegacyChecked && legacyCovered(w.LegacyVersions), Legacy: w.Legacy,
-			SuitesChecked: w.SuitesChecked, Suites: parseClasses(w.Suites), SuiteNames: w.SuiteNames, OCSP: w.OCSP, PQChecked: w.PQChecked, PQ: w.PQ}
+			SuitesChecked: w.SuitesChecked && suitesCovered(w.SuiteClasses), Suites: parseClasses(w.Suites), SuiteNames: w.SuiteNames, DHBits: w.DHBits,
+			OCSP: w.OCSP, PQChecked: w.PQChecked, PQ: w.PQ}
 		var err error
 		if a.Chain, err = parseChain(w.Chain); err != nil {
 			return r, fmt.Errorf("address %s: chain: %w", w.IP, err)
@@ -404,6 +484,10 @@ func (p ProbeResult) Decode(req probe.Request, started time.Time) (probe.Result,
 		}
 		if a.OK {
 			judge(&a, req)
+			a.OthersChecked = w.OthersChecked
+			if a.Others, err = decodeOthers(w.Others, w.IP, req); err != nil {
+				return r, fmt.Errorf("address %s: %w", w.IP, err)
+			}
 		}
 		r.Addresses = append(r.Addresses, a)
 	}

@@ -117,6 +117,10 @@
       {{- if $t.ConfigTest}}
       {{- range $t.ConfigTest}}
       <div class="li"><span class="muted">{{if gt (len $t.ConfigTest) 1}}<span class="mono">{{.IP}}</span> · {{end}}grade</span> <span class="grade {{gradeClass .Grade}}">{{.Grade}}</span> <span class="muted">{{if .Reasons}}{{join .Reasons "; "}}{{else}}nothing to improve{{end}}{{if .SuiteNames}} · accepted {{join .SuiteNames ", "}}{{else}} · no weak suite accepted{{end}}</span></div>
+      {{- $ip := .IP}}
+      {{- range .Others}}
+      <div class="li"><span class="muted">{{if gt (len $t.ConfigTest) 1}}<span class="mono">{{$ip}}</span> · {{end}}{{if eq .Via "no_sni"}}without SNI{{else}}{{.KeyType}} certificate too{{end}} ·</span> <a href="/certificates?open={{short .Fingerprint}}" class="ink mono small">{{short .Fingerprint}}…</a> <span class="muted">{{.Subject}} · expires {{date $p.Loc .NotAfter.Unix}}</span> {{if .Problems}}<span class="st sm {{if eq .Via "no_sni"}}off{{else}}warn{{end}}">{{join .Problems "; "}}</span>{{else}}<span class="st sm ok">valid</span>{{end}}</div>
+      {{- end}}
       {{- end}}
       {{- end}}
       {{- end}}

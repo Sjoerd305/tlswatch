@@ -13,8 +13,15 @@ import (
 // every grade, so a tightened rule set re-grades on the next test and the
 // history shows which rules a grade was given under. Version 2 adds the
 // post-quantum key exchange as a reason; no letter changed. Version 3 tests
-// SSL 3.0 and grades accepting it an F.
+// SSL 3.0, the export, NULL, anonymous and DES suites and the DHE group
+// size: SSL 3.0 and the four suite classes are an F, a DHE group under 1024
+// bits an F and under 2048 a C.
 const GradeRules = 3
+
+// DHWeakBits is the DHE group size below which the grade drops: under 2048
+// bits a C (Logjam put 1024-bit groups within reach of a state), under 1024
+// an F.
+const DHWeakBits = 2048
 
 // The post-quantum reasons. Like StapledReason they are shown with the
 // grade but never lower it.
@@ -89,6 +96,9 @@ type AddressGrade struct {
 	Classes    []probe.SuiteClass
 	SuiteNames []string
 	PQ         string // PQYes, PQNo, or PQUntested
+	// Others are the other certificates the address serves, by key type
+	// and without SNI, with what is wrong with each.
+	Others []OtherCert `json:",omitempty"`
 }
 
 // gradeAddress applies the rules to one address whose configuration test
@@ -148,7 +158,14 @@ func gradeAddress(a probe.Address) AddressGrade {
 		}
 	}
 
-	// Cipher suite classes.
+	// Cipher suite classes. The raw classes are broken outright: export
+	// keys factor in hours, NULL encrypts nothing, anonymous key exchange
+	// authenticates nobody, single DES is 56 bits.
+	for _, c := range probe.RawClasses {
+		if accepts(c) {
+			lower(GradeF, "accepts "+suite(c))
+		}
+	}
 	if accepts(probe.ClassRC4) {
 		lower(GradeF, "accepts "+suite(probe.ClassRC4))
 	}
@@ -160,6 +177,13 @@ func gradeAddress(a probe.Address) AddressGrade {
 	}
 	if accepts(probe.ClassCBC) {
 		lower(GradeB, "accepts "+suite(probe.ClassCBC))
+	}
+	if a.DHBits > 0 && a.DHBits < DHWeakBits {
+		grade := GradeC
+		if a.DHBits < 1024 {
+			grade = GradeF
+		}
+		lower(grade, dhReason(a.DHBits))
 	}
 
 	// Keys and signatures in the chain. A root's own signature is never
@@ -195,6 +219,11 @@ func gradeAddress(a probe.Address) AddressGrade {
 	return g
 }
 
+// dhReason words a weak DHE group.
+func dhReason(bits int) string {
+	return fmt.Sprintf("DHE with a %d-bit group", bits)
+}
+
 func weakSig(alg interface{ String() string }) bool {
 	s := alg.String()
 	return strings.Contains(s, "SHA1") || strings.Contains(s, "MD5") || strings.Contains(s, "MD2")
@@ -228,11 +257,24 @@ func (e *evaluation) grade(ok []probe.Address) {
 			}
 		}
 	}
-	weak := []probe.SuiteClass{probe.ClassRC4, probe.Class3DES, probe.ClassNoPFS}
+	weak := append(append([]probe.SuiteClass{}, probe.RawClasses...), probe.ClassRC4, probe.Class3DES, probe.ClassNoPFS)
 	found := false
 	for _, c := range weak {
 		found = found || len(on[c]) > 0
 	}
+	// A weak DHE group is a weak configuration too, by its size.
+	dh := map[int][]string{}
+	var dhSizes []int
+	for _, a := range ok {
+		if a.DHBits > 0 && a.DHBits < DHWeakBits {
+			if dh[a.DHBits] == nil {
+				dhSizes = append(dhSizes, a.DHBits)
+			}
+			dh[a.DHBits] = append(dh[a.DHBits], a.IP)
+			found = true
+		}
+	}
+	slices.Sort(dhSizes)
 	if !found && !all {
 		e.keep(WeakConfiguration)
 	} else if found {
@@ -251,6 +293,16 @@ func (e *evaluation) grade(ok []probe.Address) {
 				where = append(where, w)
 			}
 			byWhere[w] = append(byWhere[w], c.Label()+" ("+named[c]+")")
+		}
+		for _, bits := range dhSizes {
+			w := ""
+			if len(dh[bits]) < len(ok) {
+				w = " on " + strings.Join(dh[bits], ", ")
+			}
+			if byWhere[w] == nil {
+				where = append(where, w)
+			}
+			byWhere[w] = append(byWhere[w], dhReason(bits))
 		}
 		var parts []string
 		for _, w := range where {
@@ -278,6 +330,7 @@ func (e *evaluation) grade(ok []probe.Address) {
 	}
 	for _, a := range ok {
 		g := gradeAddress(a)
+		g.Others = e.otherCerts[a.IP]
 		e.out.AddressGrades = append(e.out.AddressGrades, g)
 		if e.out.Grade == "" || GradeRank(g.Grade) < GradeRank(e.out.Grade) {
 			e.out.Grade = g.Grade

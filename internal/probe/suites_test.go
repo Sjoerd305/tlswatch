@@ -87,7 +87,7 @@ func TestSuiteClassLabels(t *testing.T) {
 			t.Errorf("%s does not parse back", c)
 		}
 	}
-	if _, ok := ParseSuiteClass("des"); ok {
+	if _, ok := ParseSuiteClass("camellia"); ok {
 		t.Error("unknown class parsed")
 	}
 }

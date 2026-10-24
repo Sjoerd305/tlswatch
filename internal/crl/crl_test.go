@@ -42,7 +42,7 @@ func newCA(t *testing.T, cn string) ca {
 }
 
 // idp is an issuing distribution point naming uris.
-func idp(t *testing.T, uris ...string) pkix.Extension {
+func idp(t testing.TB, uris ...string) pkix.Extension {
 	t.Helper()
 	var b cryptobyte.Builder
 	b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
@@ -57,7 +57,7 @@ func idp(t *testing.T, uris ...string) pkix.Extension {
 	return pkix.Extension{Id: oidIssuingDistributionPoint, Critical: true, Value: b.BytesOrPanic()}
 }
 
-func (c ca) crl(t *testing.T, exts ...pkix.Extension) []byte {
+func (c ca) crl(t testing.TB, exts ...pkix.Extension) []byte {
 	t.Helper()
 	tpl := &x509.RevocationList{Number: big.NewInt(7), ThisUpdate: time.Now().Add(-time.Hour), NextUpdate: time.Now().Add(24 * time.Hour),
 		RevokedCertificateEntries: []x509.RevocationListEntry{{SerialNumber: big.NewInt(42), RevocationTime: time.Now().Add(-2 * time.Hour), ReasonCode: 1}},
