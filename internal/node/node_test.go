@@ -978,6 +978,30 @@ func TestCRLOnNode(t *testing.T) {
 	}
 }
 
+// A legacy verdict counts as full only when the node tested every version
+// this server tests: a node from before SSL 3.0 sends no version list and
+// its result is checked for what it accepted but not a full verdict.
+func TestLegacyVerdictNeedsEveryVersion(t *testing.T) {
+	cert := selfSigned(t, "app.internal.example")
+	r := probe.Result{Addresses: []probe.Address{{IP: "10.0.0.5", OK: true, Chain: []*x509.Certificate{cert}, LegacyChecked: true, Legacy: []string{"TLS 1.0"}}}}
+	w := EncodeResult(r)
+	if got := w.Addresses[0].LegacyVersions; len(got) != 3 || got[0] != "SSL 3.0" {
+		t.Fatalf("versions sent %v, want SSL 3.0, TLS 1.0, TLS 1.1", got)
+	}
+	back, err := w.Decode(probe.Request{Trust: probe.TrustSelfSigned}, time.Now())
+	if err != nil || !back.Addresses[0].LegacyChecked || len(back.Addresses[0].Legacy) != 1 {
+		t.Fatalf("current node: %v %+v", err, back.Addresses)
+	}
+	w.Addresses[0].LegacyVersions = nil // an older node
+	back, err = w.Decode(probe.Request{Trust: probe.TrustSelfSigned}, time.Now())
+	if err != nil || back.Addresses[0].LegacyChecked || len(back.Addresses[0].Legacy) != 1 {
+		t.Fatalf("older node: %v %+v", err, back.Addresses)
+	}
+	if EncodeResult(probe.Result{Addresses: []probe.Address{{IP: "10.0.0.5", OK: true, Chain: []*x509.Certificate{cert}}}}).Addresses[0].LegacyVersions != nil {
+		t.Fatal("version list sent for an untested address")
+	}
+}
+
 // The stapled response, the group and the post-quantum verdict cross the
 // wire.
 func TestStapleCrossesTheWire(t *testing.T) {

@@ -4,6 +4,7 @@ Newest first, one line per change.
 
 ## Unreleased
 
+- SSL 3.0 is tested. The daily configuration test sends a hand-built SSL 3.0 ClientHello to every answering address (after STARTTLS where the protocol has one) and judges the first reply, since Go has no client for the version: a ServerHello at 3.0 means accepted, an alert or a closed connection refused. An address that accepts it opens `legacy_protocol` ("SSL 3.0, TLS 1.0 accepted") and is graded F. The grade rules move to version 3 for it, so every target takes the configuration test on its next check after the upgrade. The target page, `tlswatch check` (`legacy_accepted`) and the finding name the version like the others. Nodes send the versions their build tests with each result; a node from before this release still reports what it accepted but gives no full verdict until it has updated itself. SSL 2.0 is not tested: no current server stack contains it, and anything old enough to speak it also speaks SSL 3.0.
 - CI runs gosec 2.30.0. The pinned 2.29.0 cannot read the export data of Go 1.27 packages and had analysed nothing since the Go 1.27.3 build, passing quietly. Under the new rules the theme cookie is HttpOnly like every other cookie (no script read it), the single sign-on state is cleared with the SameSite it was set with, an SCT timestamp with its top bit set no longer counts as an issuance date, and list limits are bound as parameters.
 
 ## v0.1.2 — 2026-10-22

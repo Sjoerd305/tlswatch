@@ -356,6 +356,7 @@ func TestGradeBoundaries(t *testing.T) {
 		{"Ed25519 is fine", testedAddr("192.0.2.1", "TLS 1.3", keyLeaf(t, iss, edPub), nil), GradeA, nil},
 		{"speaks TLS 1.1 at most", testedAddr("192.0.2.1", "TLS 1.1", leaf, []string{"TLS 1.0", "TLS 1.1"}), GradeF, []string{"speaks TLS 1.1 at most"}},
 		{"TLS 1.2 with legacy: C and both reasons", testedAddr("192.0.2.1", "TLS 1.2", leaf, []string{"TLS 1.1"}), GradeC, []string{"accepts TLS 1.1", "no TLS 1.3"}},
+		{"SSL 3.0 with TLS 1.0 on TLS 1.2: F, SSL 3.0 its own reason", testedAddr("192.0.2.1", "TLS 1.2", leaf, []string{"SSL 3.0", "TLS 1.0"}), GradeF, []string{"accepts SSL 3.0", "accepts TLS 1.0", "no TLS 1.3"}},
 		{"several rules: the lowest wins, every reason kept", testedAddr("192.0.2.1", "TLS 1.2", leaf, nil, probe.ClassCBC, probe.Class3DES, probe.ClassRC4), GradeF,
 			[]string{"no TLS 1.3", "CBC with SHA-1", "3DES", "RC4"}},
 	}

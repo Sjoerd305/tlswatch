@@ -44,7 +44,8 @@ type checkAddress struct {
 	Group      string `json:"key_exchange_group,omitempty"`
 	SHA256     string `json:"sha256,omitempty"`
 	Verified   bool   `json:"verified"`
-	// Legacy lists the TLS versions under 1.2 the address accepted;
+	// Legacy lists the versions under TLS 1.2 the address accepted (SSL
+	// 3.0, TLS 1.0, TLS 1.1);
 	// absent when they were not tested or got no verdict. WeakSuites lists
 	// the weak cipher suite classes accepted, with the suite picked for
 	// each; Grade and GradeReasons the configuration grade that follows.
@@ -115,7 +116,7 @@ func parseCheck(args []string, stderr io.Writer) (checkRun, error) {
 	timeout := fs.Duration("timeout", 10*time.Second, "connect and handshake timeout")
 	first := fs.Bool("first", false, "probe only the first resolved address")
 	allowLocal := fs.Bool("allow-local", true, "allow loopback and link-local addresses")
-	noConfig := fs.Bool("no-config-test", false, "skip the configuration test (TLS 1.0 and 1.1, weak cipher suites, the grade)")
+	noConfig := fs.Bool("no-config-test", false, "skip the configuration test (SSL 3.0, TLS 1.0 and 1.1, weak cipher suites, the grade)")
 	noLegacy := fs.Bool("no-legacy", false, "alias of -no-config-test")
 	if err := fs.Parse(reorder(args, map[string]bool{"protocol": true, "servername": true, "ca-file": true, "warn": true, "crit": true, "timeout": true})); err != nil {
 		if errors.Is(err, flag.ErrHelp) {

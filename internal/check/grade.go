@@ -12,8 +12,9 @@ import (
 // GradeRules is the version of the rules table below. It is stored next to
 // every grade, so a tightened rule set re-grades on the next test and the
 // history shows which rules a grade was given under. Version 2 adds the
-// post-quantum key exchange as a reason; no letter changed.
-const GradeRules = 2
+// post-quantum key exchange as a reason; no letter changed. Version 3 tests
+// SSL 3.0 and grades accepting it an F.
+const GradeRules = 3
 
 // The post-quantum reasons. Like StapledReason they are shown with the
 // grade but never lower it.
@@ -120,18 +121,30 @@ func gradeAddress(a probe.Address) AddressGrade {
 	}
 
 	// Versions. The normal probe offers everything up to TLS 1.3, so the
-	// negotiated version is the highest the server speaks.
+	// negotiated version is the highest the server speaks. SSL 3.0 is an F
+	// on its own (POODLE, RFC 7568); the old TLS versions next to a newer
+	// one are a C.
+	ssl3 := probe.VersionName(probe.VersionSSL30)
+	var oldTLS []string
+	for _, v := range a.Legacy {
+		if v != ssl3 {
+			oldTLS = append(oldTLS, v)
+		}
+	}
+	if slices.Contains(a.Legacy, ssl3) {
+		lower(GradeF, "accepts "+ssl3)
+	}
 	switch a.TLSVersion {
 	case tls.VersionName(tls.VersionTLS10), tls.VersionName(tls.VersionTLS11):
 		lower(GradeF, "speaks "+a.TLSVersion+" at most")
 	case tls.VersionName(tls.VersionTLS12):
-		if len(a.Legacy) > 0 {
-			lower(GradeC, "accepts "+strings.Join(a.Legacy, " and "))
+		if len(oldTLS) > 0 {
+			lower(GradeC, "accepts "+strings.Join(oldTLS, " and "))
 		}
 		lower(GradeB, "no TLS 1.3")
 	default:
-		if len(a.Legacy) > 0 {
-			lower(GradeC, "accepts "+strings.Join(a.Legacy, " and "))
+		if len(oldTLS) > 0 {
+			lower(GradeC, "accepts "+strings.Join(oldTLS, " and "))
 		}
 	}
 

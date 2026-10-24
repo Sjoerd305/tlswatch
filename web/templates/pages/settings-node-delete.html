@@ -10,7 +10,7 @@
     {{- range $d.Targets}}<tr><td data-label="Name"><a href="/targets/{{.ID}}">{{.Name}}</a></td><td data-label="Host" class="mono">{{.HostPort}}</td></tr>{{end}}
     </tbody>
   </table>
-  <p class="muted">Moved targets are checked from this server soon, as a new view of the service: the debounce starts over and TLS 1.0 and 1.1 are tested again. A host this server cannot reach then shows as unreachable.</p>
+  <p class="muted">Moved targets are checked from this server soon, as a new view of the service: the debounce starts over and the old TLS versions are tested again. A host this server cannot reach then shows as unreachable.</p>
   {{- else}}
   <p>The node and its credential are removed; its findings go with it. It cannot be undone. To keep it for later, disable it instead.</p>
   {{- end}}

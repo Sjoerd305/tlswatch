@@ -81,6 +81,7 @@ func TestGradeRules(t *testing.T) {
 		{"RC4", testedAddr("192.0.2.1", "TLS 1.3", leaf, nil, probe.ClassRC4), GradeF, "RC4"},
 		{"RSA 512 key", testedAddr("192.0.2.1", "TLS 1.3", rsaLeaf(t, iss, 512, x509.ECDSAWithSHA256), nil), GradeF, "RSA key of 512 bits"},
 		{"speaks TLS 1.0 at most", testedAddr("192.0.2.1", "TLS 1.0", leaf, []string{"TLS 1.0"}), GradeF, "speaks TLS 1.0 at most"},
+		{"SSL 3.0 next to 1.3", testedAddr("192.0.2.1", "TLS 1.3", leaf, []string{"SSL 3.0"}), GradeF, "accepts SSL 3.0"},
 	}
 	for _, c := range cases {
 		o := Evaluate(manual, Previous{Open: open()}, result(c.addr), now)

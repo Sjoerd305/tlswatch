@@ -475,6 +475,8 @@ func TestLegacyProtocol(t *testing.T) {
 	}{
 		{"both accepted", manual, Previous{Open: open()},
 			[]probe.Address{legacyAddr("192.0.2.1", leaf, true, "TLS 1.0", "TLS 1.1")}, "TLS 1.0, TLS 1.1 accepted", false, true},
+		{"SSL 3.0 named first", manual, Previous{Open: open()},
+			[]probe.Address{legacyAddr("192.0.2.1", leaf, true, "TLS 1.0", "SSL 3.0")}, "SSL 3.0, TLS 1.0 accepted", false, true},
 		{"one of two addresses", manual, Previous{Open: open()},
 			[]probe.Address{legacyAddr("192.0.2.1", leaf, true, "TLS 1.0"), legacyAddr("192.0.2.2", leaf, true)}, "TLS 1.0 accepted on 192.0.2.1", false, true},
 		{"refused resolves", manual, Previous{Open: open(LegacyProtocol)},

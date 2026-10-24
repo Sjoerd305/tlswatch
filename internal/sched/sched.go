@@ -550,7 +550,7 @@ func (s *Scheduler) setLocked(id, next, stored int64) {
 	s.pushLocked(&item{id: id, next: next, stored: stored})
 }
 
-// check probes and stores one target; legacy tests TLS 1.0 and 1.1 even
+// check probes and stores one target; legacy tests the old versions even
 // when the daily test is not due.
 // check runs one check and never panics: a fault in the probe, the
 // evaluation or the store becomes an error for this target, logged with

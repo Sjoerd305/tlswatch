@@ -8,6 +8,7 @@
 package node
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"net/netip"
@@ -234,13 +235,13 @@ func (j ProbeJob) Request(received time.Time) probe.Request {
 
 // Timeout is how long the server waits for a leased job: the target's
 // timeout for every attempt, plus one timeout per handshake of the
-// configuration test (two legacy versions, four suite classes, the
+// configuration test (three legacy versions, four suite classes, the
 // post-quantum handshake) and slack for the round trip.
 func (j ProbeJob) Timeout() time.Duration {
 	d := time.Duration(j.TimeoutMS) * time.Millisecond
 	t := d*time.Duration(j.Retries+1) + 30*time.Second
 	if j.Legacy {
-		t += 7 * d
+		t += 8 * d
 	}
 	return t
 }
@@ -279,12 +280,16 @@ type Address struct {
 	DurationMS      int64           `json:"duration_ms"`
 	LegacyChecked   bool            `json:"legacy_checked,omitempty"`
 	Legacy          []string        `json:"legacy,omitempty"`
-	SuitesChecked   bool            `json:"suites_checked,omitempty"`
-	Suites          []string        `json:"suites,omitempty"`
-	SuiteNames      []string        `json:"suite_names,omitempty"`
-	OCSP            []byte          `json:"ocsp,omitempty"` // the stapled OCSP response
-	PQChecked       bool            `json:"pq_checked,omitempty"`
-	PQ              bool            `json:"pq,omitempty"`
+	// LegacyVersions names the versions the node's configuration test
+	// covers (probe.LegacyVersions of its build). A node from before SSL
+	// 3.0 was tested sends none, meaning TLS 1.0 and 1.1 only.
+	LegacyVersions []string `json:"legacy_versions,omitempty"`
+	SuitesChecked  bool     `json:"suites_checked,omitempty"`
+	Suites         []string `json:"suites,omitempty"`
+	SuiteNames     []string `json:"suite_names,omitempty"`
+	OCSP           []byte   `json:"ocsp,omitempty"` // the stapled OCSP response
+	PQChecked      bool     `json:"pq_checked,omitempty"`
+	PQ             bool     `json:"pq,omitempty"`
 }
 
 // EncodeResult converts a probe result for the wire.
@@ -295,11 +300,41 @@ func EncodeResult(r probe.Result) *ProbeResult {
 			IP: a.IP, OK: a.OK, ErrorKind: a.ErrorKind, Error: a.Error, TLSVersion: a.TLSVersion, Cipher: a.Cipher, Group: a.Group,
 			Chain: der(a.Chain), Verified: a.Verified, VerifyError: a.VerifyError, VerifiedChain: der(a.VerifiedChain),
 			HostnameChecked: a.HostnameChecked, HostnameOK: a.HostnameOK, DurationMS: a.Duration.Milliseconds(),
-			LegacyChecked: a.LegacyChecked, Legacy: a.Legacy,
+			LegacyChecked: a.LegacyChecked, Legacy: a.Legacy, LegacyVersions: legacyNames(a.LegacyChecked),
 			SuitesChecked: a.SuitesChecked, Suites: classNames(a.Suites), SuiteNames: a.SuiteNames, OCSP: a.OCSP, PQChecked: a.PQChecked, PQ: a.PQ,
 		})
 	}
 	return out
+}
+
+// legacyNames lists the versions this build's configuration test covers,
+// sent with a checked result so the server knows what "checked" spans.
+func legacyNames(checked bool) []string {
+	if !checked {
+		return nil
+	}
+	var out []string
+	for _, v := range probe.LegacyVersions {
+		out = append(out, probe.VersionName(v))
+	}
+	return out
+}
+
+// legacyCovered reports whether a node that tested the named versions
+// (none: the TLS 1.0 and 1.1 of older nodes) covered every version this
+// server tests. A result that does not is still "checked" for what it
+// accepted, but not a full verdict: the finding and the grade wait for the
+// node to update.
+func legacyCovered(names []string) bool {
+	if names == nil {
+		names = []string{tls.VersionName(tls.VersionTLS10), tls.VersionName(tls.VersionTLS11)}
+	}
+	for _, v := range probe.LegacyVersions {
+		if !slices.Contains(names, probe.VersionName(v)) {
+			return false
+		}
+	}
+	return true
 }
 
 // classNames and parseClasses carry the suite classes as strings; a class
@@ -355,7 +390,7 @@ func (p ProbeResult) Decode(req probe.Request, started time.Time) (probe.Result,
 	for _, w := range p.Addresses {
 		a := probe.Address{IP: w.IP, OK: w.OK, ErrorKind: w.ErrorKind, Error: w.Error, TLSVersion: w.TLSVersion, Cipher: w.Cipher, Group: core.Clip(w.Group, core.ShortMax),
 			Verified: w.Verified, VerifyError: w.VerifyError, Duration: time.Duration(w.DurationMS) * time.Millisecond,
-			LegacyChecked: w.LegacyChecked, Legacy: w.Legacy,
+			LegacyChecked: w.LegacyChecked && legacyCovered(w.LegacyVersions), Legacy: w.Legacy,
 			SuitesChecked: w.SuitesChecked, Suites: parseClasses(w.Suites), SuiteNames: w.SuiteNames, OCSP: w.OCSP, PQChecked: w.PQChecked, PQ: w.PQ}
 		var err error
 		if a.Chain, err = parseChain(w.Chain); err != nil {

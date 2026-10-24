@@ -110,7 +110,7 @@ type Target struct {
 	RemindCritS *int
 
 	AllAddresses bool
-	SkipLegacy   bool // the configuration test (TLS 1.0 and 1.1, cipher suites) is off
+	SkipLegacy   bool // the configuration test (SSL 3.0, TLS 1.0 and 1.1, cipher suites) is off
 	AllChannels  bool
 	ChannelIDs   []int64
 	Tags         []string
@@ -138,7 +138,8 @@ type Target struct {
 	DNSFail      int
 	DNSOk        int
 	NextCheck    int64
-	// LegacyChecked is when TLS 1.0 and 1.1 were last tested, 0 for never;
+	// LegacyChecked is when SSL 3.0, TLS 1.0 and 1.1 were last tested, 0
+	// for never;
 	// LegacyAccepted lists the versions an address accepted then.
 	LegacyChecked  int64
 	LegacyAccepted []string

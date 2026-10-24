@@ -90,8 +90,8 @@ type Request struct {
 	// uses it for its own allowlist.
 	Allow func(net.IP) error
 	// Legacy runs the configuration test on every answering address: one
-	// handshake per legacy version (TLS 1.0 and 1.1) pinned to it, then one
-	// pinned to TLS 1.2 per cipher suite class (see SuiteClasses).
+	// handshake per legacy version (SSL 3.0, TLS 1.0 and 1.1) pinned to it,
+	// then one pinned to TLS 1.2 per cipher suite class (see SuiteClasses).
 	Legacy   bool
 	Resolver *net.Resolver
 	Now      func() time.Time
@@ -148,9 +148,12 @@ type Address struct {
 	OCSP []byte
 }
 
-// LegacyVersions are the deprecated TLS versions Request.Legacy tests for,
-// oldest first (RFC 8996). Go has no SSL 3.0 client, so that is not tested.
-var LegacyVersions = []uint16{tls.VersionTLS10, tls.VersionTLS11}
+// LegacyVersions are the deprecated versions Request.Legacy tests for,
+// oldest first: SSL 3.0 (RFC 7568) and TLS 1.0 and 1.1 (RFC 8996). Go has
+// no SSL 3.0 client, so that one is tested with a hand-built ClientHello
+// (see ssl3.go); the two TLS versions with a pinned handshake. The names
+// in Address.Legacy come from VersionName.
+var LegacyVersions = []uint16{VersionSSL30, tls.VersionTLS10, tls.VersionTLS11}
 
 // Result is the outcome of one probe of one target.
 type Result struct {
@@ -301,9 +304,10 @@ func probeAddress(ctx context.Context, req Request, ip net.IP) (Address, bool) {
 
 // probeLegacy tests each legacy version with a handshake pinned to it. The
 // negotiated version settles some without a handshake: the server picked the
-// highest version it shares with a client offering all of them. A version
-// whose handshake could not be attempted (connect, STARTTLS or a timeout)
-// leaves the result unchecked.
+// highest version it shares with a client offering all of them, so it
+// cannot accept a higher legacy one; SSL 3.0, below everything the normal
+// probe offers, is always tested. A version whose handshake could not be
+// attempted (connect, STARTTLS or a timeout) leaves the result unchecked.
 func probeLegacy(ctx context.Context, req Request, ip net.IP, negotiated string) ([]string, bool) {
 	var neg uint16
 	for _, w := range []uint16{tls.VersionTLS10, tls.VersionTLS11, tls.VersionTLS12, tls.VersionTLS13} {
@@ -314,7 +318,7 @@ func probeLegacy(ctx context.Context, req Request, ip net.IP, negotiated string)
 	var accepted []string
 	checked := true
 	for _, v := range LegacyVersions {
-		name := tls.VersionName(v)
+		name := VersionName(v)
 		switch {
 		case neg == v:
 			accepted = append(accepted, name)
@@ -364,9 +368,13 @@ func groupName(id tls.CurveID) string {
 }
 
 // handshakeVersion reports whether the address completes a handshake at
-// exactly version v. A refused handshake is (false, nil); err is set when
-// no verdict was reached.
+// exactly version v, or for SSL 3.0 whether it answers with a ServerHello
+// at that version. A refused handshake is (false, nil); err is set when no
+// verdict was reached.
 func handshakeVersion(ctx context.Context, req Request, ip net.IP, v uint16) (bool, error) {
+	if v == VersionSSL30 {
+		return ssl3Accepts(ctx, req, ip)
+	}
 	cfg := clientConfig(req.ServerName)
 	cfg.MinVersion, cfg.MaxVersion = v, v
 	st, err := handshakeWith(ctx, req, ip, cfg)
@@ -378,19 +386,11 @@ func handshakeVersion(ctx context.Context, req Request, ip net.IP, v uint16) (bo
 // handshake (an alert, a closed connection) is (nil, nil); err is set when
 // no verdict was reached: connect, STARTTLS or a timeout.
 func handshakeWith(ctx context.Context, req Request, ip net.IP, cfg *tls.Config) (*tls.ConnectionState, error) {
-	start := time.Now()
-	d := net.Dialer{Timeout: req.Timeout}
-	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(ip.String(), strconv.Itoa(req.Port)))
+	conn, done, err := connect(ctx, req, ip)
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
-	_ = conn.SetDeadline(start.Add(req.Timeout))
-	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Now()) })
-	defer stop()
-	if err := startTLS(conn, req.Protocol); err != nil {
-		return nil, err
-	}
+	defer done()
 	tc := tls.Client(conn, cfg)
 	err = tc.HandshakeContext(ctx)
 	if err == nil {
@@ -402,6 +402,26 @@ func handshakeWith(ctx context.Context, req Request, ip net.IP, cfg *tls.Config)
 		return nil, err
 	}
 	return nil, nil
+}
+
+// connect dials the address with the request's timeout as the deadline for
+// everything that follows, and runs the protocol's STARTTLS, so the caller
+// can start a handshake of its own. done closes the connection.
+func connect(ctx context.Context, req Request, ip net.IP) (conn net.Conn, done func(), err error) {
+	start := time.Now()
+	d := net.Dialer{Timeout: req.Timeout}
+	conn, err = d.DialContext(ctx, "tcp", net.JoinHostPort(ip.String(), strconv.Itoa(req.Port)))
+	if err != nil {
+		return nil, nil, err
+	}
+	_ = conn.SetDeadline(start.Add(req.Timeout))
+	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Now()) })
+	done = func() { stop(); _ = conn.Close() }
+	if err := startTLS(conn, req.Protocol); err != nil {
+		done()
+		return nil, nil, err
+	}
+	return conn, done, nil
 }
 
 func probeOnce(ctx context.Context, req Request, ip net.IP) (Address, error) {

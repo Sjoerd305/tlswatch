@@ -4,7 +4,6 @@
 package check
 
 import (
-	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"net"
@@ -288,7 +287,7 @@ type Target struct {
 	ExpectedIssuer string
 	Debounce       int
 	PinnedFP       string
-	SkipLegacy     bool // the configuration test (TLS 1.0 and 1.1, cipher suites) is off
+	SkipLegacy     bool // the configuration test (SSL 3.0, TLS 1.0 and 1.1, cipher suites) is off
 }
 
 // Previous is the state left by the last check.
@@ -720,10 +719,10 @@ func (e *evaluation) facts(ok []probe.Address) {
 	}
 }
 
-// legacy opens legacy_protocol while an address accepts TLS 1.0 or 1.1.
-// The versions are tested about once a day, so a check that did not test
-// them leaves the finding as it is; so does a test that found nothing but
-// could not reach every address.
+// legacy opens legacy_protocol while an address accepts SSL 3.0, TLS 1.0
+// or 1.1. The versions are tested about once a day, so a check that did not
+// test them leaves the finding as it is; so does a test that found nothing
+// but could not reach every address.
 func (e *evaluation) legacy(ok []probe.Address) {
 	if e.t.SkipLegacy {
 		return
@@ -743,11 +742,11 @@ func (e *evaluation) legacy(ok []probe.Address) {
 	}
 	e.out.LegacyChecked = true
 	// Versions accepted by the same addresses share one part of the text:
-	// "TLS 1.0, TLS 1.1 accepted", or "… accepted on 192.0.2.1".
+	// "SSL 3.0, TLS 1.0 accepted", or "… accepted on 192.0.2.1".
 	var where []string
 	versions := map[string][]string{}
 	for _, v := range probe.LegacyVersions {
-		name := tls.VersionName(v)
+		name := probe.VersionName(v)
 		ips, found := on[name]
 		if !found {
 			continue
