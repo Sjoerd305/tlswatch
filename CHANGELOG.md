@@ -2,7 +2,7 @@
 
 Newest first, one line per change.
 
-## Unreleased
+## v0.1.3 - 2026-10-27
 
 - Other certificates. The daily configuration test asks every answering address for the certificates the normal probe does not see: one TLS 1.2 handshake offering only the suites of the other key type (RSA after an ECDSA leaf, ECDSA after an RSA one), and one without SNI. Each different chain is verified and checked like the main one. An alternate certificate that is expired, expiring, untrusted, distrusted or for another name opens the new `alternate_certificate` finding at the worst severity found, alerted as usual; a default certificate without SNI that is expired, untrusted or for another name opens `default_certificate` as info, never alerted. The target page lists the other certificates under each address's grade, and `tlswatch check` reports `other_certificates` per address. Nodes need an update to test this; until then both findings keep their state.
 - OCSP must-staple. A leaf with the TLS feature extension (RFC 7633) served without a good staple opens the new critical finding `must_staple` on every check, since Firefox refuses such a connection: no staple, one not valid for the leaf, unknown to the responder, or past its next update. Before reporting a missing staple the probe asks once more after 2 seconds, for servers such as nginx that staple from the second handshake after a restart.
