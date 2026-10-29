@@ -173,14 +173,14 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		w.Header().Set("X-Request-ID", ri.id)
 		defer func() {
 			if v := recover(); v != nil {
-				s.Log.Error("panic", "request_id", ri.id, "method", r.Method, "path", r.URL.Path, "err", v, "stack", string(debug.Stack()))
+				s.Log.Error("panic", "request_id", ri.id, "method", r.Method, "path", safeLogPath(r), "err", safeLogError(r, v), "stack", safeLogStack(r, string(debug.Stack())))
 				http.Error(w, "Internal error", http.StatusInternalServerError)
 			}
 			s.logRequest(r, ri, lw.status, s.now().Sub(start))
 		}()
 		st, err := s.Settings.Get(r.Context())
 		if err != nil {
-			s.Log.Error("settings", "request_id", ri.id, "err", err)
+			s.Log.Error("settings", "request_id", ri.id, "err", safeLogError(r, err))
 		}
 		ri.settings = st
 		ri.ip, ri.https = clientInfo(r, st.General.BehindProxy)
@@ -240,7 +240,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 				s.clearCookie(w, sessionCookie, ri)
 			default:
 				// A database hiccup is not a sign-out: keep the cookie.
-				s.Log.Error("session lookup", "request_id", ri.id, "path", r.URL.Path, "err", err)
+				s.Log.Error("session lookup", "request_id", ri.id, "path", safeLogPath(r), "err", safeLogError(r, err))
 				http.Error(w, "tlswatch is temporarily unavailable; try again shortly.", http.StatusServiceUnavailable)
 				return
 			}
@@ -310,7 +310,7 @@ func (s *Server) logRequest(r *http.Request, ri *reqInfo, status int, d time.Dur
 	if ri.api != nil {
 		user = ri.api.User.Email + " (token " + ri.api.Token.Name + ")"
 	}
-	s.Log.Log(r.Context(), level, "http", "request_id", ri.id, "method", r.Method, "path", r.URL.Path, "status", status,
+	s.Log.Log(r.Context(), level, "http", "request_id", ri.id, "method", r.Method, "path", safeLogPath(r), "status", status,
 		"ms", d.Milliseconds(), "ip", ri.ip, "user", user)
 }
 
@@ -521,7 +521,7 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, status int, msg st
 }
 
 func (s *Server) serverError(w http.ResponseWriter, r *http.Request, err error) {
-	s.Log.Error("request failed", "request_id", info(r).id, "method", r.Method, "path", r.URL.Path, "err", err)
+	s.Log.Error("request failed", "request_id", info(r).id, "method", r.Method, "path", safeLogPath(r), "err", safeLogError(r, err))
 	s.fail(w, r, http.StatusInternalServerError, "Something went wrong. The error has been logged.")
 }
 

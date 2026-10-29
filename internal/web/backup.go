@@ -53,7 +53,7 @@ func (s *Server) backupDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 	s.Core.Audit(r.Context(), user(r).Email, "backup.download", "backup", name)
 	if err := backup.Write(r.Context(), w, s.Core.DB, s.Key, pass, s.Version, now); err != nil {
-		s.Log.Error("backup download", "request_id", info(r).id, "err", err)
+		s.Log.Error("backup download", "request_id", info(r).id, "err", safeLogError(r, err))
 	}
 }
 

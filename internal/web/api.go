@@ -142,7 +142,7 @@ func (s *Server) apiFailErr(w http.ResponseWriter, r *http.Request, err error, n
 	case errors.Is(err, sched.ErrPaused):
 		apiFail(w, http.StatusServiceUnavailable, "unavailable", "A restore is running; try again shortly.")
 	default:
-		s.Log.Error("api request failed", "request_id", info(r).id, "method", r.Method, "path", r.URL.Path, "err", err)
+		s.Log.Error("api request failed", "request_id", info(r).id, "method", r.Method, "path", safeLogPath(r), "err", safeLogError(r, err))
 		apiFail(w, http.StatusInternalServerError, "internal", "Something went wrong. The error has been logged.")
 	}
 }
@@ -226,7 +226,7 @@ func (s *Server) apiGuard(a authz.Action, h http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		if err != nil {
-			s.Log.Error("api token lookup", "request_id", ri.id, "err", err)
+			s.Log.Error("api token lookup", "request_id", ri.id, "err", safeLogError(r, err))
 			apiFail(w, http.StatusServiceUnavailable, "unavailable", "tlswatch is temporarily unavailable; try again shortly.")
 			return
 		}

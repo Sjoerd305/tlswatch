@@ -147,14 +147,14 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string, p *
 func (s *Server) renderStatus(w http.ResponseWriter, r *http.Request, status int, name string, p *Page) {
 	t, ok := s.pages[name]
 	if !ok {
-		s.Log.Error("render: unknown page", "page", name, "path", r.URL.Path)
+		s.Log.Error("render: unknown page", "page", name, "path", safeLogPath(r))
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 	s.fill(w, r, p)
 	var buf bytes.Buffer
 	if err := t.ExecuteTemplate(&buf, "layout", p); err != nil {
-		s.Log.Error("render", "page", name, "path", r.URL.Path, "err", err)
+		s.Log.Error("render", "page", name, "path", safeLogPath(r), "err", safeLogError(r, err))
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}

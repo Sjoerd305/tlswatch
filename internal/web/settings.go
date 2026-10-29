@@ -639,7 +639,7 @@ func (s *Server) inviteLink(r *http.Request, u auth.User) (string, bool, error) 
 		if err == nil {
 			return link, true, nil
 		}
-		s.Log.Warn("invite mail failed", "channel", c.Name, "err", err)
+		s.Log.Warn("invite mail failed", "channel", c.Name, "err", safeLogError(r, err))
 		break
 	}
 	return link, false, nil
@@ -670,7 +670,7 @@ func (s *Server) userError(r *http.Request, err error) string {
 	if msg, ok := usererr.Message(err); ok {
 		return msg
 	}
-	s.Log.Error("request failed", "request_id", info(r).id, "method", r.Method, "path", r.URL.Path, "err", err)
+	s.Log.Error("request failed", "request_id", info(r).id, "method", r.Method, "path", safeLogPath(r), "err", safeLogError(r, err))
 	return "Something went wrong. The error has been logged."
 }
 

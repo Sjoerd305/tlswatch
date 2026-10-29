@@ -197,7 +197,7 @@ func (s *Server) ssoStart(provider string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cfg, err := s.providerConfig(r, provider)
 		if err != nil {
-			s.Log.Warn("single sign-on discovery failed", "provider", provider, "err", err)
+			s.Log.Warn("single sign-on discovery failed", "provider", provider, "err", safeLogError(r, err))
 			s.fail(w, r, http.StatusBadGateway, "The sign-in provider cannot be reached. Try again later, or ask an administrator to check Settings › Sign-in.")
 			return
 		}
@@ -244,7 +244,7 @@ func (s *Server) ssoCallback(provider string) http.HandlerFunc {
 			u, out, err = s.Auth.OIDCFinish(r.Context(), cfg, st, r.URL.Query().Get("state"), r.URL.Query().Get("code"))
 		}
 		if err != nil {
-			s.Log.Warn("single sign-on refused", "provider", provider, "err", err, "ip", info(r).ip)
+			s.Log.Warn("single sign-on refused", "provider", provider, "err", safeLogError(r, err), "ip", info(r).ip)
 			http.Redirect(w, r, "/login?error="+provider, http.StatusSeeOther)
 			return
 		}
