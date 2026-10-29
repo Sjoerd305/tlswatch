@@ -21,7 +21,7 @@ import (
 
 const targetCols = `t.id, t.name, t.host, t.port, t.protocol, t.servername, t.trust_mode, COALESCE(t.bundle_id, 0), COALESCE(b.name, ''),
 	t.renewal_managed, t.renewal_set, t.expected_issuer, t.warn_days, t.crit_days, t.interval_s, t.timeout_s, t.retries, t.debounce,
-	t.remind_warn_s, t.remind_crit_s, t.all_addresses, t.all_channels, t.tags, t.notes, t.enabled, t.created_at, t.created_by, t.updated_at,
+	t.remind_warn_s, t.remind_crit_s, t.all_addresses, t.all_channels, t.tags, t.notes, t.enabled, t.created_at, t.created_by, t.updated_at, t.revision,
 	t.status, t.pinned_fp, t.current_fp, t.not_after, t.tls_version, t.address_count, t.last_check, t.last_error,
 	t.fail_streak, t.ok_streak, t.dns_fail_streak, t.dns_ok_streak, t.next_check, t.legacy_check, t.legacy_checked, t.legacy_accepted,
 	t.grade, t.grade_reasons, t.grade_rules, t.config_test, t.warn_pct, t.crit_pct, t.renewal_pct, t.pq,
@@ -36,7 +36,7 @@ func scanTarget(r interface{ Scan(...any) error }) (Target, error) {
 	var warn, crit, interval, timeout, retries, debounce, rw, rc, warnPct, critPct, renewalPct sql.NullInt64
 	err := r.Scan(&t.ID, &t.Name, &t.Host, &t.Port, &proto, &t.ServerName, &trust, &t.BundleID, &t.BundleName,
 		&t.RenewalManaged, &t.RenewalSet, &t.ExpectedIssuer, &warn, &crit, &interval, &timeout, &retries, &debounce,
-		&rw, &rc, &t.AllAddresses, &t.AllChannels, &tags, &t.Notes, &t.Enabled, &t.CreatedAt, &t.CreatedBy, &t.UpdatedAt,
+		&rw, &rc, &t.AllAddresses, &t.AllChannels, &tags, &t.Notes, &t.Enabled, &t.CreatedAt, &t.CreatedBy, &t.UpdatedAt, &t.Revision,
 		&t.Status, &t.PinnedFP, &t.CurrentFP, &t.NotAfter, &t.TLSVersion, &t.AddressCount, &t.LastCheck, &t.LastError,
 		&t.FailStreak, &t.OkStreak, &t.DNSFail, &t.DNSOk, &t.NextCheck, &legacyCheck, &t.LegacyChecked, &legacy,
 		&t.Grade, &reasons, &t.GradeRules, &configTest, &warnPct, &critPct, &renewalPct, &t.PQ,
@@ -412,7 +412,7 @@ func (s *Service) saveTargetTx(ctx context.Context, tx *sql.Tx, t Target, def co
 		_, err = tx.ExecContext(ctx, `UPDATE targets SET name=?, host=?, port=?, protocol=?, servername=?, trust_mode=?, bundle_id=?,
 			renewal_managed=?, renewal_set=?, expected_issuer=?, warn_days=?, crit_days=?, interval_s=?, timeout_s=?, retries=?, debounce=?,
 			remind_warn_s=?, remind_crit_s=?, all_addresses=?, legacy_check=?, all_channels=?, tags=?, notes=?, node_id=?, enabled=?,
-			warn_pct=?, crit_pct=?, renewal_pct=?, updated_at=? WHERE id = ?`,
+			warn_pct=?, crit_pct=?, renewal_pct=?, updated_at=?, revision = revision + 1 WHERE id = ?`,
 			append(args, t.ID)...)
 		if err != nil {
 			return 0, uniqueTarget(err)
@@ -494,7 +494,7 @@ func (s *Service) SetEnabled(ctx context.Context, id int64, enabled bool) error 
 }
 
 func (s *Service) setEnabledTx(ctx context.Context, tx *sql.Tx, id int64, enabled bool) error {
-	res, err := tx.ExecContext(ctx, "UPDATE targets SET enabled = ?, next_check = 0, updated_at = ? WHERE id = ?", enabled, s.now().Unix(), id)
+	res, err := tx.ExecContext(ctx, "UPDATE targets SET enabled = ?, next_check = 0, updated_at = ?, revision = revision + 1 WHERE id = ?", enabled, s.now().Unix(), id)
 	if err != nil {
 		return err
 	}

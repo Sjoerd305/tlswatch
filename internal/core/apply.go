@@ -472,23 +472,27 @@ func updateTargetTx(ctx context.Context, tx *sql.Tx, t Target, r probe.Result, o
 
 // unchangedTx returns ErrStale when the target was disabled or edited since
 // t was read, so a probe that ran meanwhile cannot reopen the findings that
-// disabling resolved, or store the old endpoint's certificate as current.
-// A target moved to another node is a new vantage point and stale too.
+// disabling resolved, store the old endpoint's certificate as current, or
+// plan the next check by an interval that no longer applies. The revision
+// counter catches a change in the same second as the read, which updated_at
+// cannot; the identity columns are compared as well, so a database from
+// before the counter is safe on the first run. A target moved to another
+// node is a new vantage point and stale too.
 func unchangedTx(ctx context.Context, tx *sql.Tx, t Target) error {
 	var enabled bool
 	var host, protocol, sni, trust string
 	var port int
 	var bundle, node sql.NullInt64
-	var updated int64
-	err := tx.QueryRowContext(ctx, "SELECT enabled, host, port, protocol, servername, trust_mode, bundle_id, node_id, updated_at FROM targets WHERE id = ?", t.ID).
-		Scan(&enabled, &host, &port, &protocol, &sni, &trust, &bundle, &node, &updated)
+	var revision int64
+	err := tx.QueryRowContext(ctx, "SELECT enabled, host, port, protocol, servername, trust_mode, bundle_id, node_id, revision FROM targets WHERE id = ?", t.ID).
+		Scan(&enabled, &host, &port, &protocol, &sni, &trust, &bundle, &node, &revision)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	if !enabled || updated != t.UpdatedAt || host != t.Host || port != t.Port || protocol != string(t.Protocol) ||
+	if !enabled || revision != t.Revision || host != t.Host || port != t.Port || protocol != string(t.Protocol) ||
 		sni != t.ServerName || trust != string(t.Trust) || bundle.Int64 != t.BundleID || node.Int64 != t.NodeID {
 		return ErrStale
 	}

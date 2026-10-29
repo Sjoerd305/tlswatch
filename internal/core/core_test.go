@@ -630,6 +630,33 @@ func TestApplyDiscardsStaleTarget(t *testing.T) {
 	if got, _ := e.svc.Target(e.ctx, tg.ID); got.CurrentFP != "" {
 		t.Fatal("old endpoint's certificate stored as current")
 	}
+
+	// An edit that keeps the endpoint but changes the interval, in the same
+	// second as the check read the target (the test clock does not move):
+	// the result would plan the next check by the old interval.
+	tg = e.target(func(t *Target) { t.Port = 9443; t.IntervalS = intp(7 * 86400) })
+	edited := tg
+	edited.IntervalS = intp(3600)
+	if _, err := e.svc.SaveTarget(e.ctx, edited, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.Apply(e.ctx, tg, expiring); !errors.Is(err, ErrStale) {
+		t.Fatalf("interval changed meanwhile: %v", err)
+	}
+	got, _ := e.svc.Target(e.ctx, tg.ID)
+	if got.Revision != tg.Revision+1 {
+		t.Fatalf("revision %d after one edit of %d", got.Revision, tg.Revision)
+	}
+	if got.LastCheck != 0 || got.NextCheck > now.Add(2*time.Hour).Unix() {
+		t.Fatalf("stale result stored: last check %d, next check in %s", got.LastCheck, time.Duration(got.NextCheck-now.Unix())*time.Second)
+	}
+	// The re-read target's result is stored.
+	if _, err := e.svc.Apply(e.ctx, got, expiring); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = e.svc.Target(e.ctx, tg.ID); got.LastCheck == 0 || got.NextCheck > now.Add(2*time.Hour).Unix() {
+		t.Fatalf("fresh result: last check %d, next check in %s", got.LastCheck, time.Duration(got.NextCheck-now.Unix())*time.Second)
+	}
 }
 
 // A Telegram chat that fails does not make the retry repeat the message to

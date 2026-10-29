@@ -364,6 +364,11 @@ func (w *statusWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
+// Unwrap lets http.ResponseController reach the server's connection through
+// the wrapper, so a handler can set its own deadlines (the backup transfer)
+// or flush.
+func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
 // clientInfo returns the client IP and whether the request arrived over
 // HTTPS, trusting forwarded headers from one proxy hop only when configured.
 // Before that is configured, a peer on a loopback or private address that

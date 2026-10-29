@@ -64,6 +64,7 @@
 
 import { $, $$, api, ApiError, messages, onReady } from "./common.js";
 import { loadInto } from "./load.js";
+import { refresh } from "./refresh.js";
 import { nextSort, order, setSortParams, type SortState } from "./sort.js";
 
 interface ApiReply {
@@ -600,8 +601,9 @@ async function poll(): Promise<void> {
     const reply = await api<{ stamp: string; busy: boolean }>("GET", "/api/v1/stamp");
     busy = reply.busy;
     if (reply.stamp !== currentStamp()) {
-      if (canRefresh()) await refreshPage();
-      else busy = true; // try again soon
+      // Checked before the fetch and again when the render arrives: the
+      // user had the whole round trip to tick a box or select text.
+      if (!canRefresh() || !(await refreshPage(canRefresh))) busy = true; // try again soon
     }
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {
@@ -614,24 +616,39 @@ async function poll(): Promise<void> {
 
 // refreshPage swaps in a fresh render of the current URL (which carries the
 // live filter, the open row and the selected finding). The request is marked
-// so it does not count as activity for the session idle timeout.
-async function refreshPage(): Promise<void> {
-  const expectedURL = window.location.href;
-  let res: Response;
-  try {
-    res = await fetch(expectedURL, { credentials: "same-origin", headers: { Accept: "text/html", "X-Tlswatch-Refresh": "1" } });
-  } catch {
-    return; // offline for a moment; the next poll tries again
-  }
-  if (!res.ok || res.redirected) {
-    window.location.reload();
-    return;
-  }
-  const html = await res.text();
-  // A slower response must not replace a newer filter or typed text.
-  if (window.location.href !== expectedURL) return;
+// so it does not count as activity for the session idle timeout. `safe` is
+// asked again when the render arrives, and the render is dropped when it
+// says no; the live search passes none, since its own typing is what the
+// render answers. Returns whether the render was swapped in.
+async function refreshPage(safe: () => boolean = () => true): Promise<boolean> {
+  const outcome = await refresh(
+    {
+      url: () => window.location.href,
+      fetchPage: async (url) => {
+        try {
+          const res = await fetch(url, { credentials: "same-origin", headers: { Accept: "text/html", "X-Tlswatch-Refresh": "1" } });
+          const usable = res.ok && !res.redirected;
+          return { ok: res.ok, redirected: res.redirected, html: usable ? await res.text() : "" };
+        } catch {
+          return null;
+        }
+      },
+      searchMismatch: (url) => {
+        const search = $<HTMLInputElement>("input[data-server-search]");
+        return search !== null && search.value.trim() !== (new URL(url).searchParams.get("q") ?? "").trim();
+      },
+      swap: swapRender,
+      reload: () => window.location.reload(),
+    },
+    safe,
+  );
+  return outcome === "swapped";
+}
+
+// swapRender replaces the page head and main content with those of a fresh
+// render, keeping the focus and selection of the live search field.
+function swapRender(html: string): boolean {
   const search = $<HTMLInputElement>("input[data-server-search]");
-  if (search !== null && search.value.trim() !== (new URL(expectedURL).searchParams.get("q") ?? "").trim()) return;
   const focused = search !== null && document.activeElement === search;
   const selection = focused ? [search.selectionStart, search.selectionEnd] : null;
   const doc = new DOMParser().parseFromString(html, "text/html");
@@ -640,10 +657,7 @@ async function refreshPage(): Promise<void> {
   const stamp = doc.querySelector<HTMLMetaElement>('meta[name="tlswatch-stamp"]')?.content;
   const curMain = $("#main");
   const curTop = $("header.top");
-  if (main === null || top === null || stamp === undefined || curMain === null || curTop === null) {
-    window.location.reload();
-    return;
-  }
+  if (main === null || top === null || stamp === undefined || curMain === null || curTop === null) return false;
   curTop.replaceWith(document.adoptNode(top));
   // Snapshot first: adopting a node removes it from the live childNodes list.
   const nodes = Array.from(main.childNodes);
@@ -658,6 +672,7 @@ async function refreshPage(): Promise<void> {
       fresh?.setSelectionRange(selection[0], selection[1]);
     }
   }
+  return true;
 }
 
 async function adoptStamp(): Promise<void> {

@@ -119,6 +119,10 @@ type Target struct {
 	CreatedAt    int64
 	CreatedBy    string
 	UpdatedAt    int64
+	// Revision counts the configuration changes (edit, enable, disable, node
+	// moved or deleted); a probe result is stored only against the revision it
+	// was started from.
+	Revision int64
 
 	// NodeID is the node the target is probed from, 0 for this server.
 	NodeID   int64

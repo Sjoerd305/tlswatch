@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sjoerd305/tlswatch/internal/authz"
 )
@@ -65,6 +66,44 @@ func (hs *harness) count(q string) int {
 		hs.t.Fatal(err)
 	}
 	return n
+}
+
+// deadlineWriter stands in for the server's connection: it records the
+// deadlines a handler sets through http.ResponseController.
+type deadlineWriter struct {
+	httptest.ResponseRecorder
+	read, write time.Time
+}
+
+func (w *deadlineWriter) SetReadDeadline(t time.Time) error  { w.read = t; return nil }
+func (w *deadlineWriter) SetWriteDeadline(t time.Time) error { w.write = t; return nil }
+
+// The backup transfer deadlines reach the connection through the status
+// wrapper the middleware puts around every response; without Unwrap the
+// server's 60 s read and 150 s write timeouts would cut a large backup off.
+func TestBackupDeadlinesReachTheConnection(t *testing.T) {
+	hs := newHarness(t)
+	conn := &deadlineWriter{}
+	req := httptest.NewRequest("POST", "/settings/backup", strings.NewReader(url.Values{"passphrase": {testPassphrase}, "passphrase2": {testPassphrase}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	admin := hs.sess[authz.Admin]
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: admin.cookie})
+	req.Header.Set("X-CSRF-Token", admin.csrf)
+	start := hs.srv.now()
+	hs.h.ServeHTTP(conn, req)
+	if conn.Code != http.StatusOK {
+		t.Fatalf("download: %d %s", conn.Code, conn.Body.String())
+	}
+	if got := conn.write.Sub(start); got < transferTime || got > transferTime+time.Minute {
+		t.Fatalf("write deadline %s after the request, want %s", got, transferTime)
+	}
+	rc := http.NewResponseController(&statusWriter{ResponseWriter: conn})
+	if err := rc.SetReadDeadline(start.Add(transferTime)); err != nil {
+		t.Fatalf("read deadline through the wrapper: %v", err)
+	}
+	if !conn.read.Equal(start.Add(transferTime)) {
+		t.Fatalf("read deadline %s, want %s", conn.read, start.Add(transferTime))
+	}
 }
 
 func TestBackupDownloadAndRestore(t *testing.T) {

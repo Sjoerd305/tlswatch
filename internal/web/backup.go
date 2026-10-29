@@ -46,7 +46,9 @@ func (s *Server) backupDownload(w http.ResponseWriter, r *http.Request) {
 		s.backupPage(w, r, http.StatusBadRequest, backupData{Error: msg})
 		return
 	}
-	_ = http.NewResponseController(w).SetWriteDeadline(s.now().Add(transferTime))
+	if err := http.NewResponseController(w).SetWriteDeadline(s.now().Add(transferTime)); err != nil {
+		s.Log.Warn("backup download: transfer deadline not set, the server's write timeout applies", "request_id", info(r).id, "err", err)
+	}
 	now := s.now()
 	name := fmt.Sprintf("tlswatch-%s.backup", now.In(info(r).settings.Location()).Format("2006-01-02-1504"))
 	w.Header().Set("Content-Type", "application/octet-stream")
@@ -119,8 +121,12 @@ var errCSRF = errors.New("csrf")
 // (csrf, passphrase, confirm, then the file), and restores the file.
 func (s *Server) restoreUpload(w http.ResponseWriter, r *http.Request, setup bool) error {
 	rc := http.NewResponseController(w)
-	_ = rc.SetReadDeadline(s.now().Add(transferTime))
-	_ = rc.SetWriteDeadline(s.now().Add(transferTime))
+	if err := rc.SetReadDeadline(s.now().Add(transferTime)); err != nil {
+		s.Log.Warn("backup restore: transfer deadline not set, the server's read timeout applies", "request_id", info(r).id, "err", err)
+	}
+	if err := rc.SetWriteDeadline(s.now().Add(transferTime)); err != nil {
+		s.Log.Warn("backup restore: transfer deadline not set, the server's write timeout applies", "request_id", info(r).id, "err", err)
+	}
 	mr, err := r.MultipartReader()
 	if err != nil {
 		return usererr.New("The form could not be read")

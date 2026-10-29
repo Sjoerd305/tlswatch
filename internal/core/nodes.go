@@ -617,7 +617,7 @@ func (s *Service) DeleteNode(ctx context.Context, id int64, move bool) error {
 		if err := newVantageTx(ctx, tx, "node_id = ?", id); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, "UPDATE targets SET node_id = NULL, updated_at = ? WHERE node_id = ?", s.now().Unix(), id); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE targets SET node_id = NULL, updated_at = ?, revision = revision + 1 WHERE node_id = ?", s.now().Unix(), id); err != nil {
 			return err
 		}
 	}
