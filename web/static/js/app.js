@@ -132,6 +132,23 @@ async function handleCopy(btn) {
     }
 }
 // ---------- Live filter and chips ----------
+let serverFilterTimer;
+function scheduleServerFilter(input) {
+    window.clearTimeout(serverFilterTimer);
+    serverFilterTimer = window.setTimeout(() => {
+        if (!input.isConnected)
+            return;
+        const url = new URL(window.location.href);
+        const text = input.value.trim();
+        if (text !== "")
+            url.searchParams.set("q", text);
+        else
+            url.searchParams.delete("q");
+        url.searchParams.delete("page");
+        window.history.replaceState(null, "", url.toString());
+        void refreshPage();
+    }, 350);
+}
 function tableRows(table) {
     return $$("tbody > tr[data-search]", table);
 }
@@ -142,6 +159,10 @@ function rowHasToken(row, key, value) {
     return attr.split(/\s+/).includes(value);
 }
 function applyFilter(tableSel, updateUrl) {
+    if ($(tableSel)?.hasAttribute("data-server-page")) {
+        updateBulk(tableSel);
+        return;
+    }
     const table = $(tableSel);
     if (table === null)
         return;
@@ -364,10 +385,11 @@ async function submitApiForm(form, submitter) {
         if (submitter instanceof HTMLButtonElement && submitter.name !== "")
             data.set(submitter.name, submitter.value);
         const reply = await api("POST", url, data);
+        const paged = form.closest("table[data-server-page]") !== null;
         applyReply(reply, form, form.dataset["replace"]);
-        // A row updated in place is current; anything else (Check all) shows up
-        // through a quick live refresh.
-        if (reply?.html !== undefined)
+        // A paginated list refreshes its counts and global order after a row
+        // changes. Other lists can keep their existing in-place update.
+        if (reply?.html !== undefined && !paged)
             void adoptStamp();
         else
             schedulePoll(fastPoll);
@@ -445,12 +467,16 @@ function updateBulk(tableSel) {
         return;
     let shown = 0;
     let checked = 0;
+    const seen = new Set();
     for (const box of bulkBoxes(table)) {
         // A row hidden by the filter is never acted on unseen.
         if (box.closest("tr")?.hidden === true) {
             box.checked = false;
             continue;
         }
+        if (seen.has(box.value))
+            continue;
+        seen.add(box.value);
         shown++;
         if (box.checked)
             checked++;
@@ -613,9 +639,10 @@ async function poll() {
 // live filter, the open row and the selected finding). The request is marked
 // so it does not count as activity for the session idle timeout.
 async function refreshPage() {
+    const expectedURL = window.location.href;
     let res;
     try {
-        res = await fetch(window.location.href, { credentials: "same-origin", headers: { Accept: "text/html", "X-Tlswatch-Refresh": "1" } });
+        res = await fetch(expectedURL, { credentials: "same-origin", headers: { Accept: "text/html", "X-Tlswatch-Refresh": "1" } });
     }
     catch {
         return; // offline for a moment; the next poll tries again
@@ -624,7 +651,16 @@ async function refreshPage() {
         window.location.reload();
         return;
     }
-    const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+    const html = await res.text();
+    // A slower response must not replace a newer filter or typed text.
+    if (window.location.href !== expectedURL)
+        return;
+    const search = $("input[data-server-search]");
+    if (search !== null && search.value.trim() !== (new URL(expectedURL).searchParams.get("q") ?? "").trim())
+        return;
+    const focused = search !== null && document.activeElement === search;
+    const selection = focused ? [search.selectionStart, search.selectionEnd] : null;
+    const doc = new DOMParser().parseFromString(html, "text/html");
     const main = doc.querySelector("#main");
     const top = doc.querySelector("header.top");
     const stamp = doc.querySelector('meta[name="tlswatch-stamp"]')?.content;
@@ -641,6 +677,13 @@ async function refreshPage() {
     document.title = doc.title;
     setStamp(stamp);
     initPage();
+    if (focused) {
+        const fresh = $("input[data-server-search]");
+        fresh?.focus();
+        if (selection !== null && selection[0] !== null && selection[0] !== undefined && selection[1] !== null && selection[1] !== undefined) {
+            fresh?.setSelectionRange(selection[0], selection[1]);
+        }
+    }
 }
 async function adoptStamp() {
     try {
@@ -710,7 +753,7 @@ onReady(() => {
         if (kept !== null)
             keepFilter(kept);
         const chip = target.closest("[data-chip-group] [data-chip-key]");
-        if (chip !== null && !ev.metaKey && !ev.ctrlKey && !ev.shiftKey) {
+        if (chip !== null && chip.closest("[data-server-filter]") === null && !ev.metaKey && !ev.ctrlKey && !ev.shiftKey) {
             ev.preventDefault();
             handleChip(chip);
             return;
@@ -723,7 +766,7 @@ onReady(() => {
         }
         const sortLink = target.closest("th.sortable a[data-sort]");
         const sortTable_ = sortLink?.closest("table[data-sort-default]");
-        if (sortLink !== null && sortTable_ !== null && sortTable_ !== undefined && !ev.metaKey && !ev.ctrlKey && !ev.shiftKey) {
+        if (sortLink !== null && sortTable_ !== null && sortTable_ !== undefined && !sortTable_.hasAttribute("data-server-page") && !ev.metaKey && !ev.ctrlKey && !ev.shiftKey) {
             ev.preventDefault();
             sortTable(sortTable_, nextSort(tableSort(sortTable_), sortLink.dataset["sort"] ?? ""));
             return;
@@ -752,7 +795,7 @@ onReady(() => {
             const key = CSS.escape(chipFor.dataset["chipKey"] ?? "");
             const value = CSS.escape(chipFor.dataset["chipValue"] ?? "");
             const match = $(`[data-chip-group="${chipFor.dataset["chipFor"] ?? ""}"] [data-chip-key="${key}"][data-chip-value="${value}"]`);
-            if (match !== null) {
+            if (match !== null && match.closest("[data-server-filter]") === null) {
                 ev.preventDefault();
                 if (!match.classList.contains("on"))
                     handleChip(match);
@@ -891,11 +934,20 @@ onReady(() => {
             return;
         }
         const table = box.name === "id" ? box.closest("table[id]") : null;
-        if (table !== null)
+        if (table !== null) {
+            // Grouping can show the same target under several tags.
+            for (const peer of bulkBoxes(table))
+                if (peer.value === box.value)
+                    peer.checked = box.checked;
             updateBulk(`#${table.id}`);
+        }
     });
     document.addEventListener("input", (ev) => {
         const input = ev.target;
+        if (input instanceof HTMLInputElement && input.hasAttribute("data-server-search")) {
+            scheduleServerFilter(input);
+            return;
+        }
         if (input instanceof HTMLInputElement && input.dataset["filter"] !== undefined) {
             applyFilter(input.dataset["filter"], true);
         }

@@ -59,6 +59,19 @@ func (p *Page) Can(a string) bool {
 	return p.User != nil && authz.Allowed(p.User.Role, authz.Action(a))
 }
 
+// TargetFilterHref keeps global filters when a row's tag, node or grade is
+// followed, including without JavaScript and in a new tab.
+func (p *Page) TargetFilterHref(key string, value any) string {
+	u, err := url.Parse(p.Path)
+	if err != nil || u.Path != "/targets" {
+		u = &url.URL{Path: "/targets"}
+	}
+	q := u.Query()
+	q.Del("page")
+	q.Set(key, fmt.Sprint(value))
+	return "/targets?" + q.Encode()
+}
+
 func (s *Server) loadTemplates() error {
 	funcs := s.funcs()
 	base, err := template.New("base").Funcs(funcs).ParseFS(assets.FS, "templates/layout.html", "templates/partials.html")

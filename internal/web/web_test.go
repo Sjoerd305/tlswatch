@@ -987,11 +987,11 @@ func TestGradeOnTargetsListAndPage(t *testing.T) {
 			t.Errorf("targets list lacks %q", want)
 		}
 	}
-	if rec := hs.do(authz.Viewer, "GET", "/targets?pq=yes", nil, false); !strings.Contains(rec.Body.String(), ` hidden>`) {
-		t.Error("the PQ filter did not hide the target without post-quantum key exchange")
+	if rec := hs.do(authz.Viewer, "GET", "/targets?pq=yes", nil, false); strings.Contains(rec.Body.String(), `id="target-1"`) {
+		t.Error("the PQ filter rendered a nonmatching target")
 	}
-	if rec := hs.do(authz.Viewer, "GET", "/targets?grade=A", nil, false); !strings.Contains(rec.Body.String(), `id="target-1"`) || !strings.Contains(rec.Body.String(), ` hidden>`) {
-		t.Error("a grade filter did not hide the C target")
+	if rec := hs.do(authz.Viewer, "GET", "/targets?grade=A", nil, false); strings.Contains(rec.Body.String(), `id="target-1"`) {
+		t.Error("the grade filter rendered a nonmatching target")
 	}
 	// Chip counts follow the other groups' filters: under grade A the PQ no
 	// chip counts nothing and is dimmed, while the grade chips keep theirs.

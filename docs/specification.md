@@ -408,6 +408,8 @@ The UI is an operations console: the home screen answers "what needs attention n
 
 **Grouping** is by free-form tags (`customer:contoso`, `site:amsterdam`, `sip`), shown as badges, filterable, and usable as a column to group the targets list. Tags are enough for 10 to 100 targets and scale by convention; a fixed group hierarchy is deliberately left out. Every target has a notes field for owner, ticket number or renewal procedure.
 
+**Target pagination.** The targets page shows at most 100 matching targets per page. Filters, sort order and chip counts cover the whole inventory; changing a filter or sort returns to the first page. Tag grouping groups only the current page, and bulk selection acts on its distinct targets. Search is a literal Unicode-case-insensitive substring, including `%` and `_`. With JavaScript, typing waits 350 ms before fetching the matching page and preserves focus; without it, the Filter button submits the same search. Live updates refresh the current bounded page.
+
 **Filter chips** combine across groups: one active chip per group, and a row shows when it matches all of them and the filter text. A chip's count is the number of rows it would show given the filter text and the other groups' active chips, its own group left out, so the counts follow every filter as it changes, live with JavaScript and on the server-rendered page without it. A chip that would show nothing stays in place, dimmed with a count of 0, so a combination like grade F and tag mail is visibly empty before it is chosen. The "Any tag" and "Any issuer" chips carry no count.
 
 | Screen | Role | Content |
@@ -480,6 +482,8 @@ Demo mode refuses to start on a database that has user accounts: that is a real 
 ## REST API
 
 The public API lives under `/api/v2`; the internal `/api/v1` stays private to the TypeScript. It takes `Authorization: Bearer <API token>` and nothing else: it never reads the session cookie. `GET /api/v2/openapi.json` (OpenAPI 3.1) is served without a token; it is generated from the same table of endpoints that registers the handlers and from the Go types of their bodies and responses, so it cannot drift from them, and names each endpoint's role action as `x-role-action`.
+
+Target list pagination runs in SQLite, ordered by ID with one extra row to determine `next_cursor`. Only that page's certificate summaries and channel links are loaded. Existing zero-padded ID cursors remain valid. Invalid limits and cursors are rejected before database access. Full exports still read the entire inventory; certificate and channel lookups use batches of at most 500 parameters.
 
 | Endpoint | Role | What it does |
 | --- | --- | --- |
@@ -573,7 +577,7 @@ Where TypeScript is used in version 1:
 - Clickable rows, table row expand/collapse, copy-to-clipboard for fingerprints and PEM, filter chips, and tags that act as chips.
 - The acknowledge panel (until-date, comment, close with Escape), and the bulk selection on the findings and targets lists.
 - Live filtering on the targets, certificates and findings tables, the "/" shortcut (shown as a key hint in the filter field), and links that carry the current filter.
-- Column sorting on the same three tables: a click on a head re-orders the rendered rows from their `data-sort-*` values the way the server would, and writes `sort` and `dir` into the URL.
+- Column sorting on the targets table requests a globally sorted database page; certificates and findings re-order their rendered rows from `data-sort-*` values. All three keep `sort` and `dir` in the URL.
 - Confirmation before deleting, and disabling a form's buttons while it is sent.
 
 Everything else is a form, and every one of these works as a plain link or form without JavaScript (the bulk bar shows through CSS alone). Shared helpers (`$`, `api()`, `ApiError`, `onReady`) live in `common.ts`; error messages come from one `messages` map, in English.

@@ -267,12 +267,34 @@ func (s *Service) domainsWithChannels(ctx context.Context) ([]Domain, error) {
 // TargetChannels fills in the channels of targets from a list, which
 // leaves them out.
 func (s *Service) TargetChannels(ctx context.Context, ts []Target) error {
-	links, err := s.channelLinks(ctx, "SELECT target_id, channel_id FROM target_channels")
-	if err != nil {
-		return err
-	}
-	for i := range ts {
-		ts[i].ChannelIDs = links[ts[i].ID]
+	const batch = 500
+	for start := 0; start < len(ts); start += batch {
+		targets := ts[start:min(start+batch, len(ts))]
+		args := make([]any, len(targets))
+		byID := make(map[int64]int, len(targets))
+		for i := range targets {
+			args[i] = targets[i].ID
+			byID[targets[i].ID] = i
+			targets[i].ChannelIDs = nil
+		}
+		// #nosec G202 -- only the number of bound placeholders varies
+		rows, err := s.DB.R.QueryContext(ctx, "SELECT target_id, channel_id FROM target_channels WHERE target_id IN (?"+strings.Repeat(",?", len(args)-1)+") ORDER BY target_id, channel_id", args...)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var id, channel int64
+			if err := rows.Scan(&id, &channel); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			i := byID[id]
+			targets[i].ChannelIDs = append(targets[i].ChannelIDs, channel)
+		}
+		_ = rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -10,17 +10,24 @@
   </div>
   {{- end}}
 </div>
-{{- if not $d.Targets}}
+{{- if not $d.Total}}
 <section class="card"><div class="empty"><span class="h3">No targets yet</span><span>{{if $p.Can "targets.edit"}}<a href="/targets/new">Add one</a>{{else}}Ask an operator to add one{{end}}, or run <span class="mono">tlswatch check host</span> to try an endpoint.</span></div></section>
 {{- else}}
-<form class="row filters" method="get" action="/targets" role="search">
-  <div class="filter">{{template "search-icon"}}<input class="input" type="search" name="q" value="{{$d.Query}}" placeholder="Filter: name, host, tag, issuer" aria-label="Filter targets" aria-keyshortcuts="/" title="Press / to filter" data-filter="#targets">{{template "key-hint"}}</div>
+<form class="row filters" method="get" action="/targets" role="search" data-server-filter>
+  <input type="hidden" name="sort" value="{{$s.Key}}"><input type="hidden" name="dir" value="{{if $s.Desc}}desc{{else}}asc{{end}}">
+  {{if $d.Filter.Status}}<input type="hidden" name="status" value="{{$d.Filter.Status}}">{{end}}
+  {{if $d.Filter.Tag}}<input type="hidden" name="tag" value="{{$d.Filter.Tag}}">{{end}}
+  {{if $d.Filter.Grade}}<input type="hidden" name="grade" value="{{$d.Filter.Grade}}">{{end}}
+  {{if $d.Filter.PQ}}<input type="hidden" name="pq" value="{{$d.Filter.PQ}}">{{end}}
+  {{if $d.Filter.Node}}<input type="hidden" name="node" value="{{$d.Filter.Node}}">{{end}}
+  {{if $d.Group}}<input type="hidden" name="group" value="tag">{{end}}
+  <div class="filter">{{template "search-icon"}}<input class="input" type="search" name="q" value="{{$d.Query}}" placeholder="Filter: name, host, tag, issuer" aria-label="Filter targets" aria-keyshortcuts="/" title="Press / to filter" data-server-search>{{template "key-hint"}}</div>
   <span class="chips" data-chip-group="#targets">{{template "chips" $d.Status}}</span>
   {{- if $d.Tags}}<span class="divider"></span><span class="chips" data-chip-group="#targets">{{template "chips" $d.Tags}}</span>{{end}}
   {{- if $d.Grades}}<span class="divider"></span><span class="chips" data-chip-group="#targets">{{template "chips" $d.Grades}}</span>{{end}}
   {{- if $d.PQ}}<span class="divider"></span><span class="chips" data-chip-group="#targets">{{template "chips" $d.PQ}}</span>{{end}}
   {{- if $d.Nodes}}<span class="divider"></span><span class="chips" data-chip-group="#targets">{{template "chips" $d.Nodes}}</span>{{end}}
-  <noscript><button type="submit" class="btn btn-xs">Filter</button></noscript>
+  <button type="submit" class="btn btn-xs">Filter</button>
   <span class="spacer small"><a href="{{$d.GroupHref}}">{{if $d.Group}}ungroup{{else}}group by tag{{end}}</a></span>
 </form>
 <div class="card clip">
@@ -32,9 +39,9 @@
     <span class="help">Change the settings, tags or state of the selected targets at once.</span>
   </form>
   {{- end}}
-  <table class="tbl cards compact" id="targets" data-sort-default="days" data-sort-key="{{$s.Key}}" data-sort-dir="{{if $s.Desc}}desc{{else}}asc{{end}}">
+  <table class="tbl cards compact" id="targets" data-server-page data-sort-default="days" data-sort-key="{{$s.Key}}" data-sort-dir="{{if $s.Desc}}desc{{else}}asc{{end}}">
     <thead><tr>
-      {{- if $edit}}<th class="chk"><input type="checkbox" data-select-all="#targets" aria-label="Select all shown targets"></th>{{end}}
+      {{- if $edit}}<th class="chk"><input type="checkbox" data-select-all="#targets" aria-label="Select all targets on this page"></th>{{end}}
       {{- template "th" (dict "S" $s "K" "status" "L" "Status")}}
       {{- template "th" (dict "S" $s "K" "name" "L" "Name")}}
       {{- template "th" (dict "S" $s "K" "host" "L" "Host")}}
@@ -64,6 +71,9 @@
   </table>
   <div class="empty" data-empty-for="#targets"{{if $d.Shown}} hidden{{end}}>No targets match the filter.</div>
 </div>
-<span class="table-foot">{{if $d.Group}}<span>{{len $d.Targets}} targets in {{len $d.Groups}} groups</span>{{else}}<span data-count-for="#targets" data-count-noun="targets">{{$d.Shown}} of {{len $d.Targets}} targets</span>{{end}} · the lifetime bar shows the share of the certificate's validity already used</span>
+<div class="table-foot row">
+ <span>{{if $d.Matching}}{{$d.First}}–{{$d.Last}} of {{$d.Matching}} matching targets{{else}}0 matching targets{{end}} · {{$d.Total}} total{{if $d.Group}} · grouped on this page{{end}}</span>
+ {{if gt $d.Pages 1}}<nav class="row" aria-label="Target pages">{{if $d.Previous}}<a class="btn btn-xs" href="{{$d.Previous}}">Previous</a>{{end}}<span>Page {{$d.Page}} of {{$d.Pages}}</span>{{if $d.Next}}<a class="btn btn-xs" href="{{$d.Next}}">Next</a>{{end}}</nav>{{end}}
+</div>
 {{- end}}
 {{end}}

@@ -65,19 +65,22 @@ type Chip struct {
 }
 
 type targetsData struct {
-	Groups    []targetGroup // set when grouped by tag
-	GroupHref string
-	Targets   []targetRow
-	Shown     int
-	Status    []Chip
-	Tags      []Chip
-	Grades    []Chip
-	PQ        []Chip // post-quantum key exchange, once a target was tested
-	Nodes     []Chip // "Probe from" chips, when there are nodes
-	ShowNode  bool   // the node column
-	Query     string
-	Group     bool
-	Sort      Sort
+	Groups                                    []targetGroup // set when grouped by tag
+	GroupHref                                 string
+	Targets                                   []targetRow
+	Total, Matching, Page, Pages, First, Last int
+	Previous, Next                            string
+	Shown                                     int
+	Status                                    []Chip
+	Tags                                      []Chip
+	Grades                                    []Chip
+	PQ                                        []Chip // post-quantum key exchange, once a target was tested
+	Nodes                                     []Chip // "Probe from" chips, when there are nodes
+	ShowNode                                  bool   // the node column
+	Filter                                    core.TargetFilter
+	Query                                     string
+	Group                                     bool
+	Sort                                      Sort
 }
 
 // targetSortKeys are the sortable columns of the targets table; "days" is
@@ -85,7 +88,19 @@ type targetsData struct {
 var targetSortKeys = []string{"status", "name", "host", "node", "days", "lifetime", "expires", "issuer", "tls", "grade", "tags", "checked"}
 
 func (s *Server) targets(w http.ResponseWriter, r *http.Request) {
-	ts, err := s.Core.Targets(r.Context())
+	const pageSize = 100
+	q := r.URL.Query()
+	page := 1
+	if raw := q.Get("page"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 {
+			s.fail(w, r, http.StatusBadRequest, "Page must be a positive number.")
+			return
+		}
+		page = n
+	}
+	f := targetFilterFrom(q)
+	facets, err := s.Core.TargetFacetCounts(r.Context(), f.coreFilter())
 	if err != nil {
 		s.serverError(w, r, err)
 		return
@@ -95,116 +110,102 @@ func (s *Server) targets(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	q := r.URL.Query()
-	f := targetFilterFrom(q)
-	d := targetsData{Query: q.Get("q"), Sort: sortFrom(r, "days", targetSortKeys...)}
-	// Which chips there are follows all targets; each chip's count is the
-	// rows it would show, under the filter text and the other groups' chips.
-	facet := func(key string, token func(core.Target) string) (map[string]int, int) {
-		m, n := map[string]int{}, 0
-		for _, t := range ts {
-			if f.matches(t, key) {
-				m[token(t)]++
-				n++
-			}
+	pages := max(1, (facets.Matching+pageSize-1)/pageSize)
+	page = min(page, pages)
+	d := targetsData{Filter: f.coreFilter(), Query: q.Get("q"), Sort: sortFrom(r, "days", targetSortKeys...), Total: facets.Total, Matching: facets.Matching, Page: page, Pages: pages, ShowNode: len(nodes) > 0}
+	sum := func(m map[string]core.FacetCount) int {
+		n := 0
+		for _, v := range m {
+			n += v.Matching
 		}
-		return m, n
+		return n
 	}
-	counts := map[string]int{}
-	for _, t := range ts {
-		counts[chipStatus(t.Status)]++
-	}
-	statusN, statusAll := facet("status", func(t core.Target) string { return chipStatus(t.Status) })
-	d.Status = append(d.Status, Chip{Key: "status", Value: "", Label: "All", Count: statusAll, On: f.status == ""})
+	d.Status = append(d.Status, Chip{Key: "status", Value: "", Label: "All", Count: sum(facets.Status), On: f.status == ""})
 	for _, st := range []string{"critical", "warning", "healthy", "unreachable", "pending", "disabled"} {
-		if counts[st] == 0 && st != "critical" && st != "warning" && st != "healthy" {
+		if facets.Status[st].Total == 0 && st != "critical" && st != "warning" && st != "healthy" {
 			continue
 		}
-		d.Status = append(d.Status, Chip{Key: "status", Value: st, Label: core.StatusLabel(st), Class: core.StatusClass(st), Count: statusN[st], On: f.status == st})
+		d.Status = append(d.Status, Chip{Key: "status", Value: st, Label: core.StatusLabel(st), Class: core.StatusClass(st), Count: facets.Status[st].Matching, On: f.status == st})
 	}
-	tagN := map[string]int{}
-	for _, t := range ts {
-		if f.matches(t, "tag") {
-			for _, g := range t.Tags {
-				tagN[g]++
-			}
+	tags := make([]string, 0, len(facets.Tags))
+	for tag := range facets.Tags {
+		tags = append(tags, tag)
+	}
+	slices.SortFunc(tags, func(a, b string) int {
+		if n := facets.Tags[b].Total - facets.Tags[a].Total; n != 0 {
+			return n
 		}
-	}
-	for _, tc := range core.TagCounts(ts) {
-		d.Tags = append(d.Tags, Chip{Key: "tag", Value: tc.Tag, Label: tc.Tag, Count: tagN[tc.Tag], On: f.tag == tc.Tag})
+		return strings.Compare(a, b)
+	})
+	for _, tag := range tags {
+		d.Tags = append(d.Tags, Chip{Key: "tag", Value: tag, Label: tag, Count: facets.Tags[tag].Matching, On: f.tag == tag})
 	}
 	if f.tag != "" {
 		d.Tags = append([]Chip{{Key: "tag", Value: "", Label: "Any tag", Bare: true}}, d.Tags...)
 	}
-	for i := range d.Status {
-		d.Status[i].Href = chipHref(r, "status", d.Status[i].Value)
-	}
-	for i := range d.Tags {
-		d.Tags[i].Href = chipHref(r, "tag", d.Tags[i].Value)
-	}
-	// Grade chips, once a target has a grade: one per grade in use, and
-	// "no grade" for the targets not fully tested yet or with the test off.
-	perGrade := map[string]int{}
-	for _, t := range ts {
-		perGrade[gradeToken(t)]++
-	}
-	if len(perGrade) > 1 || perGrade["none"] == 0 {
-		gradeN, gradeAll := facet("grade", gradeToken)
-		d.Grades = append(d.Grades, Chip{Key: "grade", Value: "", Label: "Any grade", Count: gradeAll, On: f.grade == ""})
+	if len(facets.Grade) > 1 || facets.Grade["none"].Total == 0 {
+		d.Grades = append(d.Grades, Chip{Key: "grade", Value: "", Label: "Any grade", Count: sum(facets.Grade), On: f.grade == ""})
 		for _, g := range check.Grades {
-			if perGrade[g] > 0 {
-				d.Grades = append(d.Grades, Chip{Key: "grade", Value: g, Label: "Grade " + g, Class: check.GradeClass(g), Count: gradeN[g], On: f.grade == g})
+			if facets.Grade[g].Total > 0 {
+				d.Grades = append(d.Grades, Chip{Key: "grade", Value: g, Label: "Grade " + g, Class: check.GradeClass(g), Count: facets.Grade[g].Matching, On: f.grade == g})
 			}
 		}
-		if perGrade["none"] > 0 {
-			d.Grades = append(d.Grades, Chip{Key: "grade", Value: "none", Label: "No grade", Count: gradeN["none"], On: f.grade == "none"})
-		}
-		for i := range d.Grades {
-			d.Grades[i].Href = chipHref(r, "grade", d.Grades[i].Value)
+		if facets.Grade["none"].Total > 0 {
+			d.Grades = append(d.Grades, Chip{Key: "grade", Value: "none", Label: "No grade", Count: facets.Grade["none"].Matching, On: f.grade == "none"})
 		}
 	}
-	// Post-quantum chips, once a target got a verdict.
-	perPQ := map[string]int{}
-	for _, t := range ts {
-		perPQ[pqToken(t)]++
-	}
-	if perPQ["yes"]+perPQ["no"] > 0 {
-		pqN, pqAll := facet("pq", pqToken)
-		d.PQ = append(d.PQ, Chip{Key: "pq", Value: "", Label: "PQ any", Count: pqAll, On: f.pq == ""},
-			Chip{Key: "pq", Value: "yes", Label: "PQ yes", Count: pqN["yes"], On: f.pq == "yes"},
-			Chip{Key: "pq", Value: "no", Label: "PQ no", Count: pqN["no"], On: f.pq == "no"},
-			Chip{Key: "pq", Value: "untested", Label: "PQ untested", Count: pqN["untested"], On: f.pq == "untested"})
-		for i := range d.PQ {
-			d.PQ[i].Href = chipHref(r, "pq", d.PQ[i].Value)
+	if facets.PQ["yes"].Total+facets.PQ["no"].Total > 0 {
+		d.PQ = append(d.PQ, Chip{Key: "pq", Label: "PQ any", Count: sum(facets.PQ), On: f.pq == ""})
+		for _, v := range []string{"yes", "no", "untested"} {
+			d.PQ = append(d.PQ, Chip{Key: "pq", Value: v, Label: "PQ " + v, Count: facets.PQ[v].Matching, On: f.pq == v})
 		}
 	}
-	d.ShowNode = len(nodes) > 0
 	if d.ShowNode {
-		nodeN, nodeAll := facet("node", nodeToken)
-		d.Nodes = append(d.Nodes, Chip{Key: "node", Value: "", Label: "Anywhere", Count: nodeAll, On: f.node == ""},
-			Chip{Key: "node", Value: "server", Label: "This server", Count: nodeN["server"], On: f.node == "server"})
+		d.Nodes = append(d.Nodes, Chip{Key: "node", Label: "Anywhere", Count: sum(facets.Node), On: f.node == ""}, Chip{Key: "node", Value: "server", Label: "This server", Count: facets.Node["server"].Matching, On: f.node == "server"})
 		for _, n := range nodes {
 			if n.State != core.NodeConfirmed {
 				continue
 			}
 			v := strconv.FormatInt(n.ID, 10)
-			d.Nodes = append(d.Nodes, Chip{Key: "node", Value: v, Label: n.Label(), Count: nodeN[v], On: f.node == v})
-		}
-		for i := range d.Nodes {
-			d.Nodes[i].Href = chipHref(r, "node", d.Nodes[i].Value)
+			d.Nodes = append(d.Nodes, Chip{Key: "node", Value: v, Label: n.Label(), Count: facets.Node[v].Matching, On: f.node == v})
 		}
 	}
-	// Server-side filtering mirrors the TypeScript filter, so the page
-	// works without JavaScript; rows are rendered hidden, not dropped.
+	for _, chips := range [][]Chip{d.Status, d.Tags, d.Grades, d.PQ, d.Nodes} {
+		for i := range chips {
+			value := chips[i].Value
+			if chips[i].On {
+				value = ""
+			}
+			chips[i].Href = chipHref(r, chips[i].Key, value)
+		}
+	}
+	ts, err := s.Core.TargetListPage(r.Context(), f.coreFilter(), d.Sort.Key, d.Sort.Desc, (page-1)*pageSize, pageSize, s.now())
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	d.Shown = len(ts)
+	if len(ts) > 0 {
+		d.First = (page-1)*pageSize + 1
+		d.Last = d.First + len(ts) - 1
+	}
+	pageHref := func(n int) string {
+		v := r.URL.Query()
+		v.Set("page", strconv.Itoa(n))
+		return r.URL.Path + "?" + v.Encode()
+	}
+	if page > 1 {
+		d.Previous = pageHref(page - 1)
+	}
+	if page < pages {
+		d.Next = pageHref(page + 1)
+	}
+
+	// Only matching rows from this page reach the browser.
 	now := s.now()
 	for _, t := range ts {
-		row := targetRow{T: t, Now: now, ShowNode: d.ShowNode, Hidden: !f.matches(t, "")}
-		if !row.Hidden {
-			d.Shown++
-		}
-		d.Targets = append(d.Targets, row)
+		d.Targets = append(d.Targets, targetRow{T: t, Now: now, ShowNode: d.ShowNode})
 	}
-	sortRows(d.Sort, d.Targets, targetRow.sortVal)
 	d.Group = q.Get("group") == "tag"
 	if d.Group {
 		d.GroupHref = chipHref(r, "group", "")
@@ -218,8 +219,10 @@ func (s *Server) targets(w http.ResponseWriter, r *http.Request) {
 				byTag[g] = append(byTag[g], row)
 			}
 		}
-		for _, tc := range core.TagCounts(ts) {
-			d.Groups = append(d.Groups, targetGroup{Tag: tc.Tag, Rows: byTag[tc.Tag]})
+		for _, tag := range tags {
+			if rows := byTag[tag]; len(rows) > 0 {
+				d.Groups = append(d.Groups, targetGroup{Tag: tag, Rows: rows})
+			}
 		}
 		if len(untagged) > 0 {
 			d.Groups = append(d.Groups, targetGroup{Tag: "", Rows: untagged})
@@ -247,6 +250,10 @@ func chipStatus(s string) string {
 // targetFilter is the targets list's filter: the text and one value per
 // chip group, "" for any.
 type targetFilter struct{ status, tag, text, node, grade, pq string }
+
+func (f targetFilter) coreFilter() core.TargetFilter {
+	return core.TargetFilter{Status: f.status, Tag: f.tag, Text: f.text, Node: f.node, Grade: f.grade, PQ: f.pq}
+}
 
 func targetFilterFrom(q url.Values) targetFilter {
 	return targetFilter{status: q.Get("status"), tag: q.Get("tag"), text: strings.ToLower(strings.TrimSpace(q.Get("q"))),
@@ -279,6 +286,7 @@ func targetSearch(t core.Target) string {
 
 func chipHref(r *http.Request, key, value string) string {
 	q := r.URL.Query()
+	q.Del("page")
 	if value == "" {
 		q.Del(key)
 	} else {

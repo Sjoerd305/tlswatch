@@ -50,6 +50,7 @@ func (s Sort) Href(key string) string {
 	for k, v := range s.q {
 		q[k] = v
 	}
+	q.Del("page")
 	desc := key == s.Key && !s.Desc
 	q.Del("sort")
 	q.Del("dir")

@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -350,23 +351,31 @@ func channelIDs(cs []notify.Channel) []int64 {
 }
 
 func (s *Server) apiTargets(w http.ResponseWriter, r *http.Request) {
-	ts, err := s.Core.Targets(r.Context())
-	if err == nil {
-		err = s.Core.TargetChannels(r.Context(), ts)
+	limit, after, ok := targetPageParams(w, r)
+	if !ok {
+		return
 	}
+	ts, err := s.Core.TargetPage(r.Context(), targetFilterFrom(r.URL.Query()).coreFilter(), after, limit)
 	if err != nil {
 		s.apiFailErr(w, r, err, "")
 		return
 	}
-	f := targetFilterFrom(r.URL.Query())
-	var out []core.Target
-	for _, t := range ts {
-		if f.matches(t, "") {
-			out = append(out, t)
-		}
+	var next *string
+	if len(ts) > limit {
+		ts = ts[:limit]
+		cursor := base64.RawURLEncoding.EncodeToString([]byte(idKey(ts[len(ts)-1].ID)))
+		next = &cursor
+	}
+	if err := s.Core.TargetChannels(r.Context(), ts); err != nil {
+		s.apiFailErr(w, r, err, "")
+		return
 	}
 	d, now := info(r).settings.Defaults, s.now()
-	writePage(w, r, out, func(t core.Target) string { return idKey(t.ID) }, func(t core.Target) any { return toAPITarget(t, d, now) })
+	out := make([]any, 0, len(ts))
+	for _, t := range ts {
+		out = append(out, toAPITarget(t, d, now))
+	}
+	writeJSON(w, http.StatusOK, apiList{Data: out, NextCursor: next})
 }
 
 func (s *Server) apiPathID(w http.ResponseWriter, r *http.Request, what string) (int64, bool) {

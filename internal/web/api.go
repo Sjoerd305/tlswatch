@@ -320,6 +320,32 @@ type apiList struct {
 	NextCursor *string `json:"next_cursor" doc:"Pass as cursor for the next page; null on the last."`
 }
 
+// Validate target pagination before touching the database. Existing cursors
+// encode the zero-padded decimal ID; keep that representation on the wire.
+func targetPageParams(w http.ResponseWriter, r *http.Request) (int, int64, bool) {
+	limit := 100
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 || n > 500 {
+			apiFail(w, http.StatusBadRequest, "invalid", "limit is 1 to 500")
+			return 0, 0, false
+		}
+		limit = n
+	}
+	var after int64
+	if raw := r.URL.Query().Get("cursor"); raw != "" {
+		value, err := base64.RawURLEncoding.DecodeString(raw)
+		if err == nil {
+			after, err = strconv.ParseInt(string(value), 10, 64)
+		}
+		if err != nil || after < 1 || string(value) != idKey(after) {
+			apiFail(w, http.StatusBadRequest, "invalid", "The cursor is not one this API gave out")
+			return 0, 0, false
+		}
+	}
+	return limit, after, true
+}
+
 // writePage answers one page of items, ordered by key: the items after the
 // cursor, up to the limit.
 func writePage[T any](w http.ResponseWriter, r *http.Request, items []T, key func(T) string, conv func(T) any) {

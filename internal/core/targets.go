@@ -87,6 +87,11 @@ func (s *Service) queryTargets(ctx context.Context, where string, limit int, arg
 		q += " LIMIT ?"
 		args = append(args, limit)
 	}
+	return s.readTargets(ctx, q, args...)
+}
+
+// readTargets materializes the rows selected by the caller, then attaches summaries.
+func (s *Service) readTargets(ctx context.Context, q string, args ...any) ([]Target, error) {
 	rows, err := s.DB.R.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
@@ -123,23 +128,37 @@ func (s *Service) queryTargets(ctx context.Context, where string, limit int, arg
 // certificatesByFP loads the given certificates (without PEM).
 func (s *Service) certificatesByFP(ctx context.Context, fps []any) (map[string]Certificate, error) {
 	m := map[string]Certificate{}
-	if len(fps) == 0 {
-		return m, nil
+	seen := map[any]bool{}
+	unique := make([]any, 0, len(fps))
+	for _, fp := range fps {
+		if !seen[fp] {
+			seen[fp] = true
+			unique = append(unique, fp)
+		}
 	}
-	// #nosec G202 -- a constant column list and one placeholder per value
-	rows, err := s.DB.R.QueryContext(ctx, "SELECT "+certListCols+" FROM certificates WHERE fingerprint IN (?"+strings.Repeat(",?", len(fps)-1)+")", fps...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		c, err := scanCert(rows)
+	// Stay well below SQLite's variable limit even for a complete export.
+	const batch = 500
+	for start := 0; start < len(unique); start += batch {
+		args := unique[start:min(start+batch, len(unique))]
+		// #nosec G202 -- constant columns and one placeholder per bound value
+		rows, err := s.DB.R.QueryContext(ctx, "SELECT "+certListCols+" FROM certificates WHERE fingerprint IN (?"+strings.Repeat(",?", len(args)-1)+")", args...)
 		if err != nil {
 			return nil, err
 		}
-		m[c.Fingerprint] = c
+		for rows.Next() {
+			c, err := scanCert(rows)
+			if err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			m[c.Fingerprint] = c
+		}
+		_ = rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
 	}
-	return m, rows.Err()
+	return m, nil
 }
 
 // Target returns one target with its current certificate and channels.

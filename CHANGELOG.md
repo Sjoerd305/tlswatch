@@ -2,6 +2,10 @@
 
 Newest first, one line per change.
 
+## Unreleased
+
+- Target lists use database pagination: the REST API loads only its cursor page, and the UI shows 100 matching targets per page with global filters, sorting and counts. Tag grouping and bulk selection apply to the current page, counting each target once; live search preserves focus and filter links retain the current selections. Certificate and channel lookups are bounded, including full exports beyond SQLite's parameter limit; scale benchmarks cover sequential and concurrent requests.
+
 ## v0.1.3 - 2026-10-27
 
 - Other certificates. The daily configuration test asks every answering address for the certificates the normal probe does not see: one TLS 1.2 handshake offering only the suites of the other key type (RSA after an ECDSA leaf, ECDSA after an RSA one), and one without SNI. Each different chain is verified and checked like the main one. An alternate certificate that is expired, expiring, untrusted, distrusted or for another name opens the new `alternate_certificate` finding at the worst severity found, alerted as usual; a default certificate without SNI that is expired, untrusted or for another name opens `default_certificate` as info, never alerted. The target page lists the other certificates under each address's grade, and `tlswatch check` reports `other_certificates` per address. Nodes need an update to test this; until then both findings keep their state.
