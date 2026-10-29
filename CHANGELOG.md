@@ -4,6 +4,7 @@ Newest first, one line per change.
 
 ## Unreleased
 
+- Fix: invalid API credentials no longer block valid tokens behind the same IP, NAT or reverse proxy. Missing and malformed credentials share the failed-authentication budget; valid tokens retain their own rate limit and role checks, and successful requests do not reset failures. Database errors remain 503 and do not count as invalid credentials. The operations guide explains proxy trust and lookup traffic limits.
 - Target lists use database pagination: the REST API loads only its cursor page, and the UI shows 100 matching targets per page with global filters, sorting and counts. Tag grouping and bulk selection apply to the current page, counting each target once; live search preserves focus and filter links retain the current selections. Certificate and channel lookups are bounded, including full exports beyond SQLite's parameter limit; scale benchmarks cover sequential and concurrent requests.
 
 ## v0.1.3 - 2026-10-27

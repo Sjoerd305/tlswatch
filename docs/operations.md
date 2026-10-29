@@ -12,6 +12,18 @@ Then, in the browser:
 4. **Settings › Users**: invite people. Password users get a one-time link (mailed through the first SMTP channel when there is one); Google users just sign in.
 5. **Targets › Add target**.
 
+## API access and reverse proxy
+
+Create a personal API token under Account and send it as `Authorization: Bearer <token>` to `/api/v2`. A valid token has its own limit of 10 requests per second with a burst of 100, across all addresses using that token. Other clients sharing its address cannot exhaust this per-token budget without possessing the token.
+
+Missing or invalid credentials share a separate budget per client IP. The first 20 failures receive `401` with `WWW-Authenticate`; further failures receive `429` with `Retry-After`. One failure slot returns every 30 seconds. Valid tokens continue working while this address budget is exhausted, subject to their own limit and role. Successful requests do not reset the failure budget. Expired or revoked tokens and tokens belonging to disabled users count as failures. Browser sessions and nodes use their own authentication paths.
+
+For `429`, follow `Retry-After` before retrying. The response message distinguishes a token's own request limit from an address's failed-authentication limit. For `401`, check the token and header rather than repeatedly retrying unchanged credentials. A `503` while checking a token indicates a service or database problem; it does not count as an invalid credential.
+
+Enable **Settings › General › Behind a reverse proxy** only when a trusted proxy supplies the forwarded headers. Restrict access to the backend port to that proxy, using a loopback binding or a firewall. tlswatch uses the rightmost entry in `X-Forwarded-For` when that entry is a valid IP, falling back to the connection's peer address otherwise; the proxy must overwrite the client-supplied value or append the verified client address as its rightmost entry. It must also set `X-Forwarded-Proto` from the connection it terminates. Do not allow an untrusted client to reach the backend directly with trusted forwarded headers. Without proxy trust, tlswatch uses the connection's peer address, so all clients through one proxy share an IP failure budget; valid API tokens still work.
+
+A plausible bearer token requires a database lookup even when its address is blocked, so that valid tokens remain usable. The failed-authentication budget does not cap these lookups. For internet-facing instances, configure request/concurrency limits and timeouts at the proxy for the expected traffic; allow for multiple legitimate integrations sharing an address. Token revocation, account status and role changes are checked on each authenticated request.
+
 ## Environment overrides
 
 Only `TLSWATCH_LISTEN`, `TLSWATCH_DB`, `TLSWATCH_SECRET_KEY_FILE`, `TLSWATCH_LOG_JSON`, `TLSWATCH_DEBUG`, `TLSWATCH_ACCEPT_NEW_KEY` (below), `TLSWATCH_DEMO` (see Running a public demo) and, in the image, `TLSWATCH_CONTAINER` are read before the database opens. These override a UI setting and make it read-only there:

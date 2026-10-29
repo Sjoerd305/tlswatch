@@ -103,7 +103,7 @@ Everything an operator changes is in the UI. The process itself needs at most th
 
 Settings that can also be pinned by environment (for containers and GitOps) are shown read-only in the UI; an invalid value stops tlswatch at start with a message naming the variable. See [docs/operations.md](docs/operations.md) and the [specification](docs/specification.md).
 
-Put a reverse proxy with TLS in front before exposing tlswatch, then set the public URL and proxy trust under Settings › General. If you use nodes, give the proxy a read and idle timeout of at least 60 seconds: a node's poll is held for up to 55.
+Put a reverse proxy with TLS in front before exposing tlswatch, then set the public URL and proxy trust under Settings › General. With proxy trust enabled, restrict backend access to that trusted proxy. See [API limits and reverse-proxy setup](docs/operations.md#api-access-and-reverse-proxy). If you use nodes, give the proxy a read and idle timeout of at least 60 seconds: a node's poll is held for up to 55.
 
 ## Backups
 

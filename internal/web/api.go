@@ -154,8 +154,9 @@ func (s *Server) apiNotFound(w http.ResponseWriter, r *http.Request) {
 // ---------- Authentication and rate limits ----------
 
 // API rate limits: a token gets apiRate requests a second with bursts of
-// apiBurst; an address that presents apiFailBurst bad tokens is refused
-// for a while, regaining one attempt every apiFailEvery.
+// apiBurst; failed authentication (missing or invalid credentials) is limited
+// per address, regaining one attempt every apiFailEvery. A valid token bypasses
+// that address budget, but never its own limit or the role check.
 const (
 	apiRate      = 10
 	apiBurst     = 100
@@ -176,7 +177,7 @@ type bucket struct {
 
 // take spends one token from key's bucket (rate per second, burst at most)
 // and reports whether there was one, else how long until there is.
-func (l *limiter) take(key string, rate, burst float64, now time.Time, spend bool) (bool, time.Duration) {
+func (l *limiter) take(key string, rate, burst float64, now time.Time) (bool, time.Duration) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.buckets == nil {
@@ -199,9 +200,7 @@ func (l *limiter) take(key string, rate, burst float64, now time.Time, spend boo
 	if b.tokens < 1 {
 		return false, time.Duration((1 - b.tokens) / rate * float64(time.Second))
 	}
-	if spend {
-		b.tokens--
-	}
+	b.tokens--
 	return true, 0
 }
 
@@ -214,23 +213,16 @@ func retryAfter(w http.ResponseWriter, d time.Duration) {
 func (s *Server) apiGuard(a authz.Action, h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ri := info(r)
-		now := s.now()
-		if ok, wait := s.apiFails.take(ri.ip, 1/apiFailEvery.Seconds(), apiFailBurst, now, false); !ok {
-			retryAfter(w, wait)
-			apiFail(w, http.StatusTooManyRequests, "rate_limited", "Too many requests with an invalid token from this address; try again later.")
-			return
-		}
+		// Check credentials before applying the invalid-request address limit:
+		// a peer behind the same NAT or proxy must not block a valid token.
 		raw, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if !ok || strings.TrimSpace(raw) == "" {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="tlswatch"`)
-			apiFail(w, http.StatusUnauthorized, "unauthorized", "Send an API token as Authorization: Bearer. Create one under Account.")
+			s.apiAuthFailure(w, r, `Bearer realm="tlswatch"`, "Send an API token as Authorization: Bearer. Create one under Account.")
 			return
 		}
 		sess, err := s.Auth.APIAuth(r.Context(), strings.TrimSpace(raw), ri.ip)
 		if errors.Is(err, auth.ErrNoAPIToken) {
-			s.apiFails.take(ri.ip, 1/apiFailEvery.Seconds(), apiFailBurst, now, true)
-			w.Header().Set("WWW-Authenticate", `Bearer realm="tlswatch", error="invalid_token"`)
-			apiFail(w, http.StatusUnauthorized, "unauthorized", "The API token is invalid, expired or revoked.")
+			s.apiAuthFailure(w, r, `Bearer realm="tlswatch", error="invalid_token"`, "The API token is invalid, expired or revoked.")
 			return
 		}
 		if err != nil {
@@ -239,7 +231,7 @@ func (s *Server) apiGuard(a authz.Action, h http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		ri.api = sess
-		if ok, wait := s.apiLimits.take(strconv.FormatInt(sess.Token.ID, 10), apiRate, apiBurst, now, true); !ok {
+		if ok, wait := s.apiLimits.take(strconv.FormatInt(sess.Token.ID, 10), apiRate, apiBurst, s.now()); !ok {
 			retryAfter(w, wait)
 			apiFail(w, http.StatusTooManyRequests, "rate_limited", fmt.Sprintf("This token is limited to %d requests a second.", apiRate))
 			return
@@ -250,6 +242,19 @@ func (s *Server) apiGuard(a authz.Action, h http.HandlerFunc) http.HandlerFunc {
 		}
 		h(w, r)
 	}
+}
+
+// apiAuthFailure charges only a rejected credential to its address. Taking a
+// slot and deciding the response are atomic, including concurrent failures.
+// Successful authentication never spends or resets this budget.
+func (s *Server) apiAuthFailure(w http.ResponseWriter, r *http.Request, challenge, message string) {
+	if ok, wait := s.apiFails.take(info(r).ip, 1/apiFailEvery.Seconds(), apiFailBurst, s.now()); !ok {
+		retryAfter(w, wait)
+		apiFail(w, http.StatusTooManyRequests, "rate_limited", "Too many requests without a valid token from this address; try again later.")
+		return
+	}
+	w.Header().Set("WWW-Authenticate", challenge)
+	apiFail(w, http.StatusUnauthorized, "unauthorized", message)
 }
 
 // apiSession is the token of the request (only valid behind apiGuard).

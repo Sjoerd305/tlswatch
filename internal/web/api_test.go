@@ -80,6 +80,8 @@ func TestEveryAPIRouteIsGuarded(t *testing.T) {
 		t.Fatalf("only %d API routes", len(routes))
 	}
 	for _, a := range routes {
+		// Each route gets a fresh failure budget: this suite checks permissions.
+		hs.srv.apiFails = limiter{}
 		path := concrete(a.Path)
 		if rec := hs.api("", a.Method, path, ""); rec.Code != http.StatusUnauthorized || errCode(t, rec) != "unauthorized" {
 			t.Errorf("%s %s without a token: %d %s", a.Method, path, rec.Code, rec.Body.String())
@@ -484,8 +486,8 @@ type apiFindingJSON struct {
 	Kind check.Kind `json:"kind"`
 }
 
-// A token past its burst is refused with 429 and Retry-After; so is an
-// address that keeps presenting invalid tokens, even with a valid one.
+// A token past its burst is refused with 429 and Retry-After. Failed
+// authentication is limited by address without blocking valid credentials.
 func TestAPIRateLimits(t *testing.T) {
 	hs := newHarness(t)
 	tok := hs.apiToken(authz.Viewer, authz.Viewer)
@@ -504,8 +506,11 @@ func TestAPIRateLimits(t *testing.T) {
 			t.Fatalf("bad token %d: %d", i, rec.Code)
 		}
 	}
-	if rec := hs.api(tok, "GET", "/api/v2/targets", ""); rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("after %d bad tokens: %d", apiFailBurst, rec.Code)
+	if rec := hs.api("tlsw_wrong", "GET", "/api/v2/targets", ""); rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" {
+		t.Fatalf("invalid token after %d failures: %d", apiFailBurst, rec.Code)
+	}
+	if rec := hs.api(tok, "GET", "/api/v2/targets", ""); rec.Code != http.StatusOK {
+		t.Fatalf("valid token behind blocked address: %d", rec.Code)
 	}
 }
 
