@@ -279,6 +279,7 @@ type findingsData struct {
 	Items     []findingRow
 	Resolved  bool
 	AckedOnly bool
+	AckHref   string // the acknowledged list, named under the open one
 	State     []Chip
 	Sev       []Chip
 	Kinds     []Chip
@@ -421,15 +422,20 @@ func (s *Server) findings(w http.ResponseWriter, r *http.Request) {
 		d.Next += back
 		d.SelPrefix = back + "&"
 	}
+	// Acknowledged findings leave the open list: it is the list of things
+	// to look at. A line under the list says how many are left out.
 	now := s.now()
-	var acked []core.Finding
+	var acked, unacked []core.Finding
 	for _, f := range open {
 		if f.Acked(now) {
 			acked = append(acked, f)
+		} else {
+			unacked = append(unacked, f)
 		}
 	}
-	d.AckCount = len(acked)
-	list := open
+	d.AckCount, d.OpenCount = len(acked), len(unacked)
+	d.AckHref = findingsHref(r, "state", "acknowledged", false)
+	list := unacked
 	switch {
 	case resolved:
 		list = done
@@ -445,7 +451,7 @@ func (s *Server) findings(w http.ResponseWriter, r *http.Request) {
 	if d.Group {
 		d.Groups = groupFindings(d.Items)
 	}
-	d.State, d.Sev, d.Kinds = findingChips(len(open), len(done), len(acked), resolved, ackedOnly, sev, kind, sevCount, kindCount)
+	d.State, d.Sev, d.Kinds = findingChips(len(unacked), len(done), len(acked), resolved, ackedOnly, sev, kind, sevCount, kindCount)
 	for _, cs := range [][]Chip{d.State, d.Sev, d.Kinds} {
 		for i := range cs {
 			cs[i].Href = findingsHref(r, cs[i].Key, cs[i].Value, cs[i].On)

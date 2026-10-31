@@ -60,13 +60,16 @@
     <section class="card">
       <div class="sec"><h2>Open findings</h2><a href="/findings" class="small">All</a></div>
       {{- range $o.Open}}
-      <div class="li{{if .Acked $p.Now}} muted{{end}}">
-        {{if .Acked $p.Now}}<span class="pill off">ack</span>{{else}}<span class="pill {{.Severity.Class}}">{{.Severity.Short}}</span>{{end}}
-        <span>{{template "finding-subject" (frag $p .)}} <a href="/findings?sel={{.ID}}" class="plain" data-row-link>{{lower .Kind.Label}}</a>{{if and .DaysLeft (eq (print .Kind) "expiring")}}, {{daysPtr .DaysLeft}} days left{{end}}{{if .Acked $p.Now}} · {{.AckBy}}{{if .AckUntil}} until {{when $p.Loc $p.Now .AckUntil}}{{end}}{{end}}</span>
+      <div class="li">
+        <span class="pill {{.Severity.Class}}">{{.Severity.Short}}</span>
+        <span>{{template "finding-subject" (frag $p .)}} <a href="/findings?sel={{.ID}}" class="plain" data-row-link>{{lower .Kind.Label}}</a>{{if and .DaysLeft (eq (print .Kind) "expiring")}}, {{daysPtr .DaysLeft}} days left{{end}}</span>
         <span class="t">{{when $p.Loc $p.Now .OpenedAt}}</span>
       </div>
       {{- else}}
       <div class="li muted">No open findings.</div>
+      {{- end}}
+      {{- if $o.AckHidden}}
+      <div class="li muted"><span class="st sm ack">{{$o.AckHidden}} acknowledged</span><span>not shown · <a href="/findings?state=acknowledged" class="plain">show {{plural $o.AckHidden "it" "them"}}</a></span></div>
       {{- end}}
     </section>
     <section class="card">

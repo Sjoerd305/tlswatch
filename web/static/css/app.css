@@ -419,6 +419,7 @@ a.tile:hover{text-decoration:none;border-color:var(--input-line)}
 .pill.off{background:var(--off-bg);color:var(--off)}
 .pill.info{background:var(--info-bg);color:var(--info)}
 .pill.ack{background:var(--ack-bg);color:var(--ack)}
+.table-note{padding:10px 16px;border-top:1px solid var(--line-soft);font-size:12px;color:var(--muted)}
 .pill.ml{margin-left:6px}
 .tag{display:inline-flex;align-items:center;height:20px;padding:0 6px;border-radius:4px;background:var(--surface-2);border:1px solid var(--line);color:var(--muted);font-size:11px;font-family:"IBM Plex Mono",ui-monospace,monospace;white-space:nowrap}
 a.tag:hover{text-decoration:none;color:var(--ink)}

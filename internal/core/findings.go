@@ -26,6 +26,10 @@ const findingSubject = `COALESCE(t.name, n.name, d.name, CASE WHEN ss.id IS NULL
 
 const findingJoins = ` LEFT JOIN targets t ON t.id = f.target_id LEFT JOIN nodes n ON n.id = f.node_id LEFT JOIN domains d ON d.id = f.domain_id LEFT JOIN scan_schedules ss ON ss.id = f.schedule_id `
 
+// findingAcked is the condition that an acknowledgement is in force on a
+// finding at the time given as its one parameter.
+const findingAcked = `(f.ack_at > 0 AND (f.ack_until = 0 OR f.ack_until > ?))`
+
 // findingSubjectLive is the condition that a finding's subject is enabled,
 // for the counts that leave disabled targets and watches out.
 const findingSubjectLive = `(t.enabled = 1 OR f.node_id IS NOT NULL OR d.enabled = 1 OR ss.enabled = 1)`
@@ -49,8 +53,11 @@ type FindingFilter struct {
 	TargetID   int64
 	DomainID   int64
 	ScheduleID int64
-	Limit      int
-	Since      int64 // resolved findings: resolved at or after
+	// Unacknowledged leaves out the open findings an acknowledgement is in
+	// force on: the lists of things to look at.
+	Unacknowledged bool
+	Limit          int
+	Since          int64 // resolved findings: resolved at or after
 }
 
 // Findings lists findings with their target. Open findings are sorted by
@@ -69,6 +76,10 @@ func (s *Service) Findings(ctx context.Context, ff FindingFilter) ([]Finding, er
 		}
 	} else {
 		q += "f.resolved_at = 0"
+		if ff.Unacknowledged {
+			q += " AND NOT " + findingAcked
+			args = append(args, s.now().Unix())
+		}
 	}
 	if ff.TargetID != 0 {
 		q += " AND f.target_id = ?"

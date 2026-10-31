@@ -821,6 +821,18 @@ func TestBulkAcknowledge(t *testing.T) {
 	if acked != 2 {
 		t.Fatalf("acknowledged: %d, want 2 (the resolved one is skipped)", acked)
 	}
+	// Acknowledged findings leave the open list, with a line that counts
+	// them and opens them; the navigation counts only what is shown.
+	page = hs.do(authz.Operator, "GET", "/findings", nil, false).Body.String()
+	if strings.Contains(page, `sel=`+fmt.Sprint(a)+`"`) || !strings.Contains(page, "2 acknowledged findings are not shown") || !strings.Contains(page, `href="?state=acknowledged">show them</a>`) {
+		t.Fatal("the open list still shows acknowledged findings, or lacks the line that counts them")
+	}
+	if page := hs.do(authz.Operator, "GET", "/findings?state=acknowledged", nil, false).Body.String(); !strings.Contains(page, `sel=`+fmt.Sprint(a)+`"`) || !strings.Contains(page, `sel=`+fmt.Sprint(b)+`"`) {
+		t.Fatal("the acknowledged list lacks the acknowledged findings")
+	}
+	if home := hs.do(authz.Operator, "GET", "/", nil, false).Body.String(); !strings.Contains(home, "2 acknowledged</span><span>not shown") {
+		t.Fatal("the overview does not count the hidden acknowledged findings")
+	}
 	if rec := hs.do(authz.Operator, "POST", "/findings/ack", url.Values{"until": {"tomorrow"}, "id": {fmt.Sprint(a)}}, true); rec.Code != http.StatusSeeOther {
 		t.Fatalf("bad date: %d", rec.Code)
 	}

@@ -60,6 +60,9 @@
     {{- else}}
     <div class="healthy"><span class="st ok">No open findings</span><span class="muted">Every target passes its checks.</span></div>
     {{- end}}
+    {{- if and $d.AckCount (not $d.AckedOnly) (not $d.Resolved)}}
+    <div class="table-note"><span class="st sm ack">{{$d.AckCount}} acknowledged {{plural $d.AckCount "finding is" "findings are"}} not shown</span> · <a href="{{$d.AckHref}}">show {{plural $d.AckCount "it" "them"}}</a></div>
+    {{- end}}
   </div>
   <aside class="panel" id="finding-panel" aria-live="polite"{{if not $d.Sel}} hidden{{end}}>
     {{- with $d.Sel}}{{template "finding-panel" (frag $p .)}}{{end}}

@@ -30,7 +30,7 @@ func (s *Service) Nav(ctx context.Context) NavCounts {
 			COALESCE((SELECT MIN(next_check) FROM targets WHERE enabled = 1 AND next_check > 0), 0) FROM targets`).Scan(&n.Targets, &n.LastCheck, &n.NextCheck),
 		s.DB.R.QueryRowContext(ctx, `SELECT COUNT(DISTINCT o.leaf_fp) FROM targets t
 			JOIN observations o ON o.check_id = t.last_check_id AND o.target_id = t.id WHERE o.leaf_fp != ''`).Scan(&n.Certificates),
-		s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(severity = 'critical'), 0) FROM findings f`+findingJoins+`WHERE f.resolved_at = 0 AND `+findingSubjectLive).Scan(&n.Findings, &crit),
+		s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(severity = 'critical'), 0) FROM findings f`+findingJoins+`WHERE f.resolved_at = 0 AND `+findingSubjectLive+` AND NOT `+findingAcked, s.now().Unix()).Scan(&n.Findings, &crit),
 		s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*) FROM domains`).Scan(&n.Domains),
 	)
 	if err != nil && ctx.Err() == nil && s.Log != nil {
@@ -69,9 +69,12 @@ type Overview struct {
 	Disabled     int
 	Pending      int
 	DueWithin30  int
-	Open         []Finding
-	Changes      []Finding
-	Last24h      RunSummary
+	// Open lists the open findings to look at; AckHidden counts the
+	// acknowledged ones it leaves out.
+	Open      []Finding
+	AckHidden int
+	Changes   []Finding
+	Last24h   RunSummary
 	// PQ counts the enabled targets that negotiate post-quantum key
 	// exchange, of PQTested whose configuration test settled it.
 	PQ, PQTested int
@@ -138,7 +141,10 @@ func (s *Service) Overview(ctx context.Context) (Overview, error) {
 		return o, err
 	}
 	SortExpiring(o.Targets, now)
-	if o.Open, err = s.Findings(ctx, FindingFilter{Limit: 8}); err != nil {
+	if o.Open, err = s.Findings(ctx, FindingFilter{Limit: 8, Unacknowledged: true}); err != nil {
+		return o, err
+	}
+	if err = s.DB.R.QueryRowContext(ctx, "SELECT COUNT(*) FROM findings f"+findingJoins+"WHERE f.resolved_at = 0 AND "+findingSubjectLive+" AND "+findingAcked, now.Unix()).Scan(&o.AckHidden); err != nil {
 		return o, err
 	}
 	if o.Changes, err = s.RecentChanges(ctx, now.Add(-14*24*time.Hour).Unix(), 6); err != nil {

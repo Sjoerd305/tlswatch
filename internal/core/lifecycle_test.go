@@ -546,8 +546,14 @@ func TestAcknowledgedStatus(t *testing.T) {
 	if s := status(); s != StatusAcknowledged {
 		t.Fatalf("after acknowledging: %s", s)
 	}
-	if o, err := e.svc.Overview(e.ctx); err != nil || o.Acknowledged != 1 || o.Warning != 0 {
+	if o, err := e.svc.Overview(e.ctx); err != nil || o.Acknowledged != 1 || o.Warning != 0 || len(o.Open) != 0 || o.AckHidden != 1 {
 		t.Fatalf("overview: %+v %v", o, err)
+	}
+	if n := e.svc.Nav(e.ctx); n.Findings != 0 {
+		t.Fatalf("navigation counts an acknowledged finding as open: %d", n.Findings)
+	}
+	if fs, err := e.svc.Findings(e.ctx, FindingFilter{Unacknowledged: true}); err != nil || len(fs) != 0 {
+		t.Fatalf("unacknowledged list: %d %v", len(fs), err)
 	}
 	if m, err := e.svc.Metrics(e.ctx); err != nil || m.TargetsByStatus[StatusAcknowledged] != 1 || m.OpenBySeverity["warning/true"] != 1 || m.OpenBySeverity["warning/false"] != 0 {
 		t.Fatalf("metrics: %+v %v", m, err)
