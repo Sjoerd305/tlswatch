@@ -292,6 +292,49 @@ func (s *Service) Unacknowledge(ctx context.Context, id int64) error {
 	return tx.Commit()
 }
 
+// RefreshStatuses recomputes every target's stored status from its state
+// and findings, and reports how many changed. Run once at start, so a
+// status rule that changed with an upgrade (acknowledged, say) applies to
+// every target at once and not only after its next check.
+func (s *Service) RefreshStatuses(ctx context.Context) (int, error) {
+	rows, err := s.DB.R.QueryContext(ctx, "SELECT id, status FROM targets")
+	if err != nil {
+		return 0, err
+	}
+	var ids []int64
+	was := map[int64]string{}
+	for rows.Next() {
+		var id int64
+		var status string
+		if err := rows.Scan(&id, &status); err != nil {
+			_ = rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+		was[id] = status
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	tx, err := s.DB.W.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	n := 0
+	for _, id := range ids {
+		status, err := s.refreshStatusTx(ctx, tx, id)
+		if err != nil {
+			return 0, err
+		}
+		if status != was[id] {
+			n++
+		}
+	}
+	return n, tx.Commit()
+}
+
 // ExpireAcknowledgements returns to warning the acknowledged targets whose
 // acknowledgement has passed its until-date, and reports how many. The
 // status is stored, so the passing of a date has to be noticed by someone;

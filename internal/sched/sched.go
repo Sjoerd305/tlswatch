@@ -216,6 +216,11 @@ func (s *Scheduler) Run(ctx context.Context) {
 	if err := s.Core.FailRunningScans(ctx); err != nil {
 		s.Log.Error("end interrupted scans", "err", err)
 	}
+	if n, err := s.Core.RefreshStatuses(ctx); err != nil {
+		s.Log.Error("refresh target statuses", "err", err)
+	} else if n > 0 {
+		s.Log.Info("target statuses recomputed at start", "changed", n)
+	}
 	if err := s.load(ctx, true); err != nil {
 		s.Log.Error("load schedule", "err", err)
 	}

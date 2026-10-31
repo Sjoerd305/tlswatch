@@ -558,6 +558,16 @@ func TestAcknowledgedStatus(t *testing.T) {
 	if m, err := e.svc.Metrics(e.ctx); err != nil || m.TargetsByStatus[StatusAcknowledged] != 1 || m.OpenBySeverity["warning/true"] != 1 || m.OpenBySeverity["warning/false"] != 0 {
 		t.Fatalf("metrics: %+v %v", m, err)
 	}
+	// A status stored by an older version is recomputed at start.
+	if _, err := e.svc.DB.W.Exec("UPDATE targets SET status = ? WHERE id = ?", StatusWarning, tg.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := e.svc.RefreshStatuses(e.ctx); err != nil || n != 1 {
+		t.Fatalf("refresh at start: %d %v", n, err)
+	}
+	if s := status(); s != StatusAcknowledged {
+		t.Fatalf("after the refresh: %s", s)
+	}
 	// Taken back: a warning again.
 	if err := e.svc.Unacknowledge(e.ctx, f.ID); err != nil {
 		t.Fatal(err)
