@@ -25,12 +25,12 @@
         <option value=""{{if not $d.Repeat}} selected{{end}}>No, scan once</option>
         <option value="day"{{if eq $d.Repeat "day"}} selected{{end}}>Daily</option>
         <option value="week"{{if eq $d.Repeat "week"}} selected{{end}}>Weekly</option>
-      </select>
-      <span class="help">A repeated scan is saved as a schedule; an endpoint it finds that no target covers opens a warning, alerted like any other, until a target covers it or it is acknowledged.</span></div>
-    <div class="field"><label class="label" for="weekday">Day</label><select id="weekday" name="weekday" class="input">{{range (seq 0 6)}}<option value="{{.}}"{{if eq . $d.Weekday}} selected{{end}}>{{weekday .}}</option>{{end}}</select><span class="help">For a weekly scan.</span></div>
-    <div class="field"><label class="label" for="hour">Hour</label><select id="hour" name="hour" class="input">{{range (seq 0 23)}}<option value="{{.}}"{{if eq . $d.Hour}} selected{{end}}>{{.}}:00</option>{{end}}</select><span class="help">In the instance's time zone.</span></div>
-    <div class="field"><label class="label" for="name">Schedule name</label><input id="name" name="name" class="input" value="{{$d.Name}}" maxlength="120" placeholder="Office network"><span class="help">Optional; the ranges otherwise.</span></div>
+      </select></div>
+    <div class="field"><label class="label" for="weekday">Day</label><select id="weekday" name="weekday" class="input">{{range (seq 0 6)}}<option value="{{.}}"{{if eq . $d.Weekday}} selected{{end}}>{{weekday .}}</option>{{end}}</select></div>
+    <div class="field"><label class="label" for="hour">Hour</label><select id="hour" name="hour" class="input">{{range (seq 0 23)}}<option value="{{.}}"{{if eq . $d.Hour}} selected{{end}}>{{.}}:00</option>{{end}}</select></div>
+    <div class="field"><label class="label" for="name">Schedule name</label><input id="name" name="name" class="input" value="{{$d.Name}}" maxlength="120" placeholder="Office network"></div>
   </div>
+  <span class="help">A repeated scan is saved as a schedule: the day is for a weekly one, the hour is in the instance's time zone, the name is optional. An endpoint a run finds that no target covers opens a warning, alerted like any other, until a target covers it or it is acknowledged.</span>
   <div class="form-foot">
     <button type="submit" class="btn btn-primary">Start scan</button>
     <a href="/targets" class="cancel">Cancel</a>
