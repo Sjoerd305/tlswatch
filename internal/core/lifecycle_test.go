@@ -516,3 +516,74 @@ func TestHostChangeIsNewBaseline(t *testing.T) {
 		t.Errorf("changing the host opened certificate_changed: %s", f.Details)
 	}
 }
+
+// An acknowledged warning takes its target out of the warning count: the
+// target is "acknowledged" until the acknowledgement is taken back, passes
+// its until-date, or the finding escalates; the grade and finding stay.
+func TestAcknowledgedStatus(t *testing.T) {
+	e := newEnv(t)
+	ca := newCA(t, "Sectigo")
+	now := e.clock.Now()
+	tg := e.target(nil)
+	c := ca.leaf(t, now.Add(-days(300)), now.Add(days(25)), "portal.example.nl")
+	e.apply(tg.ID, result(served("192.0.2.1", c, ca.cert)))
+	e.flush()
+	e.take("mail")
+	f := e.open(tg.ID)[check.Expiring]
+	status := func() string {
+		got, err := e.svc.Target(e.ctx, tg.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got.Status
+	}
+	if s := status(); s != StatusWarning {
+		t.Fatalf("before: %s", s)
+	}
+	if _, err := e.svc.Acknowledge(e.ctx, f.ID, "Alex", e.clock.Now().Add(days(3)), "stakeholder accepts"); err != nil {
+		t.Fatal(err)
+	}
+	if s := status(); s != StatusAcknowledged {
+		t.Fatalf("after acknowledging: %s", s)
+	}
+	if o, err := e.svc.Overview(e.ctx); err != nil || o.Acknowledged != 1 || o.Warning != 0 {
+		t.Fatalf("overview: %+v %v", o, err)
+	}
+	if m, err := e.svc.Metrics(e.ctx); err != nil || m.TargetsByStatus[StatusAcknowledged] != 1 || m.OpenBySeverity["warning/true"] != 1 || m.OpenBySeverity["warning/false"] != 0 {
+		t.Fatalf("metrics: %+v %v", m, err)
+	}
+	// Taken back: a warning again.
+	if err := e.svc.Unacknowledge(e.ctx, f.ID); err != nil {
+		t.Fatal(err)
+	}
+	if s := status(); s != StatusWarning {
+		t.Fatalf("after unacknowledging: %s", s)
+	}
+	// Past the until-date: the housekeeping notices.
+	if _, err := e.svc.Acknowledge(e.ctx, f.ID, "Alex", e.clock.Now().Add(days(3)), ""); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := e.svc.ExpireAcknowledgements(e.ctx); err != nil || n != 0 {
+		t.Fatalf("expired early: %d %v", n, err)
+	}
+	e.clock.Add(days(3) + time.Hour)
+	if n, err := e.svc.ExpireAcknowledgements(e.ctx); err != nil || n != 1 {
+		t.Fatalf("expired: %d %v", n, err)
+	}
+	if s := status(); s != StatusWarning {
+		t.Fatalf("after the until-date: %s", s)
+	}
+	// An acknowledgement without a date holds until the finding escalates:
+	// the critical threshold clears it, and critical never reads acknowledged.
+	if _, err := e.svc.Acknowledge(e.ctx, f.ID, "Alex", time.Time{}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if s := status(); s != StatusAcknowledged {
+		t.Fatalf("open-ended acknowledgement: %s", s)
+	}
+	e.clock.Add(days(20))
+	e.apply(tg.ID, result(served("192.0.2.1", c, ca.cert)))
+	if s := status(); s != StatusCritical {
+		t.Fatalf("after escalation: %s", s)
+	}
+}

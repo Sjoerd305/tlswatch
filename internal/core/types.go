@@ -39,13 +39,14 @@ var ErrStale = errors.New("target changed during the check")
 
 // Target statuses.
 const (
-	StatusPending     = "pending"
-	StatusHealthy     = "healthy"
-	StatusWarning     = "warning"
-	StatusChanged     = "changed"
-	StatusCritical    = "critical"
-	StatusUnreachable = "unreachable"
-	StatusDisabled    = "disabled"
+	StatusPending      = "pending"
+	StatusHealthy      = "healthy"
+	StatusWarning      = "warning"
+	StatusChanged      = "changed"
+	StatusAcknowledged = "acknowledged"
+	StatusCritical     = "critical"
+	StatusUnreachable  = "unreachable"
+	StatusDisabled     = "disabled"
 )
 
 // StatusClass maps a status to its colour class.
@@ -55,6 +56,8 @@ func StatusClass(s string) string {
 		return "ok"
 	case StatusWarning, StatusChanged:
 		return "warn"
+	case StatusAcknowledged:
+		return "ack"
 	case StatusCritical:
 		return "crit"
 	}
@@ -72,6 +75,8 @@ func StatusLabel(s string) string {
 		return "Warning"
 	case StatusChanged:
 		return "Changed"
+	case StatusAcknowledged:
+		return "Acknowledged"
 	case StatusCritical:
 		return "Critical"
 	case StatusUnreachable:

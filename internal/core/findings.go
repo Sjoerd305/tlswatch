@@ -245,16 +245,74 @@ func (s *Service) Acknowledge(ctx context.Context, id int64, user string, until 
 	return s.Finding(ctx, id)
 }
 
-// Unacknowledge removes an acknowledgement so reminders resume.
+// Unacknowledge removes an acknowledgement so reminders resume and the
+// target, if it was acknowledged, is a warning again.
 func (s *Service) Unacknowledge(ctx context.Context, id int64) error {
-	res, err := s.DB.W.ExecContext(ctx, "UPDATE findings SET ack_by='', ack_at=0, ack_until=0, ack_comment='' WHERE id=? AND resolved_at = 0", id)
+	tx, err := s.DB.W.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
+	defer tx.Rollback()
+	var targetID int64
+	if err := tx.QueryRowContext(ctx, "SELECT COALESCE(target_id, 0) FROM findings WHERE id = ? AND resolved_at = 0", id).Scan(&targetID); errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
+	} else if err != nil {
+		return err
 	}
-	return nil
+	if _, err := tx.ExecContext(ctx, "UPDATE findings SET ack_by='', ack_at=0, ack_until=0, ack_comment='' WHERE id=? AND resolved_at = 0", id); err != nil {
+		return err
+	}
+	if targetID != 0 {
+		if _, err := s.refreshStatusTx(ctx, tx, targetID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// ExpireAcknowledgements returns to warning the acknowledged targets whose
+// acknowledgement has passed its until-date, and reports how many. The
+// status is stored, so the passing of a date has to be noticed by someone;
+// the scheduler asks every minute.
+func (s *Service) ExpireAcknowledgements(ctx context.Context) (int, error) {
+	rows, err := s.DB.R.QueryContext(ctx, `SELECT DISTINCT f.target_id FROM findings f JOIN targets t ON t.id = f.target_id
+		WHERE t.status = ? AND f.resolved_at = 0 AND f.ack_at > 0 AND f.ack_until > 0 AND f.ack_until <= ?`, StatusAcknowledged, s.now().Unix())
+	if err != nil {
+		return 0, err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, id := range ids {
+		tx, err := s.DB.W.BeginTx(ctx, nil)
+		if err != nil {
+			return n, err
+		}
+		status, err := s.refreshStatusTx(ctx, tx, id)
+		if err == nil {
+			err = tx.Commit()
+		} else {
+			_ = tx.Rollback()
+		}
+		if err != nil {
+			return n, err
+		}
+		if status != StatusAcknowledged {
+			n++
+		}
+	}
+	return n, nil
 }
 
 // Remind queues reminders for open, unacknowledged findings whose reminder

@@ -61,7 +61,7 @@ func withPage(ps ...apiParam) []apiParam { return append(ps, pageParams...) }
 func (s *Server) apiRoutes() []apiRoute {
 	return []apiRoute{
 		{Method: "GET", Path: "/api/v2/targets", Action: authz.ViewData, Summary: "List targets, with the filters of the targets page.", List: true, Resp: apiTarget{},
-			Query: withPage(apiParam{"status", "critical, warning, healthy, unreachable, pending or disabled."}, apiParam{"tag", "A tag."},
+			Query: withPage(apiParam{"status", "critical, warning, acknowledged, healthy, unreachable, pending or disabled."}, apiParam{"tag", "A tag."},
 				apiParam{"q", "Text in the name, endpoint, server name, protocol, tags, node, issuer or subject."},
 				apiParam{"node", `"server", or a node's id.`}, apiParam{"grade", `A, B, C, F, or "none".`}, apiParam{"pq", "yes, no or untested."}),
 			Handler: s.apiTargets},

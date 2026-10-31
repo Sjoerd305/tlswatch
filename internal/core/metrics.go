@@ -1,6 +1,9 @@
 package core
 
-import "context"
+import (
+	"context"
+	"strconv"
+)
 
 // Metrics is the state exported at /metrics.
 type Metrics struct {
@@ -27,13 +30,15 @@ type TargetExpiry struct {
 // Metrics gathers the counts and expiry times for /metrics.
 func (s *Service) Metrics(ctx context.Context) (Metrics, error) {
 	m := Metrics{TargetsByStatus: map[string]int{}, OpenBySeverity: map[string]int{}, AlertsByState: map[string]int{}, TargetsByGrade: map[string]int{}, TargetsByPQ: map[string]int{}}
+	now := strconv.FormatInt(s.now().Unix(), 10)
 	counts := []struct {
 		q    string
 		into map[string]int
 	}{
 		{"SELECT status, COUNT(*) FROM targets GROUP BY status", m.TargetsByStatus},
-		{`SELECT f.severity, COUNT(*) FROM findings f LEFT JOIN targets t ON t.id = f.target_id LEFT JOIN domains d ON d.id = f.domain_id
-			WHERE f.resolved_at = 0 AND (t.enabled = 1 OR f.node_id IS NOT NULL OR d.enabled = 1) GROUP BY f.severity`, m.OpenBySeverity},
+		{`SELECT f.severity || '/' || CASE WHEN f.ack_at > 0 AND (f.ack_until = 0 OR f.ack_until > ` + now + `) THEN 'true' ELSE 'false' END, COUNT(*)
+			FROM findings f LEFT JOIN targets t ON t.id = f.target_id LEFT JOIN domains d ON d.id = f.domain_id
+			WHERE f.resolved_at = 0 AND (t.enabled = 1 OR f.node_id IS NOT NULL OR d.enabled = 1) GROUP BY 1`, m.OpenBySeverity},
 		{"SELECT state, COUNT(*) FROM alerts WHERE state IN ('pending', 'failed') GROUP BY state", m.AlertsByState},
 		{"SELECT grade, COUNT(*) FROM targets WHERE enabled = 1 AND grade != '' GROUP BY grade", m.TargetsByGrade},
 		{"SELECT CASE pq WHEN '' THEN 'untested' ELSE pq END, COUNT(*) FROM targets WHERE enabled = 1 GROUP BY 1", m.TargetsByPQ},

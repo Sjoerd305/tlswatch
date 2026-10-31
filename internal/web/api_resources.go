@@ -87,7 +87,7 @@ type apiTarget struct {
 	CreatedAt      stamp        `json:"created_at"`
 	CreatedBy      string       `json:"created_by"`
 	UpdatedAt      stamp        `json:"updated_at"`
-	Status         string       `json:"status" doc:"pending, healthy, warning, changed, critical, unreachable or disabled."`
+	Status         string       `json:"status" doc:"pending, healthy, warning, changed, acknowledged (every warning on it is acknowledged), critical, unreachable or disabled."`
 	DaysLeft       *int         `json:"days_left" doc:"Whole days until the earliest expiry on any address."`
 	NotAfter       stamp        `json:"not_after"`
 	Fingerprint    string       `json:"fingerprint" doc:"SHA-256 of the current leaf."`

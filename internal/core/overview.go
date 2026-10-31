@@ -58,20 +58,21 @@ func (s *Service) Stamp(ctx context.Context) (stamp string, pending int, err err
 
 // Overview is the home screen.
 type Overview struct {
-	Targets     []Target
-	Total       int
-	Critical    int
-	Warning     int
-	Changed     int
-	Expiring    int // targets warning because of expiry
-	Healthy     int
-	Unreachable int
-	Disabled    int
-	Pending     int
-	DueWithin30 int
-	Open        []Finding
-	Changes     []Finding
-	Last24h     RunSummary
+	Targets      []Target
+	Total        int
+	Critical     int
+	Warning      int
+	Changed      int
+	Expiring     int // targets warning because of expiry
+	Acknowledged int
+	Healthy      int
+	Unreachable  int
+	Disabled     int
+	Pending      int
+	DueWithin30  int
+	Open         []Finding
+	Changes      []Finding
+	Last24h      RunSummary
 	// PQ counts the enabled targets that negotiate post-quantum key
 	// exchange, of PQTested whose configuration test settled it.
 	PQ, PQTested int
@@ -106,6 +107,8 @@ func (s *Service) Overview(ctx context.Context) (Overview, error) {
 		case StatusChanged:
 			o.Warning += n
 			o.Changed = n
+		case StatusAcknowledged:
+			o.Acknowledged = n
 		case StatusHealthy:
 			o.Healthy = n
 		case StatusUnreachable:

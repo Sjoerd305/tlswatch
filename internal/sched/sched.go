@@ -714,6 +714,13 @@ func (s *Scheduler) housekeeping(ctx context.Context) {
 		case <-minute.C:
 			s.housework(func() { s.digest(ctx) })
 			s.housework(func() {
+				if n, err := s.Core.ExpireAcknowledgements(ctx); err != nil && ctx.Err() == nil {
+					s.Log.Error("acknowledgement expiry", "err", err)
+				} else if n > 0 {
+					s.Log.Info("acknowledgements expired", "targets", n)
+				}
+			})
+			s.housework(func() {
 				if err := s.Core.PollDomains(ctx); err != nil && ctx.Err() == nil {
 					s.Log.Error("ct polls", "err", err)
 				}

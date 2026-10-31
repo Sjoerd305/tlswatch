@@ -278,6 +278,7 @@ func (s *Server) certificatePEM(w http.ResponseWriter, r *http.Request) {
 type findingsData struct {
 	Items     []findingRow
 	Resolved  bool
+	AckedOnly bool
 	State     []Chip
 	Sev       []Chip
 	Kinds     []Chip
@@ -391,9 +392,9 @@ func (s *Server) findings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	q := r.URL.Query()
 	st := info(r).settings
-	resolved := q.Get("state") == "resolved"
+	resolved, ackedOnly := q.Get("state") == "resolved", q.Get("state") == "acknowledged"
 	since := s.now().Add(-time.Duration(st.Defaults.RetentionDays) * 24 * time.Hour).Unix()
-	d := findingsData{Resolved: resolved, Retention: st.Defaults.RetentionDays, Query: q.Get("q"), Sort: sortFrom(r, "sev", findingSortKeys...)}
+	d := findingsData{Resolved: resolved, AckedOnly: ackedOnly, Retention: st.Defaults.RetentionDays, Query: q.Get("q"), Sort: sortFrom(r, "sev", findingSortKeys...)}
 	var targetID int64
 	if id, err := strconv.ParseInt(q.Get("target"), 10, 64); err == nil && id > 0 {
 		if t, err := s.Core.Target(ctx, id); err == nil {
@@ -419,14 +420,19 @@ func (s *Server) findings(w http.ResponseWriter, r *http.Request) {
 		d.SelPrefix = back + "&"
 	}
 	now := s.now()
+	var acked []core.Finding
 	for _, f := range open {
 		if f.Acked(now) {
-			d.AckCount++
+			acked = append(acked, f)
 		}
 	}
+	d.AckCount = len(acked)
 	list := open
-	if resolved {
+	switch {
+	case resolved:
 		list = done
+	case ackedOnly:
+		list = acked
 	}
 	sev, kind := q.Get("sev"), q.Get("kind")
 	var sevCount, kindCount map[string]int
@@ -437,7 +443,7 @@ func (s *Server) findings(w http.ResponseWriter, r *http.Request) {
 	if d.Group {
 		d.Groups = groupFindings(d.Items)
 	}
-	d.State, d.Sev, d.Kinds = findingChips(len(open), len(done), resolved, sev, kind, sevCount, kindCount)
+	d.State, d.Sev, d.Kinds = findingChips(len(open), len(done), len(acked), resolved, ackedOnly, sev, kind, sevCount, kindCount)
 	for _, cs := range [][]Chip{d.State, d.Sev, d.Kinds} {
 		for i := range cs {
 			cs[i].Href = findingsHref(r, cs[i].Key, cs[i].Value, cs[i].On)
@@ -474,12 +480,16 @@ func filterFindings(list []core.Finding, sev, kind, text string) (rows []finding
 }
 
 // findingChips builds the state, severity and kind chips (without links).
-// A severity or kind chip shows when the list has it or it is selected.
-func findingChips(open, resolvedN int, resolved bool, sev, kind string, sevCount, kindCount map[string]int) (state, sevs, kinds []Chip) {
+// A severity or kind chip shows when the list has it or it is selected; the
+// acknowledged chip when an open finding is acknowledged or it is selected.
+func findingChips(open, resolvedN, ackedN int, resolved, ackedOnly bool, sev, kind string, sevCount, kindCount map[string]int) (state, sevs, kinds []Chip) {
 	state = []Chip{
-		{Key: "state", Value: "", Label: "Open", Count: open, On: !resolved},
-		{Key: "state", Value: "resolved", Label: "Resolved", Count: resolvedN, On: resolved},
+		{Key: "state", Value: "", Label: "Open", Count: open, On: !resolved && !ackedOnly},
 	}
+	if ackedN > 0 || ackedOnly {
+		state = append(state, Chip{Key: "state", Value: "acknowledged", Label: "Acknowledged", Count: ackedN, On: ackedOnly, Class: "ack"})
+	}
+	state = append(state, Chip{Key: "state", Value: "resolved", Label: "Resolved", Count: resolvedN, On: resolved})
 	for _, sv := range []check.Severity{check.Critical, check.Warning, check.Info} {
 		if sevCount[string(sv)] > 0 || sev == string(sv) {
 			sevs = append(sevs, Chip{Key: "sev", Value: string(sv), Label: sv.Short(), Class: sv.Class(), Count: sevCount[string(sv)], On: sev == string(sv)})

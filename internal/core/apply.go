@@ -543,18 +543,22 @@ func (s *Service) refreshStatusTx(ctx context.Context, tx *sql.Tx, id int64) (st
 		return "", err
 	}
 	var open []check.Finding
+	var acked []bool
 	if enabled && lastCheck > 0 {
-		rows, err := tx.QueryContext(ctx, "SELECT kind, severity FROM findings WHERE target_id = ? AND resolved_at = 0", id)
+		now := s.now().Unix()
+		rows, err := tx.QueryContext(ctx, "SELECT kind, severity, ack_at, ack_until FROM findings WHERE target_id = ? AND resolved_at = 0", id)
 		if err != nil {
 			return "", err
 		}
 		for rows.Next() {
 			var f check.Finding
-			if err := rows.Scan(&f.Kind, &f.Severity); err != nil {
+			var ackAt, ackUntil int64
+			if err := rows.Scan(&f.Kind, &f.Severity, &ackAt, &ackUntil); err != nil {
 				_ = rows.Close()
 				return "", err
 			}
 			open = append(open, f)
+			acked = append(acked, ackAt > 0 && (ackUntil == 0 || ackUntil > now))
 		}
 		_ = rows.Close()
 		if err := rows.Err(); err != nil {
@@ -562,7 +566,7 @@ func (s *Service) refreshStatusTx(ctx context.Context, tx *sql.Tx, id int64) (st
 		}
 	}
 	failing := failStreak > 0 || dnsFail > 0
-	status := StatusOf(enabled, lastCheck > 0, failing, !failing && lastError != "", open)
+	status := StatusOf(enabled, lastCheck > 0, failing, !failing && lastError != "", open, acked)
 	_, err := tx.ExecContext(ctx, "UPDATE targets SET status = ? WHERE id = ?", status, id)
 	return status, err
 }
@@ -572,23 +576,34 @@ func (s *Service) refreshStatusTx(ctx context.Context, tx *sql.Tx, id int64) (st
 // finding and its alert wait for the debounce. partial is whether some
 // address failed while others answered: the target is at least a warning.
 // Critical certificate findings outrank unreachable; a warning that is
-// only a certificate or issuer change is "changed".
-func StatusOf(enabled, checked, failing, partial bool, open []check.Finding) string {
+// only a certificate or issuer change is "changed". acked, when given,
+// says per open finding whether an acknowledgement is in force: a target
+// whose warnings are all acknowledged is "acknowledged", between warning
+// and healthy, so an accepted risk leaves the warning count without the
+// finding or the grade going anywhere. A critical finding, a failing
+// address and a change finding never become acknowledged: the first two
+// have nothing acknowledged, the third resolves when acknowledged.
+func StatusOf(enabled, checked, failing, partial bool, open []check.Finding, acked []bool) string {
 	switch {
 	case !enabled:
 		return StatusDisabled
 	case !checked:
 		return StatusPending
 	}
-	worst, changeOnly, unreachable := 0, true, failing
-	for _, f := range open {
+	worst, changeOnly, unreachable, allAcked := 0, true, failing, true
+	for i, f := range open {
 		if f.Kind.Network() {
 			unreachable = true
 			continue
 		}
 		r := f.Severity.Rank()
-		if r >= check.Warning.Rank() && f.Kind != check.CertificateChanged && f.Kind != check.IssuerChanged {
-			changeOnly = false
+		if r >= check.Warning.Rank() {
+			if f.Kind != check.CertificateChanged && f.Kind != check.IssuerChanged {
+				changeOnly = false
+			}
+			if i >= len(acked) || !acked[i] {
+				allAcked = false
+			}
 		}
 		worst = max(worst, r)
 	}
@@ -597,6 +612,8 @@ func StatusOf(enabled, checked, failing, partial bool, open []check.Finding) str
 		return StatusCritical
 	case unreachable:
 		return StatusUnreachable
+	case worst == check.Warning.Rank() && allAcked && !changeOnly && !partial:
+		return StatusAcknowledged
 	case worst == check.Warning.Rank() && changeOnly && !partial:
 		return StatusChanged
 	case worst == check.Warning.Rank() || partial:

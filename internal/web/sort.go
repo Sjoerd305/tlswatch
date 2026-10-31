@@ -156,12 +156,14 @@ func statusRank(status string) int {
 		return 0
 	case core.StatusWarning, core.StatusChanged:
 		return 1
-	case core.StatusHealthy:
+	case core.StatusAcknowledged:
 		return 2
-	case core.StatusUnreachable:
+	case core.StatusHealthy:
 		return 3
-	case core.StatusPending:
+	case core.StatusUnreachable:
 		return 4
+	case core.StatusPending:
+		return 5
 	}
-	return 5
+	return 6
 }

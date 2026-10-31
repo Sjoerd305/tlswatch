@@ -177,7 +177,7 @@ var emailTemplates = template.Must(template.New("email").Funcs(emailFuncs).Parse
 <h1 class="title" style="{{st "title"}}">{{if .Calm}}Nothing needs attention{{else}}Weekly digest{{end}}</h1>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:16px;"><tr>
 {{- range $i, $t := .Tiles}}
-<td width="33%" style="{{if $i}}padding-left:8px;{{end}}vertical-align:top;"><div class="tile" style="{{st "tile"}}"><div class="tilek" style="{{st "tilek"}}">{{$t.K}}</div><div class="s-{{$t.Tag}}" style="font:600 28px/1.2 {{st "sans"}}{{ink $t.Tag}}">{{$t.N}}</div></div></td>
+<td width="{{$.TileWidth}}%" style="{{if $i}}padding-left:8px;{{end}}vertical-align:top;"><div class="tile" style="{{st "tile"}}"><div class="tilek" style="{{st "tilek"}}">{{$t.K}}</div><div class="s-{{$t.Tag}}" style="font:600 28px/1.2 {{st "sans"}}{{ink $t.Tag}}">{{$t.N}}</div></div></td>
 {{- end}}
 </tr></table>
 <div class="section" style="{{st "section"}}">Open findings</div>
@@ -287,6 +287,10 @@ type digestView struct {
 	Calm  bool
 	Tiles []tile
 }
+
+// TileWidth is the percentage width of one tile, so three or four share
+// the row.
+func (v *digestView) TileWidth() int { return 100 / len(v.Tiles) }
 
 type testView struct{ Channel string }
 

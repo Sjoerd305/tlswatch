@@ -37,12 +37,14 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	p.metric("tlswatch_build_info", "gauge", "The running version.")
 	p.sample("tlswatch_build_info", map[string]string{"version": s.Version}, 1)
 	p.metric("tlswatch_targets", "gauge", "Targets by status.")
-	for _, status := range []string{core.StatusHealthy, core.StatusWarning, core.StatusChanged, core.StatusCritical, core.StatusUnreachable, core.StatusPending, core.StatusDisabled} {
+	for _, status := range []string{core.StatusHealthy, core.StatusWarning, core.StatusChanged, core.StatusAcknowledged, core.StatusCritical, core.StatusUnreachable, core.StatusPending, core.StatusDisabled} {
 		p.sample("tlswatch_targets", map[string]string{"status": status}, float64(m.TargetsByStatus[status]))
 	}
-	p.metric("tlswatch_findings_open", "gauge", "Open findings on enabled targets by severity.")
+	p.metric("tlswatch_findings_open", "gauge", "Open findings on enabled targets by severity and whether an acknowledgement is in force; sum over acknowledged for the total.")
 	for _, sev := range []check.Severity{check.Info, check.Warning, check.Critical} {
-		p.sample("tlswatch_findings_open", map[string]string{"severity": string(sev)}, float64(m.OpenBySeverity[string(sev)]))
+		for _, acked := range []string{"false", "true"} {
+			p.sample("tlswatch_findings_open", map[string]string{"severity": string(sev), "acknowledged": acked}, float64(m.OpenBySeverity[string(sev)+"/"+acked]))
+		}
 	}
 	p.metric("tlswatch_alerts", "gauge", "Alerts in the outbox waiting to be sent, or given up.")
 	for _, state := range []string{"pending", "failed"} {

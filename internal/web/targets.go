@@ -121,7 +121,7 @@ func (s *Server) targets(w http.ResponseWriter, r *http.Request) {
 		return n
 	}
 	d.Status = append(d.Status, Chip{Key: "status", Value: "", Label: "All", Count: sum(facets.Status), On: f.status == ""})
-	for _, st := range []string{"critical", "warning", "healthy", "unreachable", "pending", "disabled"} {
+	for _, st := range []string{"critical", "warning", "acknowledged", "healthy", "unreachable", "pending", "disabled"} {
 		if facets.Status[st].Total == 0 && st != "critical" && st != "warning" && st != "healthy" {
 			continue
 		}
@@ -871,7 +871,7 @@ func (s *Server) testProbe(ctx context.Context, st config.Settings, t core.Targe
 		res.Err = err.Error()
 	}
 	res.Findings = o.Open
-	res.Status = core.StatusOf(true, true, !o.Answered, o.Answered && o.Error != "", o.Open)
+	res.Status = core.StatusOf(true, true, !o.Answered, o.Answered && o.Error != "", o.Open, nil)
 	if o.Leaf != nil {
 		ci := probe.Describe(o.Leaf)
 		res.Cert = &ci

@@ -890,21 +890,30 @@ func TestStatusOf(t *testing.T) {
 		enabled, checked bool
 		failing, partial bool
 		open             []check.Finding
+		acked            []bool
 		want             string
 	}{
-		{"disabled", false, true, false, false, nil, StatusDisabled},
-		{"never checked", true, false, false, false, nil, StatusPending},
-		{"healthy", true, true, false, false, nil, StatusHealthy},
-		{"failing before the finding opens", true, true, true, false, nil, StatusUnreachable},
-		{"critical outranks unreachable", true, true, false, false, []check.Finding{f(check.Unreachable, check.Critical), f(check.Expired, check.Critical)}, StatusCritical},
-		{"change only", true, true, false, false, []check.Finding{f(check.CertificateChanged, check.Warning)}, StatusChanged},
-		{"change and expiring", true, true, false, false, []check.Finding{f(check.CertificateChanged, check.Warning), f(check.Expiring, check.Warning)}, StatusWarning},
-		{"one address down", true, true, false, true, nil, StatusWarning},
-		{"one address down and a change", true, true, false, true, []check.Finding{f(check.CertificateChanged, check.Warning)}, StatusWarning},
-		{"info only", true, true, false, false, []check.Finding{f(check.CertificateChanged, check.Info)}, StatusHealthy},
+		{"disabled", false, true, false, false, nil, nil, StatusDisabled},
+		{"never checked", true, false, false, false, nil, nil, StatusPending},
+		{"healthy", true, true, false, false, nil, nil, StatusHealthy},
+		{"failing before the finding opens", true, true, true, false, nil, nil, StatusUnreachable},
+		{"critical outranks unreachable", true, true, false, false, []check.Finding{f(check.Unreachable, check.Critical), f(check.Expired, check.Critical)}, nil, StatusCritical},
+		{"change only", true, true, false, false, []check.Finding{f(check.CertificateChanged, check.Warning)}, nil, StatusChanged},
+		{"change and expiring", true, true, false, false, []check.Finding{f(check.CertificateChanged, check.Warning), f(check.Expiring, check.Warning)}, nil, StatusWarning},
+		{"one address down", true, true, false, true, nil, nil, StatusWarning},
+		{"one address down and a change", true, true, false, true, []check.Finding{f(check.CertificateChanged, check.Warning)}, nil, StatusWarning},
+		{"info only", true, true, false, false, []check.Finding{f(check.CertificateChanged, check.Info)}, nil, StatusHealthy},
+		{"acknowledged warning", true, true, false, false, []check.Finding{f(check.WeakConfiguration, check.Warning)}, []bool{true}, StatusAcknowledged},
+		{"acknowledged warning next to an info", true, true, false, false, []check.Finding{f(check.WeakConfiguration, check.Warning), f(check.DefaultCertificate, check.Info)}, []bool{true, false}, StatusAcknowledged},
+		{"one of two warnings acknowledged", true, true, false, false, []check.Finding{f(check.WeakConfiguration, check.Warning), f(check.Expiring, check.Warning)}, []bool{true, false}, StatusWarning},
+		{"acknowledged critical stays critical", true, true, false, false, []check.Finding{f(check.Expired, check.Critical)}, []bool{true}, StatusCritical},
+		{"acknowledged warning but one address down", true, true, false, true, []check.Finding{f(check.WeakConfiguration, check.Warning)}, []bool{true}, StatusWarning},
+		{"acknowledged warning and a change", true, true, false, false, []check.Finding{f(check.WeakConfiguration, check.Warning), f(check.IssuerChanged, check.Warning)}, []bool{true, true}, StatusAcknowledged},
+		{"acknowledged warning and an unacknowledged change", true, true, false, false, []check.Finding{f(check.WeakConfiguration, check.Warning), f(check.IssuerChanged, check.Warning)}, []bool{true, false}, StatusWarning},
+		{"acknowledged warning on an unreachable target", true, true, true, false, []check.Finding{f(check.WeakConfiguration, check.Warning)}, []bool{true}, StatusUnreachable},
 	}
 	for _, c := range cases {
-		if got := StatusOf(c.enabled, c.checked, c.failing, c.partial, c.open); got != c.want {
+		if got := StatusOf(c.enabled, c.checked, c.failing, c.partial, c.open, c.acked); got != c.want {
 			t.Errorf("%s: %s, want %s", c.name, got, c.want)
 		}
 	}
@@ -976,7 +985,7 @@ func TestMetrics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.TargetsByStatus[StatusCritical] != 1 || m.OpenBySeverity["critical"] != 1 || m.AlertsByState["pending"] != 2 {
+	if m.TargetsByStatus[StatusCritical] != 1 || m.OpenBySeverity["critical/false"] != 1 || m.AlertsByState["pending"] != 2 {
 		t.Fatalf("counts: %+v", m)
 	}
 	if len(m.CertificateTimes) != 1 || m.CertificateTimes[0].Endpoint != "portal.example.nl:443" || m.CertificateTimes[0].NotAfter != c.NotAfter.Unix() {

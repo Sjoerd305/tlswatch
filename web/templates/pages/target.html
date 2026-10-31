@@ -40,7 +40,7 @@
         <span class="when">{{if lt $days 0}}since{{else}}until expiry ·{{end}} <span class="mono">{{datetime $p.Loc $t.NotAfter}}</span></span>
         {{- if $t.Grade}}<span class="grade-row"><span class="grade lg {{$t.GradeClass}}" title="TLS configuration grade">{{$t.Grade}}</span><span class="grade-why">{{if $t.GradeReasons}}{{range $i, $r := $t.GradeReasons}}{{if $i}} · {{end}}{{$r}}{{end}}{{else}}nothing to improve{{end}}</span></span>{{end}}
         {{- with $d.OpenMain}}
-        <span class="meta">finding open since {{when $p.Loc $p.Now .OpenedAt}}{{if $p.Can "findings.ack"}} · <a href="/findings?sel={{.ID}}">{{if .Kind.AckResolves}}confirm{{else}}acknowledge{{end}}</a>{{end}}</span>
+        <span class="meta">finding open since {{when $p.Loc $p.Now .OpenedAt}}{{if .Acked $p.Now}} · acknowledged by {{.AckBy}}{{if .AckUntil}} until {{date $p.Loc .AckUntil}}{{end}}{{if .AckComment}}: {{.AckComment}}{{end}}{{if $p.Can "findings.ack"}} · <a href="/findings?sel={{.ID}}">unacknowledge</a>{{end}}{{else if $p.Can "findings.ack"}} · <a href="/findings?sel={{.ID}}">{{if .Kind.AckResolves}}confirm{{else}}acknowledge{{end}}</a>{{end}}</span>
         {{- end}}
       </div>
       <div class="lifetime">
@@ -175,7 +175,7 @@
         <tbody>
         {{- range $d.Findings}}
           <tr{{if not .Open}} class="muted"{{end}}>
-            <td>{{if .Open}}{{if .Acked $p.Now}}<span class="pill off">ack</span>{{else}}<span class="pill {{.Severity.Class}}">{{.Severity.Short}}</span>{{end}}{{else}}<span class="pill off">done</span>{{end}}</td>
+            <td>{{if .Open}}{{if .Acked $p.Now}}<span class="pill ack" title="acknowledged by {{.AckBy}}{{if .AckUntil}} until {{date $p.Loc .AckUntil}}{{end}}">ack</span>{{else}}<span class="pill {{.Severity.Class}}">{{.Severity.Short}}</span>{{end}}{{else}}<span class="pill off">done</span>{{end}}</td>
             <td class="wrap"><a href="/findings?sel={{.ID}}{{if not .Open}}&amp;state=resolved{{end}}" class="ink" data-row-link>{{lower .Kind.Label}}</a>{{if and .DaysLeft .Open (ne (print .Kind) "expired")}} · {{daysPtr .DaysLeft}} d{{end}}</td>
             <td class="mono muted">{{when $p.Loc $p.Now .OpenedAt}}</td>
           </tr>

@@ -305,6 +305,17 @@ type DigestGrade struct {
 	Name, HostPort, Details string
 }
 
+// acknowledged counts the open findings an operator has acknowledged.
+func (d DigestData) acknowledged() int {
+	n := 0
+	for _, f := range d.Findings {
+		if f.AckBy != "" {
+			n++
+		}
+	}
+	return n
+}
+
 // DigestFinding is an open finding in the digest.
 type DigestFinding struct {
 	Severity, HostPort, Kind, Details, AckBy string
@@ -328,7 +339,12 @@ type DigestFailure struct {
 func RenderDigest(d DigestData, tag string) Message {
 	var b strings.Builder
 	fmt.Fprintf(&b, "tlswatch weekly digest, %s\n\n", d.Date)
-	fmt.Fprintf(&b, "Open findings (%d)\n", len(d.Findings))
+	acked := d.acknowledged()
+	if acked > 0 {
+		fmt.Fprintf(&b, "Open findings (%d, %d acknowledged)\n", len(d.Findings), acked)
+	} else {
+		fmt.Fprintf(&b, "Open findings (%d)\n", len(d.Findings))
+	}
 	for _, f := range d.Findings {
 		ack := ""
 		if f.AckBy != "" {
@@ -394,6 +410,9 @@ func RenderDigest(d DigestData, tag string) Message {
 		{K: "Expiring ≤ 30 d", N: len(d.Expiring), Tag: figure(len(d.Expiring), "warning")},
 		{K: "Failed checks", N: len(d.Failed), Tag: figure(len(d.Failed), "critical")},
 	}}
+	if acked > 0 {
+		view.Tiles = append(view.Tiles, tile{K: "Acknowledged", N: acked, Tag: "ok"})
+	}
 	html := renderHTML(emailDoc{Kind: "digest", Title: subject, Preheader: subject, Label: "Weekly digest", Link: d.Link, Digest: view})
 	return Message{Subject: tagged(tag, subject), Body: b.String(), HTML: html}
 }

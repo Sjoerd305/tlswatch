@@ -50,9 +50,13 @@ func TestFilterFindings(t *testing.T) {
 	if sevCount["critical"] != 2 || kindCount["expiring"] != 2 {
 		t.Fatalf("counts %v %v", sevCount, kindCount)
 	}
-	state, sevs, kinds := findingChips(3, 10, false, "info", "", sevCount, kindCount)
+	state, sevs, kinds := findingChips(3, 10, 0, false, false, "info", "", sevCount, kindCount)
 	if len(state) != 2 || !state[0].On || len(sevs) != 3 || !sevs[2].On || len(kinds) != 2 {
 		t.Fatalf("chips: %+v %+v %+v", state, sevs, kinds)
+	}
+	state, _, _ = findingChips(3, 10, 1, false, true, "", "", sevCount, kindCount)
+	if len(state) != 3 || state[0].On || !state[1].On || state[1].Value != "acknowledged" || state[1].Count != 1 {
+		t.Fatalf("acknowledged chip: %+v", state)
 	}
 }
 
