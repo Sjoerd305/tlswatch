@@ -57,8 +57,38 @@ func (s *Scheduler) StartScan(sc core.Scan, addrs []netip.Addr) {
 		// The scan's own context may be gone; recording its end must not be.
 		if err := s.Core.FinishScan(context.WithoutCancel(ctx), sc.ID, failure); err != nil {
 			s.Log.Error("finish scan", "scan", sc.ID, "err", err)
+			return
+		}
+		if sc.ScheduleID != 0 {
+			if err := s.Core.ReconcileScan(context.WithoutCancel(ctx), sc.ID); err != nil {
+				s.Log.Error("settle discovery findings", "scan", sc.ID, "schedule", sc.ScheduleID, "err", err)
+			}
 		}
 	}()
+}
+
+// runDueScans starts a scan for every schedule whose slot has come. A
+// schedule that cannot run now (a scan is already running from there) is
+// noted and waits for its next slot.
+func (s *Scheduler) runDueScans(ctx context.Context) {
+	due, err := s.Core.DueScanSchedules(ctx)
+	if err != nil {
+		if ctx.Err() == nil {
+			s.Log.Error("scheduled scans", "err", err)
+		}
+		return
+	}
+	for _, sch := range due {
+		sc, addrs, err := s.Core.StartScheduledScan(ctx, sch, core.ScheduleRunner)
+		if err != nil {
+			if ctx.Err() == nil {
+				s.Log.Warn("scheduled scan not started", "schedule", sch.ID, "err", err)
+			}
+			continue
+		}
+		s.Log.Info("scheduled scan started", "schedule", sch.ID, "scan", sc.ID, "addresses", len(addrs))
+		s.StartScan(sc, addrs)
+	}
 }
 
 func (s *Scheduler) scan(ctx context.Context, sc core.Scan, addrs []netip.Addr) error {

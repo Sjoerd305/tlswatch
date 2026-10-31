@@ -30,8 +30,7 @@ func (s *Service) Nav(ctx context.Context) NavCounts {
 			COALESCE((SELECT MIN(next_check) FROM targets WHERE enabled = 1 AND next_check > 0), 0) FROM targets`).Scan(&n.Targets, &n.LastCheck, &n.NextCheck),
 		s.DB.R.QueryRowContext(ctx, `SELECT COUNT(DISTINCT o.leaf_fp) FROM targets t
 			JOIN observations o ON o.check_id = t.last_check_id AND o.target_id = t.id WHERE o.leaf_fp != ''`).Scan(&n.Certificates),
-		s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(severity = 'critical'), 0) FROM findings f LEFT JOIN targets t ON t.id = f.target_id
-			LEFT JOIN domains d ON d.id = f.domain_id WHERE f.resolved_at = 0 AND (t.enabled = 1 OR f.node_id IS NOT NULL OR d.enabled = 1)`).Scan(&n.Findings, &crit),
+		s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(severity = 'critical'), 0) FROM findings f`+findingJoins+`WHERE f.resolved_at = 0 AND `+findingSubjectLive).Scan(&n.Findings, &crit),
 		s.DB.R.QueryRowContext(ctx, `SELECT COUNT(*) FROM domains`).Scan(&n.Domains),
 	)
 	if err != nil && ctx.Err() == nil && s.Log != nil {

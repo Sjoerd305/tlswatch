@@ -10,7 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,9 +36,10 @@ const ExportVersion = 1
 
 // ExportFile is the export document.
 type ExportFile struct {
-	Version int            `yaml:"version"`
-	Targets []TargetRecord `yaml:"targets,omitempty"`
-	Domains []DomainRecord `yaml:"domains,omitempty"`
+	Version   int              `yaml:"version"`
+	Targets   []TargetRecord   `yaml:"targets,omitempty"`
+	Domains   []DomainRecord   `yaml:"domains,omitempty"`
+	Discovery []ScheduleRecord `yaml:"discovery,omitempty"`
 }
 
 // TargetRecord is one target in the export. A field left out takes the
@@ -84,6 +87,21 @@ type DomainRecord struct {
 	Tags       []string  `yaml:"tags,omitempty,flow"`
 	Notes      string    `yaml:"notes,omitempty"`
 	Disabled   bool      `yaml:"disabled,omitempty"`
+}
+
+// ScheduleRecord is one scan schedule in the export; a field left out
+// takes the value a new schedule starts with (the discovery ports and
+// rate, this server, Monday, enabled).
+type ScheduleRecord struct {
+	Name     string   `yaml:"name,omitempty"`
+	Ranges   []string `yaml:"ranges,flow"`
+	Ports    []int    `yaml:"ports,omitempty,flow"`
+	Rate     int      `yaml:"rate,omitempty"`
+	Node     string   `yaml:"node,omitempty"`
+	Every    string   `yaml:"every"` // day or week
+	Weekday  *int     `yaml:"weekday,omitempty"`
+	Hour     int      `yaml:"hour"`
+	Disabled bool     `yaml:"disabled,omitempty"`
 }
 
 // exportRefs translates the ids of CA bundles, nodes and channels to the
@@ -206,6 +224,78 @@ func domainRecord(d Domain, r exportRefs) DomainRecord {
 	return rec
 }
 
+// scheduleRecord describes a schedule as the export writes it.
+func scheduleRecord(sc ScanSchedule, r exportRefs) ScheduleRecord {
+	rec := ScheduleRecord{Name: sc.Name, Ranges: sc.Ranges, Every: sc.Every, Hour: sc.Hour, Disabled: !sc.Enabled, Node: r.nodes[sc.NodeID]}
+	if !slices.Equal(sc.Ports, probe.DefaultScanPorts) {
+		rec.Ports = sc.Ports
+	}
+	if sc.Rate != probe.DefaultScanRate {
+		rec.Rate = sc.Rate
+	}
+	if sc.Every == ScheduleWeekly && sc.Weekday != int(time.Monday) {
+		wd := sc.Weekday
+		rec.Weekday = &wd
+	}
+	return rec
+}
+
+// scheduleFromRecord reads a schedule from the file, with every problem.
+func scheduleFromRecord(rec ScheduleRecord, r exportRefs, st config.Settings) (ScanSchedule, []string) {
+	var errs []string
+	sc := ScanSchedule{Name: Clip(strings.TrimSpace(rec.Name), ShortMax), Every: rec.Every, Hour: rec.Hour, Weekday: int(time.Monday), Enabled: !rec.Disabled, Rate: rec.Rate, Ports: rec.Ports}
+	prefixes, _, err := ParseScanRanges(strings.Join(rec.Ranges, " "), st.General.PublicDiscovery, st.General.AllowLocal)
+	if err != nil {
+		errs = append(errs, err.Error())
+	}
+	for _, p := range prefixes {
+		sc.Ranges = append(sc.Ranges, p.String())
+	}
+	if len(sc.Ports) == 0 {
+		sc.Ports = slices.Clone(probe.DefaultScanPorts)
+	} else if len(sc.Ports) > probe.MaxScanPorts {
+		errs = append(errs, fmt.Sprintf("at most %d ports", probe.MaxScanPorts))
+	}
+	for _, p := range sc.Ports {
+		if p < 1 || p > 65535 {
+			errs = append(errs, fmt.Sprintf("%d is not a port", p))
+		}
+	}
+	if sc.Rate == 0 {
+		sc.Rate = probe.DefaultScanRate
+	}
+	if sc.Rate < 1 || sc.Rate > probe.MaxScanRate {
+		errs = append(errs, fmt.Sprintf("the rate must be 1 to %d", probe.MaxScanRate))
+	}
+	if rec.Node != "" {
+		ids := r.nodeIDs[rec.Node]
+		if len(ids) == 0 {
+			errs = append(errs, fmt.Sprintf("there is no node named %q", rec.Node))
+		} else {
+			sc.NodeID, sc.NodeName = ids[0], rec.Node
+		}
+	}
+	if sc.Every != ScheduleDaily && sc.Every != ScheduleWeekly {
+		errs = append(errs, "every must be day or week")
+	}
+	if rec.Weekday != nil {
+		sc.Weekday = *rec.Weekday
+		if sc.Weekday < 0 || sc.Weekday > 6 {
+			errs = append(errs, "weekday must be 0 (Sunday) to 6")
+		}
+	}
+	if sc.Hour < 0 || sc.Hour > 23 {
+		errs = append(errs, "hour must be 0 to 23")
+	}
+	return sc, errs
+}
+
+// scheduleKey identifies a schedule across an export and an import: what
+// it scans and from where. The name is a label and may change.
+func scheduleKey(sc ScanSchedule) string {
+	return strings.Join(sc.Ranges, ",") + "|" + joinInts(sc.Ports) + "|" + strconv.FormatInt(sc.NodeID, 10)
+}
+
 // Export writes every target and domain watch as one YAML document,
 // targets by host, port and protocol, watches by name.
 func (s *Service) Export(ctx context.Context) ([]byte, error) {
@@ -221,6 +311,10 @@ func (s *Service) Export(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	scs, err := s.ScanSchedules(ctx)
+	if err != nil {
+		return nil, err
+	}
 	f := ExportFile{Version: ExportVersion}
 	for _, t := range ts {
 		f.Targets = append(f.Targets, targetRecord(t, refs))
@@ -228,8 +322,11 @@ func (s *Service) Export(ctx context.Context) ([]byte, error) {
 	for _, d := range ds {
 		f.Domains = append(f.Domains, domainRecord(d, refs))
 	}
+	for _, sc := range scs {
+		f.Discovery = append(f.Discovery, scheduleRecord(sc, refs))
+	}
 	var b bytes.Buffer
-	fmt.Fprintf(&b, "# tlswatch targets and domain watches, exported %s.\n", s.now().UTC().Format(time.RFC3339))
+	fmt.Fprintf(&b, "# tlswatch targets, domain watches and scan schedules, exported %s.\n", s.now().UTC().Format(time.RFC3339))
 	b.WriteString("# A setting left out takes its default. Import through Targets › Add many.\n")
 	enc := yaml.NewEncoder(&b)
 	enc.SetIndent(2)
@@ -343,7 +440,7 @@ func LooksLikeExport(text string) bool {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		return line == "---" || strings.HasPrefix(line, "version:") || strings.HasPrefix(line, "targets:") || strings.HasPrefix(line, "domains:")
+		return line == "---" || strings.HasPrefix(line, "version:") || strings.HasPrefix(line, "targets:") || strings.HasPrefix(line, "domains:") || strings.HasPrefix(line, "discovery:")
 	}
 	return false
 }
@@ -361,17 +458,30 @@ type FieldDiff struct {
 	Field, Old, New string
 }
 
-// ImportChange is what an import does to one target or watch.
+// ImportChange is what an import does to one target, watch or schedule.
 type ImportChange struct {
-	Op     string // ImportAdded, …
-	Domain bool   // a domain watch; a target otherwise
-	Label  string // host:port and protocol, or the domain
-	Name   string
-	Diff   []FieldDiff
+	Op        string // ImportAdded, …
+	Domain    bool   // a domain watch
+	Discovery bool   // a scan schedule; a target when neither is set
+	Label     string // host:port and protocol, the domain, or the ranges
+	Name      string
+	Diff      []FieldDiff
 
-	id     int64  // the existing one
-	target Target // the configuration the file gives a target
-	domain Domain
+	id       int64  // the existing one
+	target   Target // the configuration the file gives a target
+	domain   Domain
+	schedule ScanSchedule
+}
+
+// Kind names what the change is about: target, domain or discovery.
+func (c ImportChange) Kind() string {
+	switch {
+	case c.Domain:
+		return "domain"
+	case c.Discovery:
+		return "discovery"
+	}
+	return "target"
 }
 
 // ImportPlan is the outcome of reading an import file against what is
@@ -384,7 +494,18 @@ type ImportPlan struct {
 func (p ImportPlan) Count(op string, domains bool) int {
 	n := 0
 	for _, c := range p.Changes {
-		if c.Op == op && c.Domain == domains {
+		if c.Op == op && !c.Discovery && c.Domain == domains {
+			n++
+		}
+	}
+	return n
+}
+
+// CountOf returns how many changes have op, of one kind (see Kind).
+func (p ImportPlan) CountOf(op, kind string) int {
+	n := 0
+	for _, c := range p.Changes {
+		if c.Op == op && c.Kind() == kind {
 			n++
 		}
 	}
@@ -396,7 +517,7 @@ func (p ImportPlan) Count(op string, domains bool) int {
 func (p ImportPlan) Digest() string {
 	h := sha256.New()
 	for _, c := range p.Changes {
-		fmt.Fprintf(h, "%s\x00%v\x00%s\x00%d\x00", c.Op, c.Domain, c.Label, c.id)
+		fmt.Fprintf(h, "%s\x00%s\x00%s\x00%d\x00", c.Op, c.Kind(), c.Label, c.id)
 		for _, d := range c.Diff {
 			fmt.Fprintf(h, "%s\x00%s\x00%s\x00", d.Field, d.Old, d.New)
 		}
@@ -435,8 +556,8 @@ func (s *Service) PlanImport(ctx context.Context, data []byte) (ImportPlan, erro
 	if f.Version != ExportVersion {
 		return ImportPlan{}, &ImportError{[]string{fmt.Sprintf("The file says version %d; this tlswatch reads version %d", f.Version, ExportVersion)}}
 	}
-	if len(f.Targets)+len(f.Domains) > maxImport {
-		return ImportPlan{}, &ImportError{[]string{fmt.Sprintf("The file holds more than %d targets and domains", maxImport)}}
+	if len(f.Targets)+len(f.Domains)+len(f.Discovery) > maxImport {
+		return ImportPlan{}, &ImportError{[]string{fmt.Sprintf("The file holds more than %d targets, domains and schedules", maxImport)}}
 	}
 	refs, err := s.exportRefs(ctx)
 	if err != nil {
@@ -536,6 +657,49 @@ func (s *Service) PlanImport(ctx context.Context, data []byte) (ImportPlan, erro
 	for _, d := range haveDomains {
 		if _, ok := seenDomain[d.Name]; !ok {
 			plan.Changes = append(plan.Changes, ImportChange{Op: ImportAbsent, Domain: true, Label: d.Name, Name: d.Name, id: d.ID})
+		}
+	}
+	haveSchedules, err := s.ScanSchedules(ctx)
+	if err != nil {
+		return ImportPlan{}, err
+	}
+	bySchedule := map[string]ScanSchedule{}
+	for _, sc := range haveSchedules {
+		bySchedule[scheduleKey(sc)] = sc
+	}
+	seenSchedule := map[string]int{}
+	for i, rec := range f.Discovery {
+		where := fmt.Sprintf("discovery[%d]", i+1)
+		if rec.Name != "" {
+			where += " " + rec.Name
+		}
+		sc, errs := scheduleFromRecord(rec, refs, st)
+		if len(errs) > 0 {
+			for _, e := range errs {
+				problems = append(problems, where+": "+e)
+			}
+			continue
+		}
+		key := scheduleKey(sc)
+		if first, ok := seenSchedule[key]; ok {
+			problems = append(problems, fmt.Sprintf("%s: repeats discovery[%d]", where, first))
+			continue
+		}
+		seenSchedule[key] = i + 1
+		c := ImportChange{Op: ImportAdded, Discovery: true, Label: strings.Join(sc.Ranges, ", "), Name: sc.Label(), schedule: sc}
+		if old, ok := bySchedule[key]; ok {
+			c.id = old.ID
+			c.Diff = recordDiff(scheduleRecord(old, refs), scheduleRecord(sc, refs))
+			c.Op = ImportUnchanged
+			if len(c.Diff) > 0 {
+				c.Op = ImportChanged
+			}
+		}
+		plan.Changes = append(plan.Changes, c)
+	}
+	for _, sc := range haveSchedules {
+		if _, ok := seenSchedule[scheduleKey(sc)]; !ok {
+			plan.Changes = append(plan.Changes, ImportChange{Op: ImportAbsent, Discovery: true, Label: strings.Join(sc.Ranges, ", "), Name: sc.Label(), id: sc.ID})
 		}
 	}
 	if len(problems) > 0 {
@@ -745,7 +909,7 @@ type ImportAudit struct {
 // from the file deleted. Nothing is deleted without remove.
 func (s *Service) ApplyImport(ctx context.Context, plan ImportPlan, remove bool, user string) (ImportResult, error) {
 	var res ImportResult
-	def := s.CurrentSettings(ctx).Defaults
+	st := s.CurrentSettings(ctx)
 	tx, err := s.DB.W.BeginTx(ctx, nil)
 	if err != nil {
 		return res, err
@@ -757,16 +921,34 @@ func (s *Service) ApplyImport(ctx context.Context, plan ImportPlan, remove bool,
 		case c.Op == ImportUnchanged, c.Op == ImportAbsent && !remove:
 			continue
 		case c.Op == ImportAbsent:
-			table, object := "targets", fmt.Sprintf("target %d %s", c.id, c.Label)
-			if c.Domain {
-				table, object = "domains", fmt.Sprintf("domain %d %s", c.id, c.Label)
+			table, action, object := "targets", "target.delete", fmt.Sprintf("target %d %s", c.id, c.Label)
+			switch {
+			case c.Domain:
+				table, action, object = "domains", "domain.delete", fmt.Sprintf("domain %d %s", c.id, c.Label)
+			case c.Discovery:
+				table, action, object = "scan_schedules", "scan_schedule.delete", fmt.Sprintf("scan schedule %d %s", c.id, c.Label)
 			}
-			// #nosec G202 -- table is one of the two literals above
+			// #nosec G202 -- table is one of the three literals above
 			if _, err := tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE id = ?", c.id); err != nil {
 				return res, err
 			}
 			res.Removed++
-			res.Audit = append(res.Audit, ImportAudit{strings.TrimSuffix(table, "s") + ".delete", object, "import=true name=" + c.Name})
+			res.Audit = append(res.Audit, ImportAudit{action, object, "import=true name=" + c.Name})
+		case c.Discovery:
+			sc := c.schedule
+			sc.ID = c.id
+			id, err := s.saveScheduleTx(ctx, tx, sc, user)
+			if err != nil {
+				return res, fmt.Errorf("%s: %w", c.Label, err)
+			}
+			action := "scan_schedule.update"
+			if c.id == 0 {
+				action = "scan_schedule.create"
+				res.Added++
+			} else {
+				res.Changed++
+			}
+			res.Audit = append(res.Audit, ImportAudit{action, fmt.Sprintf("scan schedule %d %s", id, c.Label), "import=true" + diffDetail(c.Diff)})
 		case c.Domain:
 			d := c.domain
 			d.ID = c.id
@@ -801,7 +983,7 @@ func (s *Service) ApplyImport(ctx context.Context, plan ImportPlan, remove bool,
 					return res, err
 				}
 			}
-			id, err := s.saveTargetTx(ctx, tx, t, def, user)
+			id, err := s.saveTargetTx(ctx, tx, t, st, user)
 			if err != nil {
 				return res, fmt.Errorf("%s: %w", c.Label, err)
 			}

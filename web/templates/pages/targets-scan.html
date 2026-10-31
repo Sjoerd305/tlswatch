@@ -1,7 +1,7 @@
 {{define "content"}}{{$p := .}}{{$d := .Data}}{{$sc := $d.S}}
-<div class="crumbs"><a href="/targets">Targets</a><span>/</span><a href="/targets/discover">Discover</a><span>/</span><span>Scan {{whenTime $p.Loc $p.Now $sc.CreatedAt}}</span></div>
+<div class="crumbs"><a href="/targets">Targets</a><span>/</span><a href="/targets/discover">Discover</a><span>/</span>{{if $sc.ScheduleID}}<a href="/targets/discover/schedules/{{$sc.ScheduleID}}">Schedule</a><span>/</span>{{end}}<span>Scan {{whenTime $p.Loc $p.Now $sc.CreatedAt}}</span></div>
 <div class="page-head">
-  <div><h1>Scan of {{join $sc.Ranges ", "}}</h1><span class="summary">From {{if $sc.NodeName}}node {{$sc.NodeName}}{{else}}this server{{end}} · ports {{range $i, $n := $sc.Ports}}{{if $i}}, {{end}}{{$n}}{{end}} · {{$sc.Rate}} connects per second · by {{$sc.CreatedBy}}</span></div>
+  <div><h1>Scan of {{join $sc.Ranges ", "}}</h1><span class="summary">From {{if $sc.NodeName}}node {{$sc.NodeName}}{{else}}this server{{end}} · ports {{range $i, $n := $sc.Ports}}{{if $i}}, {{end}}{{$n}}{{end}} · {{$sc.Rate}} connects per second · {{if $sc.ScheduleID}}a run of <a href="/targets/discover/schedules/{{$sc.ScheduleID}}">its schedule</a>{{if ne $sc.CreatedBy "schedule"}}, started by {{$sc.CreatedBy}}{{end}}{{else}}by {{$sc.CreatedBy}}{{end}}</span></div>
 </div>
 {{- if eq $sc.State "running"}}
 <div class="notice info" role="status">{{template "notice-icon" "info"}}<div>Scanning: {{$sc.Percent}}% done, {{$sc.Found}} {{plural $sc.Found "endpoint" "endpoints"}} found so far. This page follows the scan.</div></div>

@@ -65,7 +65,10 @@ func (a *alerter) data(f Finding, event string) notify.AlertData {
 		h := int(d.NotAfter.Sub(a.now) / time.Hour)
 		d.HoursLeft = &h
 	}
-	if f.Fingerprint != "" {
+	if a.base.Discovery {
+		// The finding's reference is the endpoint it names.
+		d.HostPort, d.Fingerprint = f.Fingerprint, ""
+	} else if f.Fingerprint != "" {
 		d.Fingerprint = f.Fingerprint
 	}
 	return d

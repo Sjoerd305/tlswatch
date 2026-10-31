@@ -1,11 +1,14 @@
 {{define "content"}}{{$p := .}}{{$d := .Data}}{{$pl := $d.Plan}}
 <div class="crumbs"><a href="/targets">Targets</a><span>/</span><a href="/targets/bulk-add">Add targets</a><span>/</span><span>Import</span></div>
-<div class="page-head"><div><h1>Import</h1><span class="summary">Nothing is saved until you import. Targets match by host, port, protocol and server name; domain watches by name.</span></div></div>
+<div class="page-head"><div><h1>Import</h1><span class="summary">Nothing is saved until you import. Targets match by host, port, protocol and server name; domain watches by name; scan schedules by ranges, ports and node.</span></div></div>
 {{- if $d.Notice}}<div class="notice warn" role="alert">{{template "notice-icon" "warn"}}<div>{{$d.Notice}}</div></div>{{end}}
 <section class="card pad">
   <dl class="kv">
     <dt>Targets</dt><dd class="mono">{{$pl.Count "added" false}} added · {{$pl.Count "changed" false}} changed · {{$pl.Count "unchanged" false}} unchanged · {{$pl.Count "absent" false}} not in the file</dd>
     <dt>Domains</dt><dd class="mono">{{$pl.Count "added" true}} added · {{$pl.Count "changed" true}} changed · {{$pl.Count "unchanged" true}} unchanged · {{$pl.Count "absent" true}} not in the file</dd>
+    {{- if or ($pl.CountOf "added" "discovery") ($pl.CountOf "changed" "discovery") ($pl.CountOf "unchanged" "discovery") ($pl.CountOf "absent" "discovery")}}
+    <dt>Scan schedules</dt><dd class="mono">{{$pl.CountOf "added" "discovery"}} added · {{$pl.CountOf "changed" "discovery"}} changed · {{$pl.CountOf "unchanged" "discovery"}} unchanged · {{$pl.CountOf "absent" "discovery"}} not in the file</dd>
+    {{- end}}
   </dl>
 </section>
 {{template "import-group" (dict "Title" "Targets added" "Pill" "ok" "Op" "added" "Items" ($d.Of "added" false))}}
@@ -14,12 +17,15 @@
 {{template "import-group" (dict "Title" "Domains added" "Pill" "ok" "Op" "added" "Items" ($d.Of "added" true))}}
 {{template "import-group" (dict "Title" "Domains changed" "Pill" "warn" "Op" "changed" "Items" ($d.Of "changed" true))}}
 {{template "import-group" (dict "Title" "Domains not in the file" "Pill" "off" "Op" "absent" "Items" ($d.Of "absent" true))}}
+{{template "import-group" (dict "Title" "Scan schedules added" "Pill" "ok" "Op" "added" "Items" ($d.OfKind "added" "discovery"))}}
+{{template "import-group" (dict "Title" "Scan schedules changed" "Pill" "warn" "Op" "changed" "Items" ($d.OfKind "changed" "discovery"))}}
+{{template "import-group" (dict "Title" "Scan schedules not in the file" "Pill" "off" "Op" "absent" "Items" ($d.OfKind "absent" "discovery"))}}
 <form class="card form" method="post" action="/targets/import">
   {{template "csrf" $p.CSRF}}
   <input type="hidden" name="digest" value="{{$d.Digest}}">
   <textarea name="yaml" hidden>{{$d.YAML}}</textarea>
-  {{- if or ($pl.Count "absent" false) ($pl.Count "absent" true)}}
-  <label class="check"><input type="checkbox" name="remove" value="1"{{if $d.Remove}} checked{{end}}> Remove the {{$pl.Count "absent" false}} {{plural ($pl.Count "absent" false) "target" "targets"}} and {{$pl.Count "absent" true}} {{plural ($pl.Count "absent" true) "domain" "domains"}} not in the file, with their history</label>
+  {{- if or ($pl.Count "absent" false) ($pl.Count "absent" true) ($pl.CountOf "absent" "discovery")}}
+  <label class="check"><input type="checkbox" name="remove" value="1"{{if $d.Remove}} checked{{end}}> Remove the {{$pl.Count "absent" false}} {{plural ($pl.Count "absent" false) "target" "targets"}}, {{$pl.Count "absent" true}} {{plural ($pl.Count "absent" true) "domain" "domains"}} and {{$pl.CountOf "absent" "discovery"}} scan {{plural ($pl.CountOf "absent" "discovery") "schedule" "schedules"}} not in the file, with their history</label>
   <span class="help">Left unticked, they stay as they are.</span>
   {{- end}}
   <div class="form-foot">

@@ -292,17 +292,21 @@ func (t *Target) Validate(st config.Settings) map[string]string {
 
 // SaveTarget creates (ID 0) or updates a target's configuration.
 func (s *Service) SaveTarget(ctx context.Context, t Target, user string) (int64, error) {
-	def := s.CurrentSettings(ctx).Defaults // read before the write transaction
+	st := s.CurrentSettings(ctx) // read before the write transaction
 	tx, err := s.DB.W.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
 	defer tx.Rollback()
-	id, err := s.saveTargetTx(ctx, tx, t, def, user)
+	id, err := s.saveTargetTx(ctx, tx, t, st, user)
 	if err != nil {
 		return 0, err
 	}
-	return id, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	s.wake() // recovery notices of an endpoint now covered
+	return id, nil
 }
 
 // SaveTargets saves several targets in one transaction, all or none, as a
@@ -310,14 +314,14 @@ func (s *Service) SaveTarget(ctx context.Context, t Target, user string) (int64,
 // SetEnabled does. On an error it returns the index of the target that
 // failed.
 func (s *Service) SaveTargets(ctx context.Context, ts []Target, enable *bool, user string) (int, error) {
-	def := s.CurrentSettings(ctx).Defaults
+	st := s.CurrentSettings(ctx)
 	tx, err := s.DB.W.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
 	defer tx.Rollback()
 	for i, t := range ts {
-		if _, err := s.saveTargetTx(ctx, tx, t, def, user); err != nil {
+		if _, err := s.saveTargetTx(ctx, tx, t, st, user); err != nil {
 			return i, err
 		}
 		if enable != nil && *enable != t.Enabled {
@@ -334,7 +338,7 @@ func (s *Service) SaveTargets(ctx context.Context, ts []Target, enable *bool, us
 // those added (0 for a skipped one), or on an error the index of the
 // target that failed.
 func (s *Service) AddTargets(ctx context.Context, ts []Target, user string) ([]int64, int, error) {
-	def := s.CurrentSettings(ctx).Defaults
+	st := s.CurrentSettings(ctx)
 	tx, err := s.DB.W.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, 0, err
@@ -343,7 +347,7 @@ func (s *Service) AddTargets(ctx context.Context, ts []Target, user string) ([]i
 	ids := make([]int64, len(ts))
 	for i, t := range ts {
 		t.ID = 0
-		id, err := s.saveTargetTx(ctx, tx, t, def, user)
+		id, err := s.saveTargetTx(ctx, tx, t, st, user)
 		if errors.Is(err, ErrTargetExists) {
 			continue // a failed statement leaves the transaction as it was
 		}
@@ -352,10 +356,15 @@ func (s *Service) AddTargets(ctx context.Context, ts []Target, user string) ([]i
 		}
 		ids[i] = id
 	}
-	return ids, 0, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return nil, 0, err
+	}
+	s.wake() // recovery notices of endpoints now covered
+	return ids, 0, nil
 }
 
-func (s *Service) saveTargetTx(ctx context.Context, tx *sql.Tx, t Target, def config.Defaults, user string) (int64, error) {
+func (s *Service) saveTargetTx(ctx context.Context, tx *sql.Tx, t Target, st config.Settings, user string) (int64, error) {
+	def := st.Defaults
 	now := s.now().Unix()
 	// Only a new assignment needs a confirmed node: a target stays editable
 	// while its node re-enrols.
@@ -396,6 +405,10 @@ func (s *Service) saveTargetTx(ctx context.Context, tx *sql.Tx, t Target, def co
 			return 0, uniqueTarget(err)
 		}
 		t.ID, _ = res.LastInsertId()
+		// An endpoint discovery reported is in the inventory now.
+		if _, err := s.coverUnknownEndpointsTx(ctx, tx, st, t.Host, t.Port, s.now()); err != nil {
+			return 0, err
+		}
 	} else {
 		var oldTrust, oldHost, oldSNI, oldProto string
 		var oldPort int

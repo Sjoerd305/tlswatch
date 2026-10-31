@@ -37,8 +37,7 @@ func (s *Service) Metrics(ctx context.Context) (Metrics, error) {
 	}{
 		{"SELECT status, COUNT(*) FROM targets GROUP BY status", m.TargetsByStatus},
 		{`SELECT f.severity || '/' || CASE WHEN f.ack_at > 0 AND (f.ack_until = 0 OR f.ack_until > ` + now + `) THEN 'true' ELSE 'false' END, COUNT(*)
-			FROM findings f LEFT JOIN targets t ON t.id = f.target_id LEFT JOIN domains d ON d.id = f.domain_id
-			WHERE f.resolved_at = 0 AND (t.enabled = 1 OR f.node_id IS NOT NULL OR d.enabled = 1) GROUP BY 1`, m.OpenBySeverity},
+			FROM findings f` + findingJoins + `WHERE f.resolved_at = 0 AND ` + findingSubjectLive + ` GROUP BY 1`, m.OpenBySeverity},
 		{"SELECT state, COUNT(*) FROM alerts WHERE state IN ('pending', 'failed') GROUP BY state", m.AlertsByState},
 		{"SELECT grade, COUNT(*) FROM targets WHERE enabled = 1 AND grade != '' GROUP BY grade", m.TargetsByGrade},
 		{"SELECT CASE pq WHEN '' THEN 'untested' ELSE pq END, COUNT(*) FROM targets WHERE enabled = 1 GROUP BY 1", m.TargetsByPQ},

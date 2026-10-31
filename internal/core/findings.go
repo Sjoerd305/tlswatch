@@ -16,20 +16,26 @@ import (
 )
 
 const findingCols = `f.id, COALESCE(f.target_id, 0), f.kind, f.severity, f.opened_at, f.resolved_at, f.details, f.fingerprint, f.days_left,
-	f.ack_by, f.ack_at, f.ack_until, f.ack_comment, f.last_alert_at, COALESCE(f.node_id, 0), COALESCE(f.domain_id, 0)`
+	f.ack_by, f.ack_at, f.ack_until, f.ack_comment, f.last_alert_at, COALESCE(f.node_id, 0), COALESCE(f.domain_id, 0), COALESCE(f.schedule_id, 0)`
 
-// findingSubject joins a finding's target, its node or its domain watch,
-// and selects the name, host, port and protocol shown with it.
-const findingSubject = `COALESCE(t.name, n.name, d.name, ''), COALESCE(t.host, json_extract(n.facts, '$.hostname'), d.name, ''), COALESCE(t.port, 0), COALESCE(t.protocol, '')`
+// findingSubject joins a finding's target, its node, its domain watch or
+// its scan schedule, and selects the name, host, port and protocol shown
+// with it. A schedule finding shows the schedule's label and the endpoint.
+const findingSubject = `COALESCE(t.name, n.name, d.name, CASE WHEN ss.id IS NULL THEN NULL WHEN ss.name != '' THEN ss.name ELSE 'scan of ' || ss.ranges END, ''),
+	COALESCE(t.host, json_extract(n.facts, '$.hostname'), d.name, CASE WHEN ss.id IS NULL THEN NULL ELSE f.fingerprint END, ''), COALESCE(t.port, 0), COALESCE(t.protocol, '')`
 
-const findingJoins = ` LEFT JOIN targets t ON t.id = f.target_id LEFT JOIN nodes n ON n.id = f.node_id LEFT JOIN domains d ON d.id = f.domain_id `
+const findingJoins = ` LEFT JOIN targets t ON t.id = f.target_id LEFT JOIN nodes n ON n.id = f.node_id LEFT JOIN domains d ON d.id = f.domain_id LEFT JOIN scan_schedules ss ON ss.id = f.schedule_id `
+
+// findingSubjectLive is the condition that a finding's subject is enabled,
+// for the counts that leave disabled targets and watches out.
+const findingSubjectLive = `(t.enabled = 1 OR f.node_id IS NOT NULL OR d.enabled = 1 OR ss.enabled = 1)`
 
 func scanFinding(r interface{ Scan(...any) error }, extra ...any) (Finding, error) {
 	var f Finding
 	var kind, sev string
 	var days sql.NullInt64
 	dest := append([]any{&f.ID, &f.TargetID, &kind, &sev, &f.OpenedAt, &f.ResolvedAt, &f.Details, &f.Fingerprint, &days,
-		&f.AckBy, &f.AckAt, &f.AckUntil, &f.AckComment, &f.LastAlertAt, &f.NodeID, &f.DomainID}, extra...)
+		&f.AckBy, &f.AckAt, &f.AckUntil, &f.AckComment, &f.LastAlertAt, &f.NodeID, &f.DomainID, &f.ScheduleID}, extra...)
 	if err := r.Scan(dest...); err != nil {
 		return f, err
 	}
@@ -39,11 +45,12 @@ func scanFinding(r interface{ Scan(...any) error }, extra ...any) (Finding, erro
 
 // FindingFilter selects findings.
 type FindingFilter struct {
-	Resolved bool // false: open findings
-	TargetID int64
-	DomainID int64
-	Limit    int
-	Since    int64 // resolved findings: resolved at or after
+	Resolved   bool // false: open findings
+	TargetID   int64
+	DomainID   int64
+	ScheduleID int64
+	Limit      int
+	Since      int64 // resolved findings: resolved at or after
 }
 
 // Findings lists findings with their target. Open findings are sorted by
@@ -70,6 +77,10 @@ func (s *Service) Findings(ctx context.Context, ff FindingFilter) ([]Finding, er
 	if ff.DomainID != 0 {
 		q += " AND f.domain_id = ?"
 		args = append(args, ff.DomainID)
+	}
+	if ff.ScheduleID != 0 {
+		q += " AND f.schedule_id = ?"
+		args = append(args, ff.ScheduleID)
 	}
 	if ff.Resolved {
 		q += " ORDER BY f.resolved_at DESC"
@@ -352,6 +363,14 @@ func (s *Service) Remind(ctx context.Context) (int, error) {
 		}
 		if f.DomainID != 0 {
 			n, err := s.remindDomain(ctx, st, f, now)
+			if err != nil {
+				return queued, err
+			}
+			queued += n
+			continue
+		}
+		if f.ScheduleID != 0 {
+			n, err := s.remindSchedule(ctx, st, f, now)
 			if err != nil {
 				return queued, err
 			}

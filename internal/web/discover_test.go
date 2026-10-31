@@ -124,3 +124,130 @@ func TestDiscoverFromCT(t *testing.T) {
 		t.Fatal("the finding panel offers no Add as target")
 	}
 }
+
+// Discover with Repeat: the scan is saved as a schedule and run as its first
+// run; endpoints without a target become findings with Add as target; the
+// schedule page, Run now, Pause and the REST endpoints work on it.
+func TestDiscoverSchedule(t *testing.T) {
+	hs := newHarness(t)
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	tpl := &x509.Certificate{SerialNumber: big.NewInt(9), Subject: pkix.Name{CommonName: "intranet.example.nl"},
+		DNSNames: []string{"intranet.example.nl"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(60 * 24 * time.Hour)}
+	der, _ := x509.CreateCertificate(rand.Reader, tpl, tpl, key.Public(), key)
+	cert, _ := x509.ParseCertificate(der)
+	hs.srv.Sched.Scan = func(_ context.Context, req probe.ScanRequest) (probe.ScanResult, error) {
+		return probe.ScanResult{Probed: len(req.Addresses) * len(req.Ports), Hits: []probe.ScanHit{
+			{IP: "10.0.0.1", Port: 443, Protocol: probe.TLS, TLSVersion: "TLS 1.3", Chain: []*x509.Certificate{cert}},
+		}}, nil
+	}
+	hs.srv.LookupHost = func(_ context.Context, name string) ([]string, error) { return []string{"10.0.0.1"}, nil }
+	ctx := context.Background()
+
+	rec := hs.do(authz.Operator, "POST", "/targets/discover", url.Values{"ranges": {"10.0.0.0/30"}, "ports": {"443"}, "repeat": {"day"}, "hour": {"3"}, "name": {"Office"}}, true)
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/scans/1" {
+		t.Fatalf("start: %d %s %s", rec.Code, rec.Header().Get("Location"), rec.Body.String())
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	var open []core.Finding
+	for len(open) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("no finding from the first run")
+		}
+		time.Sleep(10 * time.Millisecond)
+		open, _ = hs.srv.Core.Findings(ctx, core.FindingFilter{ScheduleID: 1})
+	}
+	if open[0].HostPort() != "10.0.0.1:443" || open[0].TargetName != "Office" {
+		t.Fatalf("finding: %+v", open[0])
+	}
+	sc, err := hs.srv.Core.ScanSchedule(ctx, 1)
+	if err != nil || sc.LastScanID != 1 || sc.CreatedBy != "op@example.nl" && sc.CreatedBy == "" {
+		t.Fatalf("schedule: %+v %v", sc, err)
+	}
+
+	page := hs.do(authz.Operator, "GET", "/targets/discover", nil, false).Body.String()
+	for _, want := range []string{`href="/targets/discover/schedules/1"`, "Office", "daily at 03:00", "Scheduled scans"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("Discover lacks %q", want)
+		}
+	}
+	page = hs.do(authz.Operator, "GET", "/targets/discover/schedules/1", nil, false).Body.String()
+	for _, want := range []string{"10.0.0.1:443", "intranet.example.nl", "1 not in inventory", "Run now", "Pause", `href="/scans/1"`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("schedule page lacks %q", want)
+		}
+	}
+	page = hs.do(authz.Operator, "GET", "/scans/1", nil, false).Body.String()
+	if !strings.Contains(page, `href="/targets/discover/schedules/1">its schedule</a>`) {
+		t.Error("the scan page does not name its schedule")
+	}
+	panel := hs.do(authz.Operator, "GET", fmt.Sprintf("/findings?sel=%d", open[0].ID), nil, false).Body.String()
+	if !strings.Contains(panel, `href="/targets/bulk-add?hosts=10.0.0.1%3A443&#43;sni%3Dintranet.example.nl&#43;intranet.example.nl" class="btn">Add as target`) {
+		t.Fatal("the finding panel offers no Add as target with the scan line")
+	}
+	list := hs.do(authz.Operator, "GET", "/findings", nil, false).Body.String()
+	if !strings.Contains(list, `href="/targets/discover/schedules/1" class="ink strong">Office</a>`) || !strings.Contains(list, "Endpoint not in inventory") {
+		t.Error("the findings list does not link the schedule")
+	}
+
+	// Run now: a second scan; then pause: the finding resolves.
+	rec = hs.do(authz.Operator, "POST", "/targets/discover/schedules/1/run", nil, true)
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/scans/2" {
+		t.Fatalf("run now: %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+	for sc, _ := hs.srv.Core.Scan(ctx, 2); sc.State == core.ScanRunning; sc, _ = hs.srv.Core.Scan(ctx, 2) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if rec = hs.do(authz.Operator, "POST", "/targets/discover/schedules/1/enabled", url.Values{"enabled": {"0"}}, true); rec.Code != http.StatusSeeOther {
+		t.Fatalf("pause: %d", rec.Code)
+	}
+	if open, _ = hs.srv.Core.Findings(ctx, core.FindingFilter{ScheduleID: 1}); len(open) != 0 {
+		t.Fatal("pausing left the finding open")
+	}
+	if rec = hs.do(authz.Operator, "POST", "/targets/discover/schedules/1", url.Values{"ranges": {"10.0.0.0/30"}, "ports": {"443, 8443"}, "rate": {"20"}, "repeat": {"week"}, "weekday": {"5"}, "hour": {"22"}, "name": {"Office"}}, true); rec.Code != http.StatusSeeOther {
+		t.Fatalf("save: %d %s", rec.Code, rec.Body.String())
+	}
+	if sc, _ = hs.srv.Core.ScanSchedule(ctx, 1); sc.Every != core.ScheduleWeekly || sc.Weekday != 5 || sc.Hour != 22 || sc.Rate != 20 || len(sc.Ports) != 2 || sc.Enabled {
+		t.Fatalf("after save: %+v", sc)
+	}
+	if rec = hs.do(authz.Operator, "POST", "/targets/discover/schedules/1", url.Values{"ranges": {"8.8.8.0/24"}, "repeat": {"week"}}, true); rec.Code != http.StatusBadRequest {
+		t.Fatalf("public range saved: %d", rec.Code)
+	}
+	if rec = hs.do(authz.Viewer, "GET", "/targets/discover/schedules/1", nil, false); rec.Code == http.StatusOK {
+		t.Fatal("a viewer sees the schedule page")
+	}
+
+	// The REST API.
+	op := hs.apiToken(authz.Operator, authz.Operator)
+	if rec := hs.api(op, "GET", "/api/v2/discovery/schedules", ""); rec.Code != http.StatusOK || len(decodeJSON[apiList](t, rec).Data.([]any)) != 1 {
+		t.Fatalf("list: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = hs.api(op, "PATCH", "/api/v2/discovery/schedules/1", `{"enabled":true,"hour":5}`)
+	if d := decodeJSON[map[string]any](t, rec); rec.Code != http.StatusOK || d["enabled"] != true || d["hour"] != float64(5) || d["next_run"] == nil {
+		t.Fatalf("patch: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := hs.api(op, "POST", "/api/v2/discovery/schedules", `{"ranges":["8.8.8.0/24"],"every":"day"}`); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"ranges"`) {
+		t.Fatalf("public range: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := hs.api(op, "POST", "/api/v2/discovery/schedules", `{"ranges":["10.0.1.0/29"]}`); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"every"`) {
+		t.Fatalf("missing every: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = hs.api(op, "POST", "/api/v2/discovery/schedules", `{"name":"Lab","ranges":["10.0.1.0/29"],"every":"week","weekday":3,"hour":1,"ports":[443,8443]}`)
+	if d := decodeJSON[map[string]any](t, rec); rec.Code != http.StatusCreated || d["name"] != "Lab" || d["every"] != "week" || rec.Header().Get("Location") != "/api/v2/discovery/schedules/2" {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := hs.api(op, "POST", "/api/v2/discovery/schedules/2/run", ""); rec.Code != http.StatusOK {
+		t.Fatalf("run: %d %s", rec.Code, rec.Body.String())
+	}
+	for sc, _ := hs.srv.Core.Scan(ctx, 3); sc.State == core.ScanRunning; sc, _ = hs.srv.Core.Scan(ctx, 3) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if rec := hs.api(op, "DELETE", "/api/v2/discovery/schedules/2", ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d", rec.Code)
+	}
+	if rec := hs.api(op, "GET", "/api/v2/discovery/schedules/2", ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("after delete: %d", rec.Code)
+	}
+	if a, _ := hs.srv.Core.AuditLog(ctx, "scan.start", 10); len(a) != 3 || !strings.Contains(a[0].Details, "schedule=") {
+		t.Fatalf("audit: %+v", a)
+	}
+}

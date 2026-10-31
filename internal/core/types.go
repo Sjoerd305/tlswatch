@@ -336,6 +336,10 @@ type Finding struct {
 	// (unexpected_certificate, ct_source_failed); Fingerprint then holds the
 	// issuance id, if any.
 	DomainID int64
+	// ScheduleID is set, and the others 0, for a finding on a scan schedule
+	// (unknown_endpoint); Fingerprint then holds the endpoint as
+	// address:port.
+	ScheduleID int64
 
 	// Joined for display. For a node finding TargetName is the node's
 	// name and TargetHost its hostname.
@@ -356,7 +360,7 @@ func (f Finding) Acked(now time.Time) bool {
 
 // HostPort of the finding's target, or the hostname of its node.
 func (f Finding) HostPort() string {
-	if f.NodeID != 0 || f.DomainID != 0 {
+	if f.NodeID != 0 || f.DomainID != 0 || f.ScheduleID != 0 {
 		return f.TargetHost
 	}
 	return net.JoinHostPort(f.TargetHost, strconv.Itoa(f.TargetPort))

@@ -1,0 +1,86 @@
+{{define "content"}}{{$p := .}}{{$d := .Data}}{{$s := $d.S}}
+<div class="crumbs"><a href="/targets">Targets</a><span>/</span><a href="/targets/discover">Discover</a><span>/</span><span>{{$s.Label}}</span></div>
+<div class="page-head top-align">
+  <div>
+    <div class="title-row"><h1>{{$s.Label}}</h1>{{if not $s.Enabled}}<span class="st off">Paused</span>{{else if $s.OpenFindings}}<span class="st warn">{{$s.OpenFindings}} not in inventory</span>{{else}}<span class="st ok">Nothing unlisted</span>{{end}}</div>
+    <span class="summary">Scans {{join $s.Ranges ", "}} {{$s.When}} from {{if $s.NodeName}}node {{$s.NodeName}}{{else}}this server{{end}}{{if $s.Enabled}} · next run {{whenTime $p.Loc $p.Now $d.Next.Unix}}{{end}}</span>
+  </div>
+  <div class="actions row">
+    {{- if $s.Enabled}}<form method="post" action="/targets/discover/schedules/{{$s.ID}}/run">{{template "csrf" $p.CSRF}}<button type="submit" class="btn">Run now</button></form>
+    <form method="post" action="/targets/discover/schedules/{{$s.ID}}/enabled">{{template "csrf" $p.CSRF}}<input type="hidden" name="enabled" value="0"><button type="submit" class="btn">Pause</button></form>
+    {{- else}}<form method="post" action="/targets/discover/schedules/{{$s.ID}}/enabled">{{template "csrf" $p.CSRF}}<input type="hidden" name="enabled" value="1"><button type="submit" class="btn btn-primary">Resume</button></form>{{end}}
+    <form method="post" action="/targets/discover/schedules/{{$s.ID}}/delete" data-confirm="Delete this schedule? Its findings go with it; its scans stay for their 7 days.">{{template "csrf" $p.CSRF}}<button type="submit" class="btn btn-danger">Delete</button></form>
+  </div>
+</div>
+{{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
+{{- if $s.LastNote}}<div class="notice warn" role="status">{{template "notice-icon" "warn"}}<div>The last scheduled run {{whenTime $p.Loc $p.Now $s.LastRun}} {{$s.LastNote}}. The next slot tries again.</div></div>{{end}}
+<div class="grid-main-side w360">
+  <div class="stack">
+    <section class="card clip">
+      <div class="sec"><h2>Not in inventory</h2><span class="meta">endpoints the last run found that no target covers</span></div>
+      {{- if $d.Findings}}
+      <table class="tbl cards compact">
+        <thead><tr><th>Endpoint</th><th>Certificate</th><th>Since</th><th></th></tr></thead>
+        <tbody>
+        {{- range $d.Findings}}
+          <tr{{if or (not .Open) (.Acked $p.Now)}} class="muted"{{end}}>
+            <td data-label="Endpoint" class="mono m-lead">{{.HostPort}}</td>
+            <td data-label="Certificate" class="wrap">{{.Details}}</td>
+            <td data-label="Since" class="mono nowrap">{{when $p.Loc $p.Now .OpenedAt}}</td>
+            <td data-label="" class="m-end"><a href="/findings?sel={{.ID}}" class="btn btn-xs">{{if .Open}}Add or acknowledge{{else}}Details{{end}}</a></td>
+          </tr>
+        {{- end}}
+        </tbody>
+      </table>
+      {{- else}}
+      <div class="empty"><span class="h3">Every endpoint found has a target</span><span>{{if $s.LastRun}}A run that finds an endpoint without a target opens a warning here and alerts through the channels.{{else}}The first run has not happened yet.{{end}}</span></div>
+      {{- end}}
+    </section>
+    {{- if $d.Scans}}
+    <section class="card clip">
+      <div class="sec"><h2>Runs</h2><span class="meta">kept for 7 days</span></div>
+      <table class="tbl cards compact">
+        <thead><tr><th>Started</th><th>Progress</th><th class="num">Found</th><th class="hide-890">By</th></tr></thead>
+        <tbody>
+        {{- range $d.Scans}}
+          <tr>
+            <td data-label="Started" class="mono m-lead"><a href="/scans/{{.ID}}" class="ink" data-row-link>{{whenTime $p.Loc $p.Now .CreatedAt}}</a></td>
+            <td data-label="Progress">{{template "scan-state" .}}</td>
+            <td data-label="Found" class="num mono">{{.Found}}</td>
+            <td data-label="By" class="muted hide-890">{{if eq .CreatedBy "schedule"}}the schedule{{else}}{{.CreatedBy}}{{end}}</td>
+          </tr>
+        {{- end}}
+        </tbody>
+      </table>
+    </section>
+    {{- end}}
+  </div>
+  <div class="stack">
+    <form class="card form" method="post" action="/targets/discover/schedules/{{$s.ID}}" novalidate>
+      {{template "csrf" $p.CSRF}}
+      <div class="sec"><h2>Settings</h2></div>
+      <div class="field"><label class="label" for="name">Name</label><input id="name" name="name" class="input" value="{{$s.Name}}" maxlength="120" placeholder="Office network"></div>
+      <div class="field"><label class="label" for="ranges">Ranges</label>
+        <textarea id="ranges" name="ranges" class="input mono" rows="3" required spellcheck="false">{{join $s.Ranges "\n"}}</textarea>
+        <span class="help">CIDRs or single addresses, at most 4,096 addresses per scan. {{if $d.Public}}Public ranges are allowed by Settings › General.{{else}}Private ranges only.{{end}}</span></div>
+      <div class="field"><label class="label" for="ports">Ports</label><input id="ports" name="ports" class="input mono" value="{{range $i, $n := $s.Ports}}{{if $i}}, {{end}}{{$n}}{{end}}"></div>
+      <div class="field"><label class="label" for="rate">Rate, connects per second</label><input id="rate" name="rate" class="input mono" value="{{$d.Rate}}" inputmode="numeric"></div>
+      <div class="field"><label class="label" for="node">Probe from</label>
+        <select id="node" name="node_id" class="input">
+          <option value="0">This server</option>
+          {{- range $d.Nodes}}<option value="{{.ID}}"{{if eq .ID $s.NodeID}} selected{{end}}{{if not .CanScan}} disabled{{end}}>Node {{.Label}}{{if not .CanScan}} (update it to scan){{end}}</option>{{end}}
+        </select></div>
+      <div class="field"><label class="label" for="repeat">Repeat</label>
+        <select id="repeat" name="repeat" class="input">
+          <option value="day"{{if eq $s.Every "day"}} selected{{end}}>Daily</option>
+          <option value="week"{{if eq $s.Every "week"}} selected{{end}}>Weekly</option>
+        </select></div>
+      <div class="fgrid c2">
+        <div class="field"><label class="label" for="weekday">Day</label><select id="weekday" name="weekday" class="input">{{range (seq 0 6)}}<option value="{{.}}"{{if eq . $s.Weekday}} selected{{end}}>{{weekday .}}</option>{{end}}</select></div>
+        <div class="field"><label class="label" for="hour">Hour</label><select id="hour" name="hour" class="input">{{range (seq 0 23)}}<option value="{{.}}"{{if eq . $s.Hour}} selected{{end}}>{{.}}:00</option>{{end}}</select></div>
+      </div>
+      <div class="form-foot"><button type="submit" class="btn btn-primary">Save</button><span class="help">Created {{when $p.Loc $p.Now $s.CreatedAt}} by {{$s.CreatedBy}}.</span></div>
+    </form>
+  </div>
+</div>
+{{end}}

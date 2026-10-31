@@ -108,7 +108,7 @@
     <div class="field"><label class="label" for="ack-until">Until</label><input id="ack-until" name="until" class="input mono w150" type="date" value="{{$d.Until}}" placeholder="YYYY-MM-DD"><span class="help">Reminders resume after this date if still open. Leave empty for until resolved.</span></div>
     {{- end}}
     <div class="field"><label class="label" for="ack-comment">Comment</label><textarea id="ack-comment" name="comment" class="input" rows="3" maxlength="2000">{{$d.Comment}}</textarea></div>
-    <div class="form-foot end">{{if $d.AddHosts}}<a href="{{addTargets $d.AddHosts}}" class="btn">Add as target</a>{{end}}<a href="{{$d.Next}}" class="btn" data-panel-close>Cancel</a><button type="submit" class="btn btn-primary">{{if $f.Kind.AckResolves}}Confirm{{else if $f.AckAt}}Update{{else}}Acknowledge{{end}}</button></div>
+    <div class="form-foot end">{{if $d.AddHref}}<a href="{{$d.AddHref}}" class="btn">Add as target</a>{{else if $d.AddHosts}}<a href="{{addTargets $d.AddHosts}}" class="btn">Add as target</a>{{end}}<a href="{{$d.Next}}" class="btn" data-panel-close>Cancel</a><button type="submit" class="btn btn-primary">{{if $f.Kind.AckResolves}}Confirm{{else if $f.AckAt}}Update{{else}}Acknowledge{{end}}</button></div>
   </form>
   {{- if $f.AckAt}}{{if not $f.Kind.AckResolves}}
   <form method="post" action="/findings/{{$f.ID}}/unack">{{template "csrf" $p.CSRF}}<input type="hidden" name="next" value="{{$d.Next}}"><button type="submit" class="btn-link">Remove acknowledgement by {{$f.AckBy}}</button></form>
@@ -155,7 +155,9 @@
 {{define "node-status"}}{{if eq .N.State "enrolling"}}<span class="st off">waiting for install</span>{{else if eq .N.State "pending"}}<span class="st warn">confirm</span>{{else if not .N.Enabled}}<span class="st off">disabled</span>{{else if not .N.HasCredential}}<span class="st crit">revoked</span>{{else if .S.Online}}<span class="st ok">online</span>{{else}}<span class="st crit">offline</span>{{end}}{{end}}
 
 {{/* finding-subject: the target a finding is on, or its node. frag{P, Item: core.Finding} */}}
-{{define "finding-subject"}}{{$f := .Item}}{{if $f.NodeID}}{{if .P.Can "settings.manage"}}<a href="/settings/nodes/{{$f.NodeID}}" class="ink strong">node {{$f.TargetName}}</a>{{else}}<span class="strong">node {{$f.TargetName}}</span>{{end}}{{else if $f.DomainID}}<a href="/domains/{{$f.DomainID}}" class="ink strong">domain {{$f.TargetName}}</a>{{else}}<a href="/targets/{{$f.TargetID}}" class="ink strong">{{$f.TargetName}}</a>{{end}}{{end}}
+{{define "finding-subject"}}{{$f := .Item}}{{if $f.NodeID}}{{if .P.Can "settings.manage"}}<a href="/settings/nodes/{{$f.NodeID}}" class="ink strong">node {{$f.TargetName}}</a>{{else}}<span class="strong">node {{$f.TargetName}}</span>{{end}}{{else if $f.DomainID}}<a href="/domains/{{$f.DomainID}}" class="ink strong">domain {{$f.TargetName}}</a>{{else if $f.ScheduleID}}{{if .P.Can "targets.edit"}}<a href="/targets/discover/schedules/{{$f.ScheduleID}}" class="ink strong">{{$f.TargetName}}</a>{{else}}<span class="strong">{{$f.TargetName}}</span>{{end}}{{else}}<a href="/targets/{{$f.TargetID}}" class="ink strong">{{$f.TargetName}}</a>{{end}}{{end}}
+
+{{define "scan-state"}}{{if eq .State "running"}}<span class="st sm info">running · {{.Percent}}%</span>{{else if eq .State "failed"}}<span class="st sm crit" title="{{.Error}}">failed</span>{{else}}<span class="st sm ok">done</span>{{end}}{{end}}
 
 {{/* cmd: a command with a copy button. */}}
 {{define "cmd"}}<div class="cmd"><pre class="pre">{{.}}</pre><button type="button" class="btn btn-xs" data-copy="{{.}}">copy</button></div>{{end}}

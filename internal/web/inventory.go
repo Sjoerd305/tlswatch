@@ -381,8 +381,10 @@ type findingPanel struct {
 	Error   string
 	Until   string
 	Comment string
-	// AddHosts are the names an unexpected_certificate offers as targets.
+	// AddHosts are the names an unexpected_certificate offers as targets;
+	// AddHref is the Add many link an unknown_endpoint offers instead.
 	AddHosts []string
+	AddHref  string
 }
 
 // maxResolved caps the resolved findings listed on the findings page.
@@ -537,6 +539,22 @@ func (s *Server) findingPanel(r *http.Request, id int64) (findingPanel, error) {
 		p.Until = time.Unix(f.AckUntil, 0).In(info(r).settings.Location()).Format("2006-01-02")
 	}
 	p.Comment = f.AckComment
+	// The finding names an endpoint discovery found; it can become a target,
+	// with the protocol of its port and the certificate's name as server
+	// name where the latest run that saw it is still kept.
+	if f.Kind == check.UnknownEndpoint && f.Open() && s.can(r, authz.EditTargets) {
+		line, nodeID := f.Fingerprint, int64(0)
+		if res, sc, ok, err := s.Core.ScheduleEndpoint(r.Context(), f.ScheduleID, f.Fingerprint); err != nil {
+			return findingPanel{}, err
+		} else if ok {
+			line, nodeID = scanLines(r.Context(), []core.ScanResult{res}, s.lookupHost)[0], sc.NodeID
+		}
+		v := url.Values{"hosts": {line}}
+		if nodeID != 0 {
+			v.Set("node_id", strconv.FormatInt(nodeID, 10))
+		}
+		p.AddHref = "/targets/bulk-add?" + v.Encode()
+	}
 	// The finding carries its issuance's ID; its names can become targets.
 	if f.Kind == check.UnexpectedCertificate && f.Open() && s.can(r, authz.EditTargets) {
 		if iid, err := strconv.ParseInt(f.Fingerprint, 10, 64); err == nil {

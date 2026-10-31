@@ -40,8 +40,11 @@ type AlertData struct {
 	Loc         *time.Location
 	// Node marks a finding on a node: TargetName is the node's name and
 	// HostPort reads "node <name>". Domain marks one on a domain watch.
-	Node   bool
-	Domain bool
+	// Discovery marks one on a scan schedule: TargetName is the schedule's
+	// label and HostPort the endpoint found.
+	Node      bool
+	Domain    bool
+	Discovery bool
 }
 
 // left is the time left as text: "31 h", "1 day", "12 days"; "" when
@@ -104,6 +107,8 @@ func phrase(a AlertData) string {
 		return "certificate issued"
 	case "caa_violation":
 		return "certificate issued against the CAA record"
+	case "unknown_endpoint":
+		return "found by discovery, not in the inventory"
 	}
 	return a.Kind
 }
@@ -137,6 +142,9 @@ func Render(a AlertData) Message {
 		add("Node", a.TargetName, false)
 	} else if a.Domain {
 		add("Domain", a.TargetName, false)
+	} else if a.Discovery {
+		add("Scan", a.TargetName, false)
+		add("Endpoint", a.HostPort, true)
 	} else {
 		add("Target", fmt.Sprintf("%s (%s)", a.TargetName, a.HostPort), false)
 	}

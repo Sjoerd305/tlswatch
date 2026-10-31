@@ -53,7 +53,18 @@ type importData struct {
 func (d importData) Of(op string, domains bool) []core.ImportChange {
 	var out []core.ImportChange
 	for _, c := range d.Plan.Changes {
-		if c.Op == op && c.Domain == domains {
+		if c.Op == op && !c.Discovery && c.Domain == domains {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// OfKind returns the changes of op of one kind: target, domain or discovery.
+func (d importData) OfKind(op, kind string) []core.ImportChange {
+	var out []core.ImportChange
+	for _, c := range d.Plan.Changes {
+		if c.Op == op && c.Kind() == kind {
 			out = append(out, c)
 		}
 	}

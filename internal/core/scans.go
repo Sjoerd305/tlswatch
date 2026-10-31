@@ -49,6 +49,8 @@ type Scan struct {
 	Error      string
 	FinishedAt int64
 	Found      int // endpoints that answered with TLS
+	// ScheduleID is the scan schedule this scan ran for, 0 for a one-off.
+	ScheduleID int64
 }
 
 // Percent is the share of the planned connects made or refused.
@@ -86,6 +88,8 @@ type ScanInput struct {
 	Ports  string // empty: probe.DefaultScanPorts
 	Rate   int    // 0: probe.DefaultScanRate
 	NodeID int64
+	// ScheduleID marks a run of a scan schedule.
+	ScheduleID int64
 }
 
 // privateRanges are the ranges a scan may cover without the public
@@ -196,7 +200,7 @@ func (s *Service) CreateScan(ctx context.Context, in ScanInput, user string) (Sc
 		return Scan{}, nil, usererr.New(fmt.Sprintf("The rate must be 1 to %d connects per second", probe.MaxScanRate))
 	}
 	sc := Scan{CreatedAt: s.now().Unix(), CreatedBy: user, NodeID: in.NodeID, Ports: ports, Rate: rate, State: ScanRunning,
-		Total: len(addrs) * len(ports)}
+		Total: len(addrs) * len(ports), ScheduleID: in.ScheduleID}
 	for _, p := range prefixes {
 		sc.Ranges = append(sc.Ranges, p.String())
 	}
@@ -225,8 +229,8 @@ func (s *Service) CreateScan(ctx context.Context, in ScanInput, user string) (Sc
 	if busy > 0 {
 		return Scan{}, nil, ErrScanBusy
 	}
-	res, err := tx.ExecContext(ctx, `INSERT INTO scans(created_at, created_by, node_id, node_name, ranges, ports, rate, state, total)
-		VALUES(?,?,?,?,?,?,?,?,?)`, sc.CreatedAt, user, nullID(in.NodeID), sc.NodeName, strings.Join(sc.Ranges, ","), joinInts(ports), rate, ScanRunning, sc.Total)
+	res, err := tx.ExecContext(ctx, `INSERT INTO scans(created_at, created_by, node_id, node_name, ranges, ports, rate, state, total, schedule_id)
+		VALUES(?,?,?,?,?,?,?,?,?,?)`, sc.CreatedAt, user, nullID(in.NodeID), sc.NodeName, strings.Join(sc.Ranges, ","), joinInts(ports), rate, ScanRunning, sc.Total, nullID(in.ScheduleID))
 	if err != nil {
 		return Scan{}, nil, err
 	}
@@ -238,8 +242,11 @@ func (s *Service) CreateScan(ctx context.Context, in ScanInput, user string) (Sc
 	if sc.NodeName != "" {
 		from = "node " + sc.NodeName
 	}
-	s.Audit(ctx, user, "scan.start", fmt.Sprintf("scan %d", sc.ID), fmt.Sprintf("ranges=%s ports=%s rate=%d from=%s",
-		strings.Join(sc.Ranges, ","), joinInts(ports), rate, from))
+	detail := fmt.Sprintf("ranges=%s ports=%s rate=%d from=%s", strings.Join(sc.Ranges, ","), joinInts(ports), rate, from)
+	if in.ScheduleID != 0 {
+		detail += fmt.Sprintf(" schedule=%d", in.ScheduleID)
+	}
+	s.Audit(ctx, user, "scan.start", fmt.Sprintf("scan %d", sc.ID), detail)
 	return sc, addrs, nil
 }
 
@@ -252,13 +259,13 @@ func joinInts(ns []int) string {
 }
 
 const scanCols = `s.id, s.created_at, s.created_by, COALESCE(s.node_id, 0), s.node_name, s.ranges, s.ports, s.rate, s.state, s.total,
-	s.probed, s.refused, s.error, s.finished_at, (SELECT COUNT(*) FROM scan_results r WHERE r.scan_id = s.id)`
+	s.probed, s.refused, s.error, s.finished_at, (SELECT COUNT(*) FROM scan_results r WHERE r.scan_id = s.id), COALESCE(s.schedule_id, 0)`
 
 func scanScan(r interface{ Scan(...any) error }) (Scan, error) {
 	var sc Scan
 	var ranges, ports string
 	err := r.Scan(&sc.ID, &sc.CreatedAt, &sc.CreatedBy, &sc.NodeID, &sc.NodeName, &ranges, &ports, &sc.Rate, &sc.State, &sc.Total,
-		&sc.Probed, &sc.Refused, &sc.Error, &sc.FinishedAt, &sc.Found)
+		&sc.Probed, &sc.Refused, &sc.Error, &sc.FinishedAt, &sc.Found, &sc.ScheduleID)
 	if ranges != "" {
 		sc.Ranges = strings.Split(ranges, ",")
 	}

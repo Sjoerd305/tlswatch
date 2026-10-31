@@ -713,6 +713,7 @@ func (s *Scheduler) housekeeping(ctx context.Context) {
 			s.housework(func() { s.prune(ctx) })
 		case <-minute.C:
 			s.housework(func() { s.digest(ctx) })
+			s.housework(func() { s.runDueScans(ctx) })
 			s.housework(func() {
 				if n, err := s.Core.ExpireAcknowledgements(ctx); err != nil && ctx.Err() == nil {
 					s.Log.Error("acknowledgement expiry", "err", err)

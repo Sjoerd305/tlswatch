@@ -66,10 +66,15 @@ const (
 	// resolved) when the watch's CAA record set changed.
 	CAAViolation Kind = "caa_violation"
 	CAAChanged   Kind = "caa_changed"
+	// UnknownEndpoint is opened on a scan schedule by a scheduled discovery
+	// run: a TLS endpoint it found that no target covers. Fingerprint holds
+	// the endpoint as address:port. Acknowledging it resolves it, and the
+	// endpoint is not reported again by that schedule.
+	UnknownEndpoint Kind = "unknown_endpoint"
 )
 
 // Kinds lists every kind, for filters.
-var Kinds = []Kind{Expiring, RenewalOverdue, DistrustedCA, Revoked, RevocationUnknown, MustStaple, Expired, NotYetValid, ChainUntrusted, SelfSigned, HostnameMismatch, AlternateCertificate, DefaultCertificate, WeakSignature, LegacyProtocol, WeakConfiguration, CertificateChanged, IssuerChanged, GradeChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed, NodeOffline, UnexpectedCertificate, CTSourceFailed, CertificateIssued, CAAViolation, CAAChanged}
+var Kinds = []Kind{Expiring, RenewalOverdue, DistrustedCA, Revoked, RevocationUnknown, MustStaple, Expired, NotYetValid, ChainUntrusted, SelfSigned, HostnameMismatch, AlternateCertificate, DefaultCertificate, WeakSignature, LegacyProtocol, WeakConfiguration, CertificateChanged, IssuerChanged, GradeChanged, Inconsistent, TLSUnavailable, Unreachable, DNSFailed, NodeOffline, UnexpectedCertificate, CTSourceFailed, CertificateIssued, CAAViolation, CAAChanged, UnknownEndpoint}
 
 // Label is the human name of a kind.
 func (k Kind) Label() string {
@@ -122,6 +127,8 @@ func (k Kind) Label() string {
 		return "CAA violation"
 	case CAAChanged:
 		return "CAA changed"
+	case UnknownEndpoint:
+		return "Endpoint not in inventory"
 	}
 	s := string(k)
 	if s == "" {
@@ -179,13 +186,15 @@ func (k Kind) Short() string {
 		return "issued"
 	case CAAViolation, CAAChanged:
 		return "caa"
+	case UnknownEndpoint:
+		return "not listed"
 	}
 	return string(k)
 }
 
 // AckResolves reports whether acknowledging a finding of this kind resolves it.
 func (k Kind) AckResolves() bool {
-	return k == CertificateChanged || k == IssuerChanged || k == UnexpectedCertificate || k == CAAViolation
+	return k == CertificateChanged || k == IssuerChanged || k == UnexpectedCertificate || k == CAAViolation || k == UnknownEndpoint
 }
 
 // Silent reports whether a finding of the kind is never alerted, whatever
