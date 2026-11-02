@@ -37,6 +37,7 @@ tlswatch watches the TLS certificates that are actually served on your hostnames
 - **Uptime monitors** such as Uptime Kuma check the certificate of an HTTPS monitor as a side effect: one port, one address, expiry only. tlswatch probes every address behind a name on any port, including STARTTLS, and also checks the chain, the hostname and the server's TLS configuration.
 - **Certificate Transparency monitors** such as certspotter tell you what was issued for your domains, not what your servers serve. tlswatch does both and matches the two, so a certificate nobody serves stands out and a renewal on its way does not.
 - **Hosted certificate monitors** probe from the internet, so internal hosts are out of reach and your inventory lives with them. tlswatch runs on your own machine, and nodes reach the networks it cannot.
+- **Renewal automation** such as certbot, cert-manager or the ACME client built into your proxy renews certificates; tlswatch checks the result independently, the way a client sees it, on every address and port the certificate should be on. It recognises ACME renewals so they do not alert, and tells you when a renewal did not arrive somewhere: a server that was not reloaded, a node behind a load balancer still on the old certificate, a copy on a mail server or appliance that nobody updated.
 
 ## Quick start
 
