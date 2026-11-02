@@ -1088,7 +1088,10 @@ func TestDomainPagesAndPermissions(t *testing.T) {
 		}
 	}
 	body = hs.do(authz.Viewer, "GET", fmt.Sprintf("/domains/%d", id), nil, false).Body.String()
-	for _, want := range []string{`admin.example.nl`, `Let&#39;s Encrypt`, `pill warn">unexpected`, `Unexpected certificate`, `https://crt.sh/?id=9`} {
+	// The row carries the text and state the chip filter keys on, and the
+	// unserved name is listed as a name without a target.
+	for _, want := range []string{`admin.example.nl`, `Let&#39;s Encrypt`, `pill warn">unexpected`, `Unexpected certificate`, `https://crt.sh/?id=9`,
+		`<tr data-search="admin.example.nl let&#39;s encrypt unexpected " data-state="unexpected">`, `Names without a target`, `<td data-label="Name" class="mono m-lead">admin.example.nl</td>`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page lacks %q", want)
 		}
@@ -1099,6 +1102,9 @@ func TestDomainPagesAndPermissions(t *testing.T) {
 	body = hs.do(authz.Operator, "GET", fmt.Sprintf("/domains/%d", id), nil, false).Body.String()
 	if !strings.Contains(body, "Acknowledge</button>") {
 		t.Error("operator does not see the acknowledge button")
+	}
+	if !strings.Contains(body, `name="hosts" value="admin.example.nl"`) {
+		t.Error("operator cannot tick the name without a target")
 	}
 	// The finding is on the findings page with the domain as its subject.
 	body = hs.do(authz.Viewer, "GET", "/findings", nil, false).Body.String()

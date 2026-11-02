@@ -379,15 +379,20 @@ func TestCTReenableReopensUnexpected(t *testing.T) {
 	}
 }
 
-// The domain page lists the names of recent known certificates that no
-// enabled target covers; a wildcard is listed when no target is under it,
-// names outside the watch are not, and the list ages out with the window.
+// The domain page lists the names of unexpired certificates, in any
+// state, that no enabled target covers; a wildcard is listed when no
+// target is under it, names outside the watch are not, and a name leaves
+// the list when its last certificate expires.
 func TestCTUntargetedNames(t *testing.T) {
 	e, stub := ctEnv(t)
 	now := e.clock.Now()
 	nb, na := now.Add(-time.Hour), now.Add(days(90))
 	stub.entry(60, "portal.example.nl", []string{"portal.example.nl", "api.example.nl", "*.example.nl", "*.dev.example.nl", "shop.example.com"},
 		"C=US, O=Let's Encrypt, CN=R10", "6001", nb, na)
+	// A one-year certificate from before the backlog window is not
+	// recorded at all; one issued 80 days ago is, and its name counts.
+	stub.entry(61, "old.example.nl", []string{"old.example.nl"}, "C=GB, O=Sectigo Limited, CN=Sectigo RSA DV", "6002", now.Add(-days(80)), now.Add(days(285)))
+	stub.entry(62, "gone.example.nl", []string{"gone.example.nl"}, "C=GB, O=Sectigo Limited, CN=Sectigo RSA DV", "6003", now.Add(-days(80)), now.Add(-days(1)))
 	e.target(nil) // portal.example.nl, enabled
 	e.target(func(t *Target) {
 		t.Host, t.ServerName, t.Port, t.Enabled = "api.example.nl", "api.example.nl", 8443, false
@@ -403,20 +408,38 @@ func TestCTUntargetedNames(t *testing.T) {
 	var got []string
 	for _, n := range names {
 		got = append(got, n.Name)
-		if n.Issuer != "Let's Encrypt" || n.Wildcard != strings.HasPrefix(n.Name, "*.") {
+		if n.Name != "old.example.nl" && n.Issuer != "Let's Encrypt" || n.Wildcard != strings.HasPrefix(n.Name, "*.") {
 			t.Errorf("%+v", n)
 		}
 	}
-	// portal is targeted, *.example.nl covers it; api's target is disabled.
-	if strings.Join(got, ",") != "*.dev.example.nl,api.example.nl" {
+	// portal is targeted, *.example.nl covers it; api's target is disabled;
+	// gone's certificate has expired.
+	if strings.Join(got, ",") != "*.dev.example.nl,api.example.nl,old.example.nl" {
 		t.Fatalf("names: %v", got)
 	}
 	iss, _ := e.svc.Issuances(e.ctx, d.ID, 0)
-	if tn := iss[0].TargetNames(d); strings.Join(tn, ",") != "portal.example.nl,api.example.nl" {
-		t.Fatalf("target names: %v", tn)
+	for _, i := range iss {
+		if tn := i.TargetNames(d); i.Serial == "6001" && strings.Join(tn, ",") != "portal.example.nl,api.example.nl" {
+			t.Fatalf("target names: %v", tn)
+		}
+	}
+	// A new issuance after the first poll is unexpected: its name is
+	// without a target all the same.
+	stub.entry(63, "admin.example.nl", []string{"admin.example.nl"}, "C=GB, O=Sectigo Limited, CN=Sectigo RSA DV", "6004", now.Add(time.Hour), now.Add(days(90)))
+	e.poll()
+	if s := e.issuanceStates(d.ID)["admin.example.nl"]; s != IssuanceUnexpected {
+		t.Fatalf("state %s", s)
+	}
+	names, _ = e.svc.UntargetedNames(e.ctx, d)
+	got = got[:0]
+	for _, n := range names {
+		got = append(got, n.Name)
+	}
+	if strings.Join(got, ",") != "*.dev.example.nl,admin.example.nl,api.example.nl,old.example.nl" {
+		t.Fatalf("names with an unexpected issuance: %v", got)
 	}
 	e.clock.Add(days(91))
-	if names, _ = e.svc.UntargetedNames(e.ctx, d); len(names) != 0 {
-		t.Fatalf("past the window: %+v", names)
+	if names, _ = e.svc.UntargetedNames(e.ctx, d); len(names) != 1 || names[0].Name != "old.example.nl" {
+		t.Fatalf("after the 90-day certificates expired: %+v", names)
 	}
 }

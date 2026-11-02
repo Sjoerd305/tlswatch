@@ -32,7 +32,7 @@
         <thead><tr><th>State</th><th>Names</th><th>Issuer</th><th class="hide-1140">Valid</th><th>Served by</th><th><span class="sr-only">Actions</span></th></tr></thead>
         <tbody>
         {{- range $d.Issuances}}
-          <tr data-state="{{.State}}"{{if and $d.State (ne $d.State .State)}} hidden{{end}}>
+          <tr data-search="{{.Search}}" data-state="{{.State}}"{{if and $d.State (ne $d.State .State)}} hidden{{end}}>
             <td data-label="State" class="m-lead"><span class="pill {{.StateClass}}">{{.State}}</span></td>
             <td data-label="Names" class="mono wrap m-lead">{{join .Names ", "}}{{if .LogURL}} <a class="small" href="{{.LogURL}}" rel="noopener noreferrer">log entry</a>{{else if .Names}} <a class="small" href="https://crt.sh/?q={{index .Names 0}}" rel="noopener noreferrer">crt.sh</a>{{end}}</td>
             <td data-label="Issuer" class="wrap">{{.Issuer}}{{if eq .CAA "violation"}} <span class="pill warn" title="{{.CAADetail}}">against CAA</span>{{else if eq .CAA "acknowledged"}} <span class="pill off" title="{{.CAADetail}}">against CAA, acknowledged</span>{{else if eq .CAA "unknown_issuer"}} <span class="muted small" title="The issuer is not in tlswatch's table of CAA identifiers">CAA not evaluated</span>{{else if eq .CAA "lookup_failed"}} <span class="muted small" title="{{.CAADetail}}">CAA lookup failed</span>{{end}}</td>
@@ -50,7 +50,7 @@
     </section>
     {{- if $d.Untargeted}}
     <section class="card clip">
-      <div class="sec"><h2>Names without a target</h2><span class="meta">in known certificates of the last 90 days</span></div>
+      <div class="sec"><h2>Names without a target</h2><span class="meta">in unexpired certificates</span></div>
       <form method="post" action="/targets/bulk-add">
         {{template "csrf" $p.CSRF}}<input type="hidden" name="prefill" value="1">
         <table class="tbl cards compact" id="untargeted">

@@ -2,6 +2,11 @@
 
 Newest first, one line per change.
 
+## Unreleased
+
+- Fix: the state chips on the domain page count and filter the issuances again. The rows lacked the attribute the chip script keys on, so every chip read 0, "No issuances in this state" showed under the list, and clicking a chip hid nothing.
+- "Names without a target" on the domain page lists every name in an unexpired issuance, whatever its state, instead of only those in known or acknowledged issuances of the last 90 days. A name in an unexpected issuance is as much without a target as any other, and a one-year certificate issued more than 90 days ago still names a host worth watching.
+
 ## v0.1.4 - 2026-10-31
 
 - Scheduled discovery. The scan form under Targets › Discover gets "Repeat": daily or weekly at an hour, with an optional name. A repeated scan is saved as a scan schedule (schema migration 24) and runs as its first run; after that each slot starts an ordinary scan under the same limits, noted and skipped rather than queued when a scan is already running from there. Every endpoint a run finds that no target covers opens the new `unknown_endpoint` warning on the schedule, one per address and port, naming the certificate, its issuer and expiry, the TLS version and the node it was seen from, and alerted and reminded through the channels like any warning; a run that finds nothing new sends nothing, and a one-off scan opens no findings. The finding resolves with a recovery notice when a target comes to cover the endpoint (at once, also through "Add as target" in its panel, which opens Add many with the endpoint as the scan page would), when a completed run no longer finds it, or when it is acknowledged, after which that schedule does not report the endpoint again. Discover lists the schedules with their next and last run; a schedule's page lists the endpoints not in inventory, its runs and its settings, with Run now, Pause, Resume and Delete. Schedules are in the export under `discovery` and in the REST API under `/api/v2/discovery/schedules`. Asked for by a user who wanted a recurring scan that tells them when something new appears on the network.

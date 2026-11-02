@@ -136,6 +136,11 @@ func (i Issuance) StateClass() string {
 	return "ok"
 }
 
+// Search is the text the domain page's row filter matches.
+func (i Issuance) Search() string {
+	return strings.ToLower(strings.Join(i.Names, " ") + " " + i.Issuer() + " " + i.State + " " + i.TargetName)
+}
+
 // PendingHold is how long an issuance whose names and issuer match a
 // target waits to be served before it is unexpected: the time an ACME
 // client needs at most to deploy what it just obtained.
@@ -1069,10 +1074,6 @@ func (s *Service) IssuanceStats(ctx context.Context) (map[string]int, []Domain, 
 // timeout. Tests point CTBase at a stub server.
 var _ = http.DefaultClient
 
-// DiscoveryWindow is how far back the domain page looks for names without
-// a target.
-const DiscoveryWindow = 90 * 24 * time.Hour
-
 // UntargetedName is a name in a recent known or acknowledged issuance that
 // no enabled target covers.
 type UntargetedName struct {
@@ -1082,12 +1083,12 @@ type UntargetedName struct {
 	Issued   int64 // the latest issuance that names it
 }
 
-// UntargetedNames lists, for a domain watch, every name under it in a
-// known or acknowledged issuance of the last DiscoveryWindow that no
-// enabled target covers by its host or server name. A wildcard is covered
-// by a target on a name it covers.
+// UntargetedNames lists, for a domain watch, every name under it in an
+// unexpired issuance, whatever its state, that no enabled target covers by
+// its host or server name. A wildcard is covered by a target on a name it
+// covers.
 func (s *Service) UntargetedNames(ctx context.Context, d Domain) ([]UntargetedName, error) {
-	since := s.now().Add(-DiscoveryWindow).Unix()
+	now := s.now().Unix()
 	is, err := s.Issuances(ctx, d.ID, 0)
 	if err != nil {
 		return nil, err
@@ -1110,7 +1111,7 @@ func (s *Service) UntargetedNames(ctx context.Context, d Domain) ([]UntargetedNa
 		if issued == 0 {
 			issued = i.FirstSeen
 		}
-		if issued < since || i.State != IssuanceKnown && i.State != IssuanceAcknowledged {
+		if i.NotAfter > 0 && i.NotAfter < now {
 			continue
 		}
 		for _, n := range i.Names {
