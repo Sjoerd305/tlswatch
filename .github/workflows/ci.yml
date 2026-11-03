@@ -35,8 +35,30 @@ jobs:
       - run: go test -race ./...
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
       - run: go run github.com/securego/gosec/v2/cmd/gosec@v2.30.0 -quiet ./...
+  upgrade:
+    # The oldest release, filled through its own UI, then this build on the
+    # same database (internal/upgradetest). v0.1.0 is the first release
+    # that is not a test release.
+    runs-on: ubuntu-latest
+    env:
+      FROM: v0.1.0
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: Download and verify the oldest release
+        run: |
+          mkdir -p old && cd old
+          for f in "tlswatch-$FROM-linux-amd64" SHA256SUMS SHA256SUMS.sig; do
+            curl -fsSL --retry 3 -o "$f" "https://github.com/sjoerd305/tlswatch/releases/download/$FROM/$f"
+          done
+          sha256sum -c --ignore-missing SHA256SUMS
+          cd .. && go run ./scripts/releasesign -verify old/SHA256SUMS old/SHA256SUMS.sig
+          chmod +x "old/tlswatch-$FROM-linux-amd64"
+      - run: TLSWATCH_UPGRADE_FROM="$PWD/old/tlswatch-$FROM-linux-amd64" go test -tags upgrade -count=1 ./internal/upgradetest
   build:
-    needs: [frontend, backend]
+    needs: [frontend, backend, upgrade]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
