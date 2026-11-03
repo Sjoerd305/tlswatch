@@ -4,6 +4,7 @@ Newest first, one line per change.
 
 ## Unreleased
 
+- **Breaking for dashboards and alert rules:** three metrics are renamed to the Prometheus conventions before 1.0 fixes the names. `tlswatch_ct_issuances_total` is `tlswatch_ct_issuances` (a gauge, and `_total` belongs on counters), `tlswatch_certificate_not_after_seconds` is `tlswatch_certificate_not_after_timestamp_seconds` and `tlswatch_last_check_seconds` is `tlswatch_last_check_timestamp_seconds` (both hold a Unix time, like `tlswatch_ct_last_poll_timestamp_seconds`). Labels and values are unchanged; rename the series in queries. A test now holds every metric to these conventions.
 - The webhook payload gains `event` (open, escalate, remind, recover, digest, test) and `finding`: its id, kind, severity, opening and resolution time, days left, a link to it, and the resource it is on (a target with host, port and protocol, a node, a domain watch, or a scan schedule with the endpoint), so a receiver can act on an alert without parsing the text. A webhook now gets every alert on its own, like PagerDuty, instead of a collapsed batch. The existing fields are unchanged.
 - The scan form's error for a node that is gone no longer offers "This server" when scans from the server are switched off.
 - The OpenAPI document is committed as `docs/openapi.json`, kept equal to the one the binary generates by a test, so a change to the public API shows as a diff in the commit that makes it and the document can be read on GitHub without running an instance.

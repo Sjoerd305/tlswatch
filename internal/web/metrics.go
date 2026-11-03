@@ -50,9 +50,9 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	for _, state := range []string{"pending", "failed"} {
 		p.sample("tlswatch_alerts", map[string]string{"state": state}, float64(m.AlertsByState[state]))
 	}
-	p.metric("tlswatch_certificate_not_after_seconds", "gauge", "Expiry of each enabled target's current certificate, as a Unix time.")
+	p.metric("tlswatch_certificate_not_after_timestamp_seconds", "gauge", "Expiry of each enabled target's current certificate, as a Unix time.")
 	for _, e := range m.CertificateTimes {
-		p.sample("tlswatch_certificate_not_after_seconds", map[string]string{"target": e.Name, "endpoint": e.Endpoint}, float64(e.NotAfter))
+		p.sample("tlswatch_certificate_not_after_timestamp_seconds", map[string]string{"target": e.Name, "endpoint": e.Endpoint}, float64(e.NotAfter))
 	}
 	p.metric("tlswatch_targets_by_grade", "gauge", "Enabled targets by TLS configuration grade.")
 	for _, g := range check.Grades {
@@ -69,9 +69,9 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if by, ds, err := s.Core.IssuanceStats(r.Context()); err == nil {
-		p.metric("tlswatch_ct_issuances_total", "gauge", "Certificate Transparency issuances recorded for the watched domains, by state.")
+		p.metric("tlswatch_ct_issuances", "gauge", "Certificate Transparency issuances recorded for the watched domains, by state.")
 		for _, state := range core.IssuanceStates {
-			p.sample("tlswatch_ct_issuances_total", map[string]string{"state": state}, float64(by[state]))
+			p.sample("tlswatch_ct_issuances", map[string]string{"state": state}, float64(by[state]))
 		}
 		if len(ds) > 0 {
 			p.metric("tlswatch_ct_last_poll_timestamp_seconds", "gauge", "When each enabled domain watch was last polled successfully, as a Unix time (0: never).")
@@ -120,8 +120,8 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !st.LastCheck.IsZero() {
-		p.metric("tlswatch_last_check_seconds", "gauge", "When the last check was stored, as a Unix time.")
-		p.sample("tlswatch_last_check_seconds", nil, float64(st.LastCheck.Unix()))
+		p.metric("tlswatch_last_check_timestamp_seconds", "gauge", "When the last check was stored, as a Unix time.")
+		p.sample("tlswatch_last_check_timestamp_seconds", nil, float64(st.LastCheck.Unix()))
 	}
 }
 

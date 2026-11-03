@@ -1183,7 +1183,7 @@ func TestDomainPagesAndPermissions(t *testing.T) {
 	g.Metrics = true
 	_ = hs.srv.Settings.SaveGeneral(ctx, g)
 	body = hs.metrics().Body.String()
-	if !strings.Contains(body, `tlswatch_ct_issuances_total{state="unexpected"} 0`) || !strings.Contains(body, `tlswatch_ct_last_poll_timestamp_seconds{domain="other.example"} 0`) {
+	if !strings.Contains(body, `tlswatch_ct_issuances{state="unexpected"} 0`) || !strings.Contains(body, `tlswatch_ct_last_poll_timestamp_seconds{domain="other.example"} 0`) {
 		t.Errorf("metrics lack the CT series:\n%s", body)
 	}
 }
