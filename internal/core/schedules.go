@@ -160,7 +160,7 @@ func (s *Service) validateSchedule(ctx context.Context, in ScanScheduleInput) (S
 	if in.NodeID != 0 {
 		n, err := s.Node(ctx, in.NodeID)
 		if errors.Is(err, ErrNotFound) || err == nil && !n.Assignable() {
-			return sc, usererr.New("Choose a confirmed node, or This server")
+			return sc, chooseScanSource(st)
 		}
 		if err != nil {
 			return sc, err

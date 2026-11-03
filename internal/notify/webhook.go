@@ -40,7 +40,8 @@ func (s WebhookSettings) Destination() string {
 	return u.String()
 }
 
-// WebhookPayload is the JSON document a webhook channel posts.
+// WebhookPayload is the JSON document a webhook channel posts, one per
+// alert: a webhook is never sent a collapsed batch.
 type WebhookPayload struct {
 	Source   string `json:"source"`   // "tlswatch"
 	Ref      string `json:"ref"`      // the delivery reference in the alert log
@@ -48,6 +49,39 @@ type WebhookPayload struct {
 	Subject  string `json:"subject"`  // without the severity tag
 	Text     string `json:"text"`     // the plain-text body
 	SentAt   string `json:"sent_at"`  // RFC 3339
+	// Event is open, escalate, remind, recover, digest or test.
+	Event string `json:"event,omitempty"`
+	// Finding is the finding the alert is about; absent for a digest, a
+	// test, or a finding deleted with its target before the alert went out.
+	Finding *FindingRef `json:"finding,omitempty"`
+}
+
+// FindingRef is a finding as a webhook receiver reads it, so it can act on
+// the alert without parsing the text.
+type FindingRef struct {
+	ID         int64  `json:"id"`
+	Kind       string `json:"kind"`     // expiring, chain_untrusted, unknown_endpoint, …
+	Severity   string `json:"severity"` // critical, warning or info
+	OpenedAt   string `json:"opened_at"`
+	ResolvedAt string `json:"resolved_at,omitempty"`
+	// DaysLeft is the days until the certificate expires, for the kinds
+	// that have it.
+	DaysLeft *int `json:"days_left,omitempty"`
+	// URL opens the finding in tlswatch; absent while no public URL is set.
+	URL      string      `json:"url,omitempty"`
+	Resource ResourceRef `json:"resource"`
+}
+
+// ResourceRef is what a finding is on: a target, a node, a domain watch or
+// a scan schedule.
+type ResourceRef struct {
+	Type     string `json:"type"` // target, node, domain or schedule
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Host     string `json:"host,omitempty"`     // a target's host, a node's hostname
+	Port     int    `json:"port,omitempty"`     // a target's port
+	Protocol string `json:"protocol,omitempty"` // a target's protocol
+	Endpoint string `json:"endpoint,omitempty"` // address:port, for a schedule's unknown_endpoint
 }
 
 // WebhookSender posts messages as JSON.
@@ -73,7 +107,8 @@ func (w *WebhookSender) SendRef(ctx context.Context, m Message) (string, error) 
 	if ref == "" {
 		ref = NewRef()
 	}
-	body, err := json.Marshal(WebhookPayload{Source: "tlswatch", Ref: ref, Severity: subjectTag(m.Subject), Subject: untagged(m.Subject), Text: m.Body, SentAt: now().UTC().Format(time.RFC3339)})
+	body, err := json.Marshal(WebhookPayload{Source: "tlswatch", Ref: ref, Severity: subjectTag(m.Subject), Subject: untagged(m.Subject), Text: m.Body, SentAt: now().UTC().Format(time.RFC3339),
+		Event: m.Event, Finding: m.Finding})
 	if err != nil {
 		return "", err
 	}

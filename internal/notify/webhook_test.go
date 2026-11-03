@@ -84,3 +84,37 @@ func TestWebhookValidate(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The payload carries the event and the finding as fields, so a receiver
+// can act without parsing the text; both are absent for a message without
+// them (a digest is sent with its event only).
+func TestWebhookPayloadFields(t *testing.T) {
+	var raw map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		raw = nil
+		_ = json.Unmarshal(body, &raw)
+		w.WriteHeader(204)
+	}))
+	defer srv.Close()
+	s := &WebhookSender{S: WebhookSettings{URL: srv.URL}}
+	days := 6
+	f := &FindingRef{ID: 42, Kind: "expiring", Severity: "critical", OpenedAt: "2026-10-15T12:00:00Z", DaysLeft: &days,
+		URL: "https://tlswatch.example.nl/findings?sel=42", Resource: ResourceRef{Type: "target", ID: 7, Name: "Portal", Host: "portal.example.nl", Port: 443, Protocol: "tls"}}
+	if err := s.Send(context.Background(), Message{Subject: "[critical] portal:443 expires in 6 days", Event: "open", FindingID: 42, Finding: f}); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(raw)
+	for _, want := range []string{`"event":"open"`, `"id":42`, `"kind":"expiring"`, `"days_left":6`, `"url":"https://tlswatch.example.nl/findings?sel=42"`,
+		`"resource":{"host":"portal.example.nl","id":7,"name":"Portal","port":443,"protocol":"tls","type":"target"}`} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("payload lacks %s: %s", want, b)
+		}
+	}
+	if err := s.Send(context.Background(), Message{Subject: "[warning] tlswatch weekly digest", Event: "digest"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := raw["finding"]; ok || raw["event"] != "digest" {
+		t.Fatalf("digest payload: %v", raw)
+	}
+}

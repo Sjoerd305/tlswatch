@@ -179,3 +179,45 @@ func TestOutboxNeverBatchesPagerDuty(t *testing.T) {
 		t.Fatalf("batched channel: %+v", ops)
 	}
 }
+
+// Alerts to a webhook are sent one by one, each with its event and the
+// finding as the dispatcher describes it, never collapsed into a batch.
+func TestOutboxWebhookAlertsCarryTheirFinding(t *testing.T) {
+	o := newOutbox(t)
+	hook, err := o.chans.Save(o.ctx, Channel{Name: "hook", Kind: KindWebhook, MinSeverity: "info", Enabled: true,
+		Webhook: WebhookSettings{URL: "https://hooks.example.nl/x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.d.Finding = func(_ context.Context, id int64) *FindingRef {
+		return &FindingRef{ID: id, Kind: "expiring", Severity: "warning", Resource: ResourceRef{Type: "target", ID: 7, Name: "portal"}}
+	}
+	tx, _ := o.db.W.BeginTx(o.ctx, nil)
+	if _, err := tx.Exec("INSERT INTO domains(id, name, created_at, updated_at) VALUES(1, 'example.nl', 1, 1)"); err != nil {
+		t.Fatal(err)
+	}
+	for i, event := range []string{EventOpen, EventRecover} {
+		res, err := tx.Exec("INSERT INTO findings(domain_id, kind, severity, opened_at, details, fingerprint) VALUES(1, 'unexpected_certificate', 'warning', 1, 'x', ?)", i)
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, _ := res.LastInsertId()
+		if err := Enqueue(o.ctx, tx, id, hook, event, alertMsg("warning", "alert"), o.clock.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	o.clock.Add(BatchDelay + 1)
+	o.flush()
+	got := o.take("hook")
+	if len(got) != 2 {
+		t.Fatalf("webhook got %d messages, want one per alert", len(got))
+	}
+	for i, want := range []string{EventOpen, EventRecover} {
+		if got[i].Event != want || got[i].Finding == nil || got[i].Finding.ID != got[i].FindingID || got[i].Finding.Resource.Name != "portal" {
+			t.Fatalf("message %d: event %q finding %+v", i, got[i].Event, got[i].Finding)
+		}
+	}
+}

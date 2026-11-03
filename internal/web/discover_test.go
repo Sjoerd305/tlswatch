@@ -278,6 +278,10 @@ func TestDiscoverNodesOnly(t *testing.T) {
 	if rec.Code != http.StatusBadRequest || !strings.Contains(html.UnescapeString(rec.Body.String()), core.ServerDiscoveryOff) {
 		t.Fatalf("scan from the server: %d", rec.Code)
 	}
+	rec = hs.do(authz.Operator, "POST", "/targets/discover", url.Values{"ranges": {"10.0.0.0/30"}, "node_id": {"999"}}, true)
+	if body := html.UnescapeString(rec.Body.String()); rec.Code != http.StatusBadRequest || !strings.Contains(body, "Choose a confirmed node; scans from this server are switched off") {
+		t.Fatalf("unknown node: %d", rec.Code)
+	}
 	rec = hs.do(authz.Operator, "POST", "/targets/discover", url.Values{"ranges": {"10.0.0.4/30"}, "repeat": {"day"}}, true)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("schedule from the server: %d", rec.Code)

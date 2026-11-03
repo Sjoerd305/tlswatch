@@ -21,6 +21,9 @@ type Message struct {
 	// alert and not a batch: PagerDuty turns them into incident actions.
 	Event     string
 	FindingID int64
+	// Finding describes FindingID for machine readers (the webhook), as
+	// the finding is when the message is sent; set by the dispatcher.
+	Finding *FindingRef
 }
 
 // NewRef returns a random delivery reference.

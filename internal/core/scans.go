@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sjoerd305/tlswatch/internal/config"
 	"github.com/sjoerd305/tlswatch/internal/probe"
 	"github.com/sjoerd305/tlswatch/internal/usererr"
 )
@@ -184,6 +185,15 @@ func (n Node) CanScan() bool { return slices.Contains(n.Facts.Kinds, KindScan) }
 // Settings › General (or TLSWATCH_SERVER_DISCOVERY) allows nodes only.
 const ServerDiscoveryOff = "Scans from this server are switched off; choose a node"
 
+// chooseScanSource is the message for a scan or schedule whose node is
+// gone or not confirmed: this server is offered only while it may scan.
+func chooseScanSource(st config.Settings) error {
+	if st.General.ServerDiscovery {
+		return usererr.New("Choose a confirmed node, or This server")
+	}
+	return usererr.New("Choose a confirmed node; scans from this server are switched off")
+}
+
 // CreateScan validates a scan, records it as running and returns it with
 // the addresses to probe. One scan runs per node, and one from the server.
 func (s *Service) CreateScan(ctx context.Context, in ScanInput, user string) (Scan, []netip.Addr, error) {
@@ -214,7 +224,7 @@ func (s *Service) CreateScan(ctx context.Context, in ScanInput, user string) (Sc
 	if in.NodeID != 0 {
 		n, err := s.Node(ctx, in.NodeID)
 		if errors.Is(err, ErrNotFound) || err == nil && !n.Assignable() {
-			return Scan{}, nil, usererr.New("Choose a confirmed node, or This server")
+			return Scan{}, nil, chooseScanSource(st)
 		}
 		if err != nil {
 			return Scan{}, nil, err

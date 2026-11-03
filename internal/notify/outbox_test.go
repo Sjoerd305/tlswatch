@@ -92,8 +92,9 @@ func (o *outbox) take(name string) []Message {
 
 func (o *outbox) channel(name string) int64 {
 	o.t.Helper()
-	id, err := o.chans.Save(o.ctx, Channel{Name: name, Kind: KindWebhook, MinSeverity: "info", Enabled: true,
-		Webhook: WebhookSettings{URL: "https://hooks.example.nl/" + name}})
+	// Slack: a kind that collapses the alerts of one run into a batch.
+	id, err := o.chans.Save(o.ctx, Channel{Name: name, Kind: KindSlack, MinSeverity: "info", Enabled: true,
+		Slack: SlackSettings{WebhookURL: "https://hooks.slack.com/services/" + name}})
 	if err != nil {
 		o.t.Fatal(err)
 	}
@@ -380,7 +381,7 @@ func TestOutboxUnreadableChannel(t *testing.T) {
 	}
 	// The admin enters the credentials again.
 	c, _ := o.chans.Get(o.ctx, ch)
-	c.Webhook = WebhookSettings{URL: "https://hooks.example.nl/ops"}
+	c.Slack = SlackSettings{WebhookURL: "https://hooks.slack.com/services/ops"}
 	if _, err := o.chans.Save(o.ctx, c); err != nil {
 		t.Fatal(err)
 	}

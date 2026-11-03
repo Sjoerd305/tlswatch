@@ -239,6 +239,7 @@ func open() (*app, error) {
 		}
 		return st.General.BaseURL + "/findings"
 	}
+	a.dispatch.Finding = a.core.FindingRef
 	a.sched = &sched.Scheduler{Core: a.core, Log: a.log, PruneSessions: a.auth.PruneSessions}
 	a.nodes = &node.Dispatcher{Core: a.core, Version: version, Log: a.log, OnOnline: a.sched.NodeOnline}
 	a.sched.Nodes = a.nodes

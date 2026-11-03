@@ -55,6 +55,9 @@ type Dispatcher struct {
 	Log      *slog.Logger
 	// Link returns the URL of the findings page for collapsed messages.
 	Link func(ctx context.Context) string
+	// Finding describes a finding for the machine-readable part of a
+	// single alert (the webhook payload); nil when it is gone.
+	Finding func(ctx context.Context, id int64) *FindingRef
 	// Senders overrides the transport per channel, for tests.
 	Senders func(Channel) Sender
 
@@ -109,8 +112,9 @@ type pending struct {
 }
 
 // solo reports a channel kind that takes every alert on its own: one
-// PagerDuty incident per finding is the point of it.
-func solo(kind string) bool { return kind == KindPagerDuty }
+// PagerDuty incident per finding is the point of it, and a webhook carries
+// the alert's event and finding as fields a receiver can act on.
+func solo(kind string) bool { return kind == KindPagerDuty || kind == KindWebhook }
 
 // batchKey groups due alerts into one message: per channel, and per set of
 // recipients already reached, so a retry skips exactly those. A digest is
@@ -256,6 +260,8 @@ func (d *Dispatcher) send(ctx context.Context, c Channel, delivered string, ps [
 	if len(ps) > 1 {
 		// A batch is no single alert's event.
 		m.Event, m.FindingID = "", 0
+	} else if m.FindingID != 0 && d.Finding != nil {
+		m.Finding = d.Finding(ctx, m.FindingID)
 	}
 	sctx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()

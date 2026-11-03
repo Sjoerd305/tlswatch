@@ -137,6 +137,35 @@ func (s *Service) Findings(ctx context.Context, ff FindingFilter) ([]Finding, er
 }
 
 // Finding returns one finding with its target.
+// FindingRef describes a finding for a webhook payload, as it is now; nil
+// when it is gone (deleted with its target) or cannot be read.
+func (s *Service) FindingRef(ctx context.Context, id int64) *notify.FindingRef {
+	f, err := s.Finding(ctx, id)
+	if err != nil {
+		return nil
+	}
+	ref := &notify.FindingRef{ID: f.ID, Kind: string(f.Kind), Severity: string(f.Severity),
+		OpenedAt: time.Unix(f.OpenedAt, 0).UTC().Format(time.RFC3339), DaysLeft: f.DaysLeft}
+	if f.ResolvedAt != 0 {
+		ref.ResolvedAt = time.Unix(f.ResolvedAt, 0).UTC().Format(time.RFC3339)
+	}
+	if base := s.CurrentSettings(ctx).General.BaseURL; base != "" {
+		ref.URL = base + "/findings?sel=" + strconv.FormatInt(f.ID, 10)
+	}
+	r := &ref.Resource
+	switch {
+	case f.TargetID != 0:
+		*r = notify.ResourceRef{Type: "target", ID: f.TargetID, Name: f.TargetName, Host: f.TargetHost, Port: f.TargetPort, Protocol: f.TargetProtocol}
+	case f.NodeID != 0:
+		*r = notify.ResourceRef{Type: "node", ID: f.NodeID, Name: f.TargetName, Host: f.TargetHost}
+	case f.DomainID != 0:
+		*r = notify.ResourceRef{Type: "domain", ID: f.DomainID, Name: f.TargetName}
+	case f.ScheduleID != 0:
+		*r = notify.ResourceRef{Type: "schedule", ID: f.ScheduleID, Name: f.TargetName, Endpoint: f.Fingerprint}
+	}
+	return ref
+}
+
 func (s *Service) Finding(ctx context.Context, id int64) (Finding, error) {
 	var name, host, proto string
 	var port int
