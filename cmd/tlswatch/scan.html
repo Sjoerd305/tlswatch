@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="generator" content="tlswatch {{.R.Version}}">
+<title>Scan of {{join .R.Ranges ", "}} · tlswatch</title>
+<style>{{.CSS}}</style>
+</head>
+<body>
+<header class="top">
+  <span class="brand"><svg class="mark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="tlswatch"><path d="M12 2.5 4 5.5v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10v-6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>tlswatch</span>
+  <nav aria-label="Report"><a class="on" aria-current="page">Scan report</a></nav>
+</header>
+<main class="page" id="main">
+<div class="page-head">
+  <div><h1>Scan of {{join .R.Ranges ", "}}</h1><span class="summary">{{.Started}} · ports {{.Ports}} · {{.R.Rate}} connects per second · tlswatch <span class="mono">{{.R.Version}}</span></span></div>
+</div>
+<div class="tiles">
+  <div class="card tile"><span class="st crit">Critical</span><span class="n">{{.Count.Critical}}</span><span class="l">{{if .Count.Critical}}expired, untrusted or due within {{.R.CritDays}} days{{else}}nothing critical{{end}}</span></div>
+  <div class="card tile"><span class="st warn">Warning</span><span class="n">{{.Count.Warning}}</span><span class="l">{{if .Count.Warning}}expiring within {{.R.WarnDays}} days or degraded{{else}}nothing to look at{{end}}</span></div>
+  <div class="card tile"><span class="st ok">OK</span><span class="n">{{.Count.OK}}</span><span class="l">{{if .Count.OK}}nothing due within {{.R.WarnDays}} days{{else}}none without a finding{{end}}</span></div>
+  <div class="card tile"><span class="st info">Endpoints</span><span class="n">{{len .R.Endpoints}}</span><span class="l">answered with TLS</span></div>
+  <div class="card tile"><span class="st off">Connects</span><span class="n">{{.R.Probed}}</span><span class="l">{{if .R.Refused}}{{.R.Refused}} {{plural .R.Refused "address" "addresses"}} refused without one{{else}}every address tried{{end}}</span></div>
+</div>
+{{- if .Rows}}
+<section class="card clip">
+  <div class="sec"><h2>Endpoints</h2><span class="meta">worst first</span></div>
+  <table class="tbl cards compact" id="scan">
+    <thead><tr><th>Status</th><th>Endpoint</th><th>Name</th><th>Subject</th><th class="hide-1140">Issuer</th><th class="num">Days</th><th class="hide-890">TLS</th><th>Grade</th><th>Findings</th></tr></thead>
+    <tbody>
+    {{- range .Rows}}
+      <tr>
+        <td data-label="Status" class="m-lead"><span class="st sm {{.Class}}">{{.Label}}</span></td>
+        <td data-label="Endpoint" class="mono m-lead">{{.Target}}{{if ne .Protocol "tls"}} <span class="tag">{{.Protocol}}</span>{{end}}</td>
+        <td data-label="Name" class="mono small wrap-any">{{if .ServerName}}{{.ServerName}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td data-label="Subject" class="strong wrap-any">{{if .Subject}}{{.Subject}}{{else}}—{{end}}{{if .SelfSigned}} <span class="pill off ml">self-signed</span>{{end}}{{if .SANs}}<div class="mono xs muted wrap-any">{{join .SANs ", "}}</div>{{end}}</td>
+        <td data-label="Issuer" class="hide-1140">{{if .Issuer}}{{.Issuer}}{{else}}—{{end}}</td>
+        <td data-label="Days" class="num mono days{{if .DaysClass}} {{.DaysClass}}-t{{end}}">{{if .Expires}}{{.Expires}}{{else if .DaysLeft}}{{.DaysLeft}}{{else}}—{{end}}{{if .NotAfter}}<div class="xs muted">{{date .NotAfter}}</div>{{end}}</td>
+        <td data-label="TLS" class="mono small hide-890">{{if .TLS}}{{.TLS}}{{else}}—{{end}}</td>
+        <td data-label="Grade">{{if .Grade}}<span class="grade {{.GradeClass}}" title="{{.GradeWhy}}">{{.Grade}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+        <td data-label="Findings">{{range $i, $f := .Findings}}{{if $i}} {{end}}<span class="pill {{$f.Class}}" title="{{$f.Details}}">{{$f.Label}}</span>{{else}}<span class="muted">none</span>{{end}}</td>
+      </tr>
+    {{- end}}
+    </tbody>
+  </table>
+</section>
+{{- $any := false}}{{range .Rows}}{{if .Findings}}{{$any = true}}{{end}}{{end}}
+{{- if $any}}
+<section class="card">
+  <div class="sec"><h2>Findings</h2><span class="meta">what each one means</span></div>
+  <div class="timeline">
+  {{- range .Rows}}{{$t := .Target}}{{range .Findings}}
+    <div class="ev"><span class="pill {{.Class}}">{{.Short}}</span><span><span class="mono">{{$t}}</span> · <span class="strong">{{.Label}}</span> · {{.Details}}</span></div>
+  {{- end}}{{end}}
+  </div>
+</section>
+{{- end}}
+{{- else}}
+<section class="card"><div class="empty"><span class="h3">No TLS endpoints found</span><span>Nothing in {{join .R.Ranges ", "}} answered with TLS on ports {{.Ports}}.</span></div></section>
+{{- end}}
+<p class="small muted">A one-off scan by <span class="mono">tlswatch scan</span>. To keep watching these endpoints, with alerts before anything expires, run <span class="mono">tlswatch serve</span> and add them under Targets › Discover. <a href="https://tlswatch.nl/">tlswatch.nl</a></p>
+</main>
+</body>
+</html>

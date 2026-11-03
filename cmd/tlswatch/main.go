@@ -78,6 +78,8 @@ Usage:
   tlswatch rotate-key                  re-encrypt stored credentials under a new secret key
                                        (stop the server first)
   tlswatch check HOST[:PORT] [flags]   probe one endpoint, print JSON, exit 0/1/2 by severity
+  tlswatch scan RANGE... [flags]       scan ranges for TLS endpoints, check each, write an
+                                       HTML, CSV and JSON report, exit 0/1/2 by severity
   tlswatch node [flags]                run as a probe node inside another network
                                        (tlswatch node -h for enrol, uninstall and flags)
   tlswatch version                     print the version
@@ -111,6 +113,8 @@ func main() {
 		err = rotateKey()
 	case "check":
 		os.Exit(checkCmd(args, os.Stdout, os.Stderr))
+	case "scan":
+		os.Exit(scanCmd(args, os.Stdout, os.Stderr))
 	case "node":
 		err = nodeCmd(args)
 	case "version", "-version", "--version":

@@ -88,6 +88,16 @@ tlswatch check 10.0.0.5:443 -servername portal.example.nl -ca-file internal-ca.p
 
 `check` prints JSON, including the old TLS versions and weak cipher suites each address still accepts and the grade that follows (`-no-config-test` skips that test).
 
+Or a whole network: `scan` finds every TLS endpoint in a range, checks each one the same way and writes a report, an HTML page in the style of the UI plus CSV and JSON, still without a server:
+
+```sh
+tlswatch scan 10.20.0.0/24                       # ports 443, 8443, 636, 993, 995, 465, 587, 5061
+tlswatch scan 10.20.0.0/24 192.168.10.5 -ports 443,8443 -ca-file internal-ca.pem -o intake
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/out" ghcr.io/sjoerd305/tlswatch:latest scan 10.20.0.0/24 -o /out/scan
+```
+
+Only scan networks you own or are allowed to scan. To keep watching what it found, run the server and add the endpoints under Targets › Discover.
+
 ## Configuration
 
 Everything an operator changes is in the UI. The process itself needs at most these environment variables, all optional:
@@ -122,6 +132,7 @@ tlswatch backup PATH                 write a consistent copy of the database
 tlswatch healthcheck                 exit 0 when the running server's /healthz is OK
 tlswatch rotate-key                  re-encrypt stored credentials under a new secret key
 tlswatch check HOST[:PORT] [flags]   probe one endpoint, print JSON, exit 0/1/2 by severity
+tlswatch scan RANGE... [flags]       scan ranges, check every TLS endpoint, write HTML, CSV and JSON
 tlswatch node [flags]                run as a probe node inside another network (enrol, uninstall)
 tlswatch version                     print the version
 ```
