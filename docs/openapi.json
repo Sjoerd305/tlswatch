@@ -1,0 +1,3725 @@
+{
+  "components": {
+    "schemas": {
+      "AckInput": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "description": "Up to 2000 characters.",
+            "type": "string"
+          },
+          "until": {
+            "description": "YYYY-MM-DD (through the end of that day in the instance's time zone) or an RFC 3339 time; left out, until the finding resolves.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Acked": {
+        "additionalProperties": true,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "by": {
+            "type": "string"
+          },
+          "comment": {
+            "type": "string"
+          },
+          "until": {
+            "description": "null: until the finding resolves.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "by",
+          "at",
+          "until",
+          "comment"
+        ],
+        "type": "object"
+      },
+      "Certificate": {
+        "additionalProperties": true,
+        "properties": {
+          "days_left": {
+            "type": "integer"
+          },
+          "distrusted": {
+            "description": "An open distrusted_ca finding names it.",
+            "type": "boolean"
+          },
+          "fingerprint": {
+            "description": "SHA-256 of the DER, lower-case hex.",
+            "type": "string"
+          },
+          "first_seen": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "issuer_cn": {
+            "type": "string"
+          },
+          "issuer_org": {
+            "type": "string"
+          },
+          "key": {
+            "description": "Such as RSA 2048 or ECDSA P-256.",
+            "type": "string"
+          },
+          "key_bits": {
+            "type": "integer"
+          },
+          "key_type": {
+            "type": "string"
+          },
+          "last_seen": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "names": {
+            "description": "The subject alternative names.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "not_after": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "not_before": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pem": {
+            "description": "Only when getting one certificate.",
+            "type": "string"
+          },
+          "self_signed": {
+            "type": "boolean"
+          },
+          "serial": {
+            "type": "string"
+          },
+          "served": {
+            "description": "Where it is served now: the addresses of each target's latest check.",
+            "items": {
+              "$ref": "#/components/schemas/Served"
+            },
+            "type": "array"
+          },
+          "signature_algorithm": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "subject_cn": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "subject",
+          "subject_cn",
+          "issuer",
+          "issuer_cn",
+          "issuer_org",
+          "serial",
+          "not_before",
+          "not_after",
+          "days_left",
+          "names",
+          "key",
+          "key_type",
+          "key_bits",
+          "signature_algorithm",
+          "self_signed",
+          "distrusted",
+          "first_seen",
+          "last_seen",
+          "served"
+        ],
+        "type": "object"
+      },
+      "Channel": {
+        "additionalProperties": true,
+        "properties": {
+          "destination": {
+            "description": "Where it delivers, without credentials.",
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "kind": {
+            "description": "smtp, telegram, slack, discord, ntfy, webhook, teams, matrix or pagerduty.",
+            "type": "string"
+          },
+          "last_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "last_state": {
+            "type": "string"
+          },
+          "min_severity": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sent_30d": {
+            "type": "integer"
+          },
+          "unreadable": {
+            "description": "Its stored settings cannot be decrypted; enter them again.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "min_severity",
+          "destination",
+          "enabled",
+          "unreadable",
+          "last_state",
+          "last_at",
+          "last_error",
+          "sent_30d"
+        ],
+        "type": "object"
+      },
+      "Domain": {
+        "additionalProperties": true,
+        "properties": {
+          "caa_checked_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "caa_error": {
+            "type": "string"
+          },
+          "channel_ids": {
+            "description": "null: every channel.",
+            "items": {
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "open_findings": {
+            "type": "integer"
+          },
+          "poll_error": {
+            "type": "string"
+          },
+          "polled_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "polled_ok": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recent_issuances": {
+            "description": "Issuances first seen in the last 30 days.",
+            "type": "integer"
+          },
+          "status": {
+            "description": "warning (an unexpected issuance or CAA violation), unreachable (the source fails), healthy, pending or disabled.",
+            "type": "string"
+          },
+          "subdomains": {
+            "type": "boolean"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "subdomains",
+          "channel_ids",
+          "tags",
+          "notes",
+          "enabled",
+          "status",
+          "polled_at",
+          "polled_ok",
+          "poll_error",
+          "recent_issuances",
+          "open_findings",
+          "caa_checked_at",
+          "caa_error",
+          "created_at",
+          "created_by",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "DomainInput": {
+        "additionalProperties": false,
+        "properties": {
+          "channel_ids": {
+            "description": "null: every channel.",
+            "items": {
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "name": {
+            "description": "Required to add. Changing it starts the watch over.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subdomains": {
+            "description": "Watch the names below it too; true when adding.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "Effective": {
+        "additionalProperties": true,
+        "properties": {
+          "crit_days": {
+            "type": "integer"
+          },
+          "crit_pct": {
+            "type": "integer"
+          },
+          "debounce": {
+            "type": "integer"
+          },
+          "interval_s": {
+            "type": "integer"
+          },
+          "remind_crit_s": {
+            "type": "integer"
+          },
+          "remind_warn_s": {
+            "type": "integer"
+          },
+          "renewal_pct": {
+            "type": "integer"
+          },
+          "retries": {
+            "type": "integer"
+          },
+          "timeout_s": {
+            "type": "integer"
+          },
+          "warn_days": {
+            "type": "integer"
+          },
+          "warn_pct": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "warn_days",
+          "crit_days",
+          "warn_pct",
+          "crit_pct",
+          "renewal_pct",
+          "interval_s",
+          "timeout_s",
+          "retries",
+          "debounce",
+          "remind_warn_s",
+          "remind_crit_s"
+        ],
+        "type": "object"
+      },
+      "ErrorBody": {
+        "additionalProperties": true,
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "ErrorDetail": {
+        "additionalProperties": true,
+        "properties": {
+          "code": {
+            "description": "Stable: unauthorized, forbidden, not_found, invalid, conflict, rate_limited, unsupported_media_type, too_large, node_offline, timeout, delivery_failed, poll_failed, unavailable, internal.",
+            "type": "string"
+          },
+          "fields": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "What is wrong with each field, for invalid.",
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
+      "Finding": {
+        "additionalProperties": true,
+        "properties": {
+          "acknowledged": {
+            "description": "null when not acknowledged, or the acknowledgement has run out.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Acked"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "days_left": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "details": {
+            "type": "string"
+          },
+          "domain_id": {
+            "description": "Set for a finding on a domain watch.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "endpoint": {
+            "description": "host:port of a target, the domain, or the node's hostname.",
+            "type": "string"
+          },
+          "fingerprint": {
+            "description": "The certificate the finding is about, or for a domain watch the issuance id.",
+            "type": "string"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "last_alert_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "node_id": {
+            "description": "Set for a finding on a node (node_offline).",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "opened_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resolved_at": {
+            "description": "null while open.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "severity": {
+            "description": "critical, warning or info.",
+            "type": "string"
+          },
+          "subject": {
+            "description": "The name of the target, watch or node.",
+            "type": "string"
+          },
+          "target_id": {
+            "description": "Set for a finding on a target.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "target_id",
+          "domain_id",
+          "node_id",
+          "subject",
+          "endpoint",
+          "kind",
+          "severity",
+          "opened_at",
+          "resolved_at",
+          "details",
+          "fingerprint",
+          "days_left",
+          "acknowledged",
+          "last_alert_at"
+        ],
+        "type": "object"
+      },
+      "Issuance": {
+        "additionalProperties": true,
+        "properties": {
+          "acknowledged": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Acked"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "caa": {
+            "description": "The CAA verdict; empty when not judged.",
+            "type": "string"
+          },
+          "caa_detail": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "domain_id": {
+            "type": "integer"
+          },
+          "fingerprint": {
+            "description": "The served certificate it matched, if any.",
+            "type": "string"
+          },
+          "first_seen": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "integer"
+          },
+          "issuer_cn": {
+            "type": "string"
+          },
+          "issuer_org": {
+            "type": "string"
+          },
+          "log_url": {
+            "type": "string"
+          },
+          "names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "not_after": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "not_before": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "serial": {
+            "type": "string"
+          },
+          "state": {
+            "description": "known (a target serves it), pending (waiting to be served), unexpected or acknowledged.",
+            "type": "string"
+          },
+          "target_id": {
+            "description": "A target serving it.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "domain_id",
+          "domain",
+          "state",
+          "names",
+          "issuer_cn",
+          "issuer_org",
+          "serial",
+          "not_before",
+          "not_after",
+          "log_url",
+          "first_seen",
+          "fingerprint",
+          "target_id",
+          "caa",
+          "caa_detail",
+          "acknowledged"
+        ],
+        "type": "object"
+      },
+      "ScanSchedule": {
+        "additionalProperties": true,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "every": {
+            "description": "day or week.",
+            "type": "string"
+          },
+          "hour": {
+            "description": "0 to 23, in the instance's time zone.",
+            "type": "integer"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "last_note": {
+            "description": "Why the last slot ran no scan, else empty.",
+            "type": "string"
+          },
+          "last_run": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_scan_id": {
+            "description": "The last run's scan while it is kept.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "name": {
+            "description": "A label; empty means the ranges.",
+            "type": "string"
+          },
+          "next_run": {
+            "description": "Null while paused.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "node_id": {
+            "description": "The node the scan runs from; null: this server.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "open_findings": {
+            "description": "Endpoints found that no target covers.",
+            "type": "integer"
+          },
+          "ports": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "ranges": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "rate": {
+            "description": "Connects per second.",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "weekday": {
+            "description": "0 Sunday to 6 Saturday; used for week.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "ranges",
+          "ports",
+          "rate",
+          "node_id",
+          "every",
+          "weekday",
+          "hour",
+          "enabled",
+          "next_run",
+          "last_run",
+          "last_scan_id",
+          "last_note",
+          "open_findings",
+          "created_at",
+          "created_by",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "ScanScheduleInput": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "every": {
+            "description": "day or week; required to add.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hour": {
+            "description": "0 to 23; 3 when left out.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "node_id": {
+            "description": "null: this server, unless Settings › General allows scans from nodes only.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "ports": {
+            "description": "At most 16; the discovery defaults when left out.",
+            "items": {
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "ranges": {
+            "description": "Required to add: CIDRs or addresses, private unless Settings › General allows public discovery.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "rate": {
+            "description": "1 to 200 connects per second; 50 when left out.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "weekday": {
+            "description": "0 Sunday to 6 Saturday; Monday when left out.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "Sent": {
+        "additionalProperties": true,
+        "properties": {
+          "sent": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sent"
+        ],
+        "type": "object"
+      },
+      "Served": {
+        "additionalProperties": true,
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "checked_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "current": {
+            "description": "It is the target's current certificate.",
+            "type": "boolean"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "integer"
+          },
+          "target_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "target_name",
+          "endpoint",
+          "address",
+          "current",
+          "checked_at"
+        ],
+        "type": "object"
+      },
+      "Target": {
+        "additionalProperties": true,
+        "properties": {
+          "address_count": {
+            "type": "integer"
+          },
+          "bundle": {
+            "type": "string"
+          },
+          "bundle_id": {
+            "description": "The CA bundle, with trust bundle.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "channel_ids": {
+            "description": "The channels alerts go to; null for every channel.",
+            "items": {
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "crit_days": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "crit_pct": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "days_left": {
+            "description": "Whole days until the earliest expiry on any address.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "debounce": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "effective": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Effective"
+              }
+            ],
+            "description": "The values in force after the defaults."
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "expected_issuer": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "description": "SHA-256 of the current leaf.",
+            "type": "string"
+          },
+          "first_address_only": {
+            "type": "boolean"
+          },
+          "grade": {
+            "description": "A, B, C or F; empty before the first full test.",
+            "type": "string"
+          },
+          "grade_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "host": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "interval_s": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "last_check": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "next_check": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "node": {
+            "type": "string"
+          },
+          "node_id": {
+            "description": "The node the target is probed from; null for this server.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "not_after": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "notes": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "pq": {
+            "description": "yes, no, or empty when untested.",
+            "type": "string"
+          },
+          "protocol": {
+            "description": "tls, smtp, imap, pop3, ftp or postgres.",
+            "type": "string"
+          },
+          "remind_crit_s": {
+            "description": "0: never.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "remind_warn_s": {
+            "description": "0: never.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "renewal": {
+            "description": "auto, managed or manual.",
+            "type": "string"
+          },
+          "renewal_managed": {
+            "description": "Whether the target counts as renewal-managed now; auto decides by the issuer.",
+            "type": "boolean"
+          },
+          "renewal_pct": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "retries": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "server_name": {
+            "description": "The SNI name sent; empty for none.",
+            "type": "string"
+          },
+          "skip_config_test": {
+            "type": "boolean"
+          },
+          "status": {
+            "description": "pending, healthy, warning, changed, acknowledged (every warning on it is acknowledged), critical, unreachable or disabled.",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "timeout_s": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "tls_version": {
+            "type": "string"
+          },
+          "trust": {
+            "description": "system, bundle or self-signed.",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "warn_days": {
+            "description": "An override; null follows Settings › Defaults. The same for the fields up to remind_crit_s.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "warn_pct": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "host",
+          "port",
+          "protocol",
+          "server_name",
+          "trust",
+          "bundle_id",
+          "bundle",
+          "node_id",
+          "node",
+          "renewal",
+          "renewal_managed",
+          "expected_issuer",
+          "warn_days",
+          "crit_days",
+          "warn_pct",
+          "crit_pct",
+          "renewal_pct",
+          "interval_s",
+          "timeout_s",
+          "retries",
+          "debounce",
+          "remind_warn_s",
+          "remind_crit_s",
+          "effective",
+          "first_address_only",
+          "skip_config_test",
+          "channel_ids",
+          "tags",
+          "notes",
+          "enabled",
+          "created_at",
+          "created_by",
+          "updated_at",
+          "status",
+          "days_left",
+          "not_after",
+          "fingerprint",
+          "tls_version",
+          "grade",
+          "grade_reasons",
+          "pq",
+          "address_count",
+          "last_check",
+          "next_check",
+          "last_error"
+        ],
+        "type": "object"
+      },
+      "TargetInput": {
+        "additionalProperties": false,
+        "properties": {
+          "bundle_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "channel_ids": {
+            "description": "null: every channel.",
+            "items": {
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "crit_days": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "crit_pct": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "debounce": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "expected_issuer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "first_address_only": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "host": {
+            "description": "A DNS name or IP address; required to add.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "interval_s": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "name": {
+            "description": "Defaults to the host.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "node_id": {
+            "description": "null or 0: this server.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "port": {
+            "description": "Defaults to the protocol's port.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "protocol": {
+            "description": "tls (the default), smtp, imap, pop3, ftp or postgres.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remind_crit_s": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "remind_warn_s": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "renewal": {
+            "description": "auto (the default), managed or manual.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "renewal_pct": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "retries": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "server_name": {
+            "description": "Defaults to a DNS host; follows the host when it changes along.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "skip_config_test": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "timeout_s": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "trust": {
+            "description": "system (the default), bundle or self-signed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "warn_days": {
+            "description": "null returns this and the other overrides to the default.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "warn_pct": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "The REST API of tlswatch. Authenticate with an API token made under Account, sent as Authorization: Bearer. A token has a role no higher than its user's, and every endpoint needs the action named in x-role-action. Lists are paginated with a cursor.",
+    "title": "tlswatch",
+    "version": "dev"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v2/certificates": {
+      "get": {
+        "operationId": "getCertificates",
+        "parameters": [
+          {
+            "description": "30 or 90 (days left), or distrusted.",
+            "in": "query",
+            "name": "window",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The issuer as listed.",
+            "in": "query",
+            "name": "issuer",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "RSA, ECDSA or Ed25519.",
+            "in": "query",
+            "name": "key",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Text in the subject, names, issuer, fingerprint or serial.",
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1 includes certificates no longer served.",
+            "in": "query",
+            "name": "all",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Items per page, 1 to 500; 100 when left out.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The next_cursor of the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/Certificate"
+                      },
+                      "type": "array"
+                    },
+                    "next_cursor": {
+                      "description": "Pass as cursor for the next page; null on the last.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "next_cursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The request is invalid; fields says why, per field."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "List leaf certificates, served now unless all=1.",
+        "x-role-action": "view"
+      }
+    },
+    "/api/v2/certificates/{fp}": {
+      "get": {
+        "operationId": "getCertificatesByFp",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fp",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Certificate"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No such object."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "Get a certificate by its SHA-256 fingerprint, with its PEM.",
+        "x-role-action": "view"
+      }
+    },
+    "/api/v2/channels": {
+      "get": {
+        "operationId": "getChannels",
+        "parameters": [
+          {
+            "description": "Items per page, 1 to 500; 100 when left out.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The next_cursor of the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/Channel"
+                      },
+                      "type": "array"
+                    },
+                    "next_cursor": {
+                      "description": "Pass as cursor for the next page; null on the last.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "next_cursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The request is invalid; fields says why, per field."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "List alert channels, without their credentials.",
+        "x-role-action": "settings.manage"
+      }
+    },
+    "/api/v2/channels/{id}/test": {
+      "post": {
+        "operationId": "postChannelsByIdTest",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Sent"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No such object."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "Send a test message through a channel.",
+        "x-role-action": "settings.manage"
+      }
+    },
+    "/api/v2/discovery/schedules": {
+      "get": {
+        "operationId": "getDiscoverySchedules",
+        "parameters": [
+          {
+            "description": "Items per page, 1 to 500; 100 when left out.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The next_cursor of the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/ScanSchedule"
+                      },
+                      "type": "array"
+                    },
+                    "next_cursor": {
+                      "description": "Pass as cursor for the next page; null on the last.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "next_cursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The request is invalid; fields says why, per field."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "List scan schedules: scans that repeat and report endpoints no target covers.",
+        "x-role-action": "view"
+      },
+      "post": {
+        "operationId": "postDiscoverySchedules",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanScheduleInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanSchedule"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The request is invalid; fields says why, per field."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "Add a scan schedule; its first run is at its scheduled time.",
+        "x-role-action": "targets.edit"
+      }
+    },
+    "/api/v2/discovery/schedules/{id}": {
+      "delete": {
+        "operationId": "deleteDiscoverySchedulesById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No such object."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "Delete a scan schedule with its findings; its scans stay for their 7 days.",
+        "x-role-action": "targets.edit"
+      },
+      "get": {
+        "operationId": "getDiscoverySchedulesById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanSchedule"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No such object."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "Get a scan schedule.",
+        "x-role-action": "view"
+      },
+      "patch": {
+        "operationId": "patchDiscoverySchedulesById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanScheduleInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanSchedule"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The request is invalid; fields says why, per field."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No such object."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "Change a scan schedule: the fields sent change.",
+        "x-role-action": "targets.edit"
+      }
+    },
+    "/api/v2/discovery/schedules/{id}/run": {
+      "post": {
+        "operationId": "postDiscoverySchedulesByIdRun",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanSchedule"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No such object."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "Run a scan schedule now; the scan runs in the background.",
+        "x-role-action": "targets.edit"
+      }
+    },
+    "/api/v2/domains": {
+      "get": {
+        "operationId": "getDomains",
+        "parameters": [
+          {
+            "description": "warning (unexpected), unreachable (source failing), healthy, pending or disabled.",
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "A tag.",
+            "in": "query",
+            "name": "tag",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Text in the name or tags.",
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Items per page, 1 to 500; 100 when left out.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The next_cursor of the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/Domain"
+                      },
+                      "type": "array"
+                    },
+                    "next_cursor": {
+                      "description": "Pass as cursor for the next page; null on the last.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "next_cursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The request is invalid; fields says why, per field."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "List domain watches.",
+        "x-role-action": "view"
+      },
+      "post": {
+        "operationId": "postDomains",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DomainInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Domain"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The request is invalid; fields says why, per field."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "Add a domain watch; its first poll runs in the background.",
+        "x-role-action": "targets.edit"
+      }
+    },
+    "/api/v2/domains/{id}": {
+      "delete": {
+        "operationId": "deleteDomainsById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No such object."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "Delete a domain watch with its issuances and findings.",
+        "x-role-action": "targets.edit"
+      },
+      "get": {
+        "operationId": "getDomainsById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Domain"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No such object."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "Get a domain watch.",
+        "x-role-action": "view"
+      },
+      "patch": {
+        "operationId": "patchDomainsById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DomainInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Domain"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The request is invalid; fields says why, per field."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No such object."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "Change a domain watch: the fields sent change.",
+        "x-role-action": "targets.edit"
+      }
+    },
+    "/api/v2/domains/{id}/poll": {
+      "post": {
+        "operationId": "postDomainsByIdPoll",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Domain"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No such object."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "Poll a domain watch now and return its new state.",
+        "x-role-action": "targets.edit"
+      }
+    },
+    "/api/v2/export": {
+      "get": {
+        "operationId": "getExport",
+        "responses": {
+          "200": {
+            "content": {
+              "application/yaml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "Export targets and domain watches as YAML, for Targets › Add many to import.",
+        "x-role-action": "view"
+      }
+    },
+    "/api/v2/findings": {
+      "get": {
+        "operationId": "getFindings",
+        "parameters": [
+          {
+            "description": "open (the default) or resolved.",
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "critical, warning or info.",
+            "in": "query",
+            "name": "severity",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "A finding kind, such as expiring.",
+            "in": "query",
+            "name": "kind",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only this target's.",
+            "in": "query",
+            "name": "target_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only this domain watch's.",
+            "in": "query",
+            "name": "domain_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Items per page, 1 to 500; 100 when left out.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The next_cursor of the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/Finding"
+                      },
+                      "type": "array"
+                    },
+                    "next_cursor": {
+                      "description": "Pass as cursor for the next page; null on the last.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "next_cursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The request is invalid; fields says why, per field."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "List findings: open, or resolved within the retention period.",
+        "x-role-action": "view"
+      }
+    },
+    "/api/v2/findings/{id}": {
+      "get": {
+        "operationId": "getFindingsById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Finding"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No such object."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "Get a finding.",
+        "x-role-action": "view"
+      }
+    },
+    "/api/v2/findings/{id}/ack": {
+      "post": {
+        "operationId": "postFindingsByIdAck",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AckInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Finding"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The request is invalid; fields says why, per field."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No such object."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "Acknowledge an open finding: reminders stop; a change finding is confirmed and resolved.",
+        "x-role-action": "findings.ack"
+      }
+    },
+    "/api/v2/issuances": {
+      "get": {
+        "operationId": "getIssuances",
+        "parameters": [
+          {
+            "description": "Only this watch's.",
+            "in": "query",
+            "name": "domain_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "known, unexpected, pending or acknowledged.",
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Items per page, 1 to 500; 100 when left out.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The next_cursor of the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/Issuance"
+                      },
+                      "type": "array"
+                    },
+                    "next_cursor": {
+                      "description": "Pass as cursor for the next page; null on the last.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "next_cursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The request is invalid; fields says why, per field."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "List issuances found in Certificate Transparency, newest first by id.",
+        "x-role-action": "view"
+      }
+    },
+    "/api/v2/openapi.json": {
+      "get": {
+        "operationId": "openapi",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "This document."
+      }
+    },
+    "/api/v2/targets": {
+      "get": {
+        "operationId": "getTargets",
+        "parameters": [
+          {
+            "description": "critical, warning, acknowledged, healthy, unreachable, pending or disabled.",
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "A tag.",
+            "in": "query",
+            "name": "tag",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Text in the name, endpoint, server name, protocol, tags, node, issuer or subject.",
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"server\", or a node's id.",
+            "in": "query",
+            "name": "node",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "A, B, C, F, or \"none\".",
+            "in": "query",
+            "name": "grade",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "yes, no or untested.",
+            "in": "query",
+            "name": "pq",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Items per page, 1 to 500; 100 when left out.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The next_cursor of the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/Target"
+                      },
+                      "type": "array"
+                    },
+                    "next_cursor": {
+                      "description": "Pass as cursor for the next page; null on the last.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "next_cursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The request is invalid; fields says why, per field."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "List targets, with the filters of the targets page.",
+        "x-role-action": "view"
+      },
+      "post": {
+        "operationId": "postTargets",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TargetInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Target"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The request is invalid; fields says why, per field."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "Add a target; its first check is queued.",
+        "x-role-action": "targets.edit"
+      }
+    },
+    "/api/v2/targets/{id}": {
+      "delete": {
+        "operationId": "deleteTargetsById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No such object."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "Delete a target with its history.",
+        "x-role-action": "targets.edit"
+      },
+      "get": {
+        "operationId": "getTargetsById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Target"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No such object."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "Get a target.",
+        "x-role-action": "view"
+      },
+      "patch": {
+        "operationId": "patchTargetsById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TargetInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Target"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The request is invalid; fields says why, per field."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No such object."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "Change a target: the fields sent change; null returns an override to its default.",
+        "x-role-action": "targets.edit"
+      }
+    },
+    "/api/v2/targets/{id}/check": {
+      "post": {
+        "operationId": "postTargetsByIdCheck",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Target"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No token, or an invalid, expired or revoked one."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The token's role does not allow this."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No such object."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Rate limited; see Retry-After."
+          }
+        },
+        "summary": "Check a target now and return its new state.",
+        "x-role-action": "targets.edit"
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    }
+  ],
+  "servers": [
+    {
+      "url": "/"
+    }
+  ]
+}
