@@ -14,15 +14,20 @@ func TestEnvOverrides(t *testing.T) {
 	t.Setenv("TLSWATCH_RETENTION_DAYS", "30")
 	t.Setenv("TLSWATCH_BEHIND_PROXY", "true")
 	t.Setenv("TZ", "Europe/Amsterdam")
+	t.Setenv("TLSWATCH_PUBLIC_DISCOVERY", "false")
+	t.Setenv("TLSWATCH_SERVER_DISCOVERY", "false")
 	if err := CheckEnv(); err != nil {
 		t.Fatal(err)
 	}
+	if !DefaultSettings().General.ServerDiscovery {
+		t.Fatal("scans from the server are off by default")
+	}
 	st := DefaultSettings()
 	applyEnv(&st)
-	if st.Defaults.RetentionDays != 30 || !st.General.BehindProxy || st.General.TimeZone != "Europe/Amsterdam" {
+	if st.Defaults.RetentionDays != 30 || !st.General.BehindProxy || st.General.TimeZone != "Europe/Amsterdam" || st.General.ServerDiscovery || st.General.PublicDiscovery {
 		t.Fatalf("not applied: %+v %+v", st.Defaults, st.General)
 	}
-	if st.Env["retention_days"] != "TLSWATCH_RETENTION_DAYS" {
+	if st.Env["retention_days"] != "TLSWATCH_RETENTION_DAYS" || st.Env["public_discovery"] != "TLSWATCH_PUBLIC_DISCOVERY" || st.Env["server_discovery"] != "TLSWATCH_SERVER_DISCOVERY" {
 		t.Fatalf("env sources: %v", st.Env)
 	}
 }

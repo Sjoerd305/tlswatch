@@ -67,7 +67,7 @@
       <div class="field"><label class="label" for="rate">Rate, connects per second</label><input id="rate" name="rate" class="input mono" value="{{$d.Rate}}" inputmode="numeric"></div>
       <div class="field"><label class="label" for="node">Probe from</label>
         <select id="node" name="node_id" class="input">
-          <option value="0">This server</option>
+          {{- if $d.Server}}<option value="0">This server</option>{{else if eq $s.NodeID 0}}<option value="0" selected disabled>This server (switched off)</option>{{end}}
           {{- range $d.Nodes}}<option value="{{.ID}}"{{if eq .ID $s.NodeID}} selected{{end}}{{if not .CanScan}} disabled{{end}}>Node {{.Label}}{{if not .CanScan}} (update it to scan){{end}}</option>{{end}}
         </select></div>
       <div class="field"><label class="label" for="repeat">Repeat</label>

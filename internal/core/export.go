@@ -274,6 +274,8 @@ func scheduleFromRecord(rec ScheduleRecord, r exportRefs, st config.Settings) (S
 		} else {
 			sc.NodeID, sc.NodeName = ids[0], rec.Node
 		}
+	} else if !st.General.ServerDiscovery {
+		errs = append(errs, "scans from this server are switched off; name a node")
 	}
 	if sc.Every != ScheduleDaily && sc.Every != ScheduleWeekly {
 		errs = append(errs, "every must be day or week")

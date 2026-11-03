@@ -33,6 +33,8 @@ Only `TLSWATCH_LISTEN`, `TLSWATCH_DB`, `TLSWATCH_SECRET_KEY_FILE`, `TLSWATCH_LOG
 | `TLSWATCH_BASE_URL` | General › Public URL |
 | `TLSWATCH_BEHIND_PROXY` | General › Behind a reverse proxy |
 | `TLSWATCH_ALLOW_LOCAL` | General › Allow loopback and link-local targets |
+| `TLSWATCH_PUBLIC_DISCOVERY` | General › Allow discovery of public addresses |
+| `TLSWATCH_SERVER_DISCOVERY` | General › Allow discovery scans from this server (`false`: scans run from nodes only; for a server in a hosting network) |
 | `TLSWATCH_METRICS` | General › Serve Prometheus metrics |
 | `TLSWATCH_METRICS_TOKEN` | General › Metrics token (16 characters at least) |
 | `TZ` | General › Time zone |

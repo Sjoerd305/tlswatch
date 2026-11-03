@@ -185,3 +185,21 @@ func TestThresholdPercentagesValidate(t *testing.T) {
 		}
 	}
 }
+
+// General settings stored before ServerDiscovery existed have no such
+// field; the instance keeps scanning from the server as it did.
+func TestServerDiscoveryDefaultsOnForStoredSettings(t *testing.T) {
+	ctx := context.Background()
+	st, d := newStore(t)
+	if _, err := d.W.ExecContext(ctx, "INSERT INTO settings(key, value) VALUES(?, ?)", keyGeneral, `{"base_url":"https://old.example.nl","public_discovery":false}`); err != nil {
+		t.Fatal(err)
+	}
+	st.Invalidate()
+	got, err := st.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.General.ServerDiscovery || got.General.BaseURL != "https://old.example.nl" {
+		t.Fatalf("stored settings from before: %+v", got.General)
+	}
+}

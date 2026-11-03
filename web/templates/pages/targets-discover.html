@@ -1,6 +1,6 @@
 {{define "content"}}{{$p := .}}{{$d := .Data}}
 <div class="crumbs"><a href="/targets">Targets</a><span>/</span><span>Discover</span></div>
-<div class="page-head"><div><h1>Discover</h1><span class="summary">Scan address ranges for TLS endpoints, from this server or from a node inside the network. A scan finds; nothing is monitored until you add it.</span></div></div>
+<div class="page-head"><div><h1>Discover</h1><span class="summary">Scan address ranges for TLS endpoints, {{if $d.Server}}from this server or {{end}}from a node inside the network. A scan finds; nothing is monitored until you add it.</span></div></div>
 {{- if $d.Error}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>{{$d.Error}}</div></div>{{end}}
 <form class="card form" method="post" action="/targets/discover" novalidate>
   {{template "csrf" $p.CSRF}}
@@ -15,9 +15,10 @@
       <span class="help">1 to 200; low on purpose, so a scan does not trip an intrusion alarm.</span></div>
     <div class="field"><label class="label" for="node">Probe from</label>
       <select id="node" name="node_id" class="input">
-        <option value="0">This server</option>
+        {{- if $d.Server}}<option value="0">This server</option>{{end}}
         {{- range $d.Nodes}}<option value="{{.ID}}"{{if eq .ID $d.In.NodeID}} selected{{end}}{{if not .CanScan}} disabled{{end}}>Node {{.Label}}{{if not .CanScan}} (update it to scan){{end}}</option>{{end}}
-      </select></div>
+      </select>
+      {{- if not $d.Server}}<span class="help">Scans from this server are switched off{{if $p.Can "settings.manage"}} under <a href="/settings/general">Settings › General</a>{{end}}; they run from a node.{{if not $d.Nodes}} There is no node yet{{if $p.Can "settings.manage"}}; add one under <a href="/settings/nodes">Settings › Nodes</a>{{end}}.{{end}}</span>{{end}}</div>
   </div>
   <div class="fgrid c4" data-repeat>
     <div class="field"><label class="label" for="repeat">Repeat</label>

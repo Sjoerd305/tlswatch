@@ -49,6 +49,7 @@ func (s *Server) settingsGeneralSave(w http.ResponseWriter, r *http.Request) {
 		BehindProxy:     r.PostFormValue("behind_proxy") == "1",
 		AllowLocal:      r.PostFormValue("allow_local") == "1",
 		PublicDiscovery: r.PostFormValue("public_discovery") == "1",
+		ServerDiscovery: r.PostFormValue("server_discovery") == "1",
 		TimeZone:        strings.TrimSpace(r.PostFormValue("time_zone")),
 		Metrics:         r.PostFormValue("metrics") == "1",
 	}
@@ -63,7 +64,7 @@ func (s *Server) settingsGeneralSave(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	s.Core.Audit(r.Context(), user(r).Email, "settings.general", "general", fmt.Sprintf("base_url=%s behind_proxy=%v allow_local=%v public_discovery=%v time_zone=%s metrics=%v metrics_token=%s", g.BaseURL, g.BehindProxy, g.AllowLocal, g.PublicDiscovery, g.TimeZone, g.Metrics, map[bool]string{true: "rotated", false: "kept"}[r.PostFormValue("metrics_rotate") == "1"]))
+	s.Core.Audit(r.Context(), user(r).Email, "settings.general", "general", fmt.Sprintf("base_url=%s behind_proxy=%v allow_local=%v public_discovery=%v server_discovery=%v time_zone=%s metrics=%v metrics_token=%s", g.BaseURL, g.BehindProxy, g.AllowLocal, g.PublicDiscovery, g.ServerDiscovery, g.TimeZone, g.Metrics, map[bool]string{true: "rotated", false: "kept"}[r.PostFormValue("metrics_rotate") == "1"]))
 	s.back(w, r, "/settings/general", "General settings saved.", "ok")
 }
 

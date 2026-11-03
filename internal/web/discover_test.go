@@ -251,3 +251,59 @@ func TestDiscoverSchedule(t *testing.T) {
 		t.Fatalf("audit: %+v", a)
 	}
 }
+
+// With scans from the server switched off by the environment, Discover
+// offers nodes only, a scan or schedule from the server is refused in the
+// UI, the API and on its slot, and the setting shows as set by the
+// environment.
+func TestDiscoverNodesOnly(t *testing.T) {
+	hs := newHarness(t)
+	hs.srv.Sched.Scan = func(_ context.Context, req probe.ScanRequest) (probe.ScanResult, error) {
+		return probe.ScanResult{Probed: len(req.Addresses) * len(req.Ports)}, nil
+	}
+	ctx := context.Background()
+	// A schedule saved while scans from the server were still allowed.
+	id, err := hs.srv.Core.SaveScanSchedule(ctx, 0, core.ScanScheduleInput{Ranges: "10.0.0.0/30", Every: core.ScheduleDaily, Hour: 3, Enabled: true}, "op@example.nl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TLSWATCH_SERVER_DISCOVERY", "false")
+	hs.srv.Settings.Invalidate()
+
+	page := hs.do(authz.Operator, "GET", "/targets/discover", nil, false).Body.String()
+	if strings.Contains(page, `<option value="0">This server</option>`) || !strings.Contains(page, "Scans from this server are switched off") {
+		t.Fatal("Discover still offers this server")
+	}
+	rec := hs.do(authz.Operator, "POST", "/targets/discover", url.Values{"ranges": {"10.0.0.0/30"}}, true)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(html.UnescapeString(rec.Body.String()), core.ServerDiscoveryOff) {
+		t.Fatalf("scan from the server: %d", rec.Code)
+	}
+	rec = hs.do(authz.Operator, "POST", "/targets/discover", url.Values{"ranges": {"10.0.0.4/30"}, "repeat": {"day"}}, true)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("schedule from the server: %d", rec.Code)
+	}
+	tok := hs.apiToken(authz.Operator, authz.Operator)
+	if rec := hs.api(tok, "POST", "/api/v2/discovery/schedules", `{"ranges":["10.0.0.8/30"],"every":"day"}`); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), core.ServerDiscoveryOff) {
+		t.Fatalf("API schedule from the server: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// The schedule from before cannot run, and says why; its page shows the
+	// server as switched off instead of quietly picking another source.
+	hs.do(authz.Operator, "POST", fmt.Sprintf("/targets/discover/schedules/%d/run", id), nil, true)
+	sc, err := hs.srv.Core.ScanSchedule(ctx, id)
+	if err != nil || sc.LastScanID != 0 || !strings.Contains(sc.LastNote, core.ServerDiscoveryOff) {
+		t.Fatalf("schedule after Run now: %+v %v", sc, err)
+	}
+	page = hs.do(authz.Operator, "GET", fmt.Sprintf("/targets/discover/schedules/%d", id), nil, false).Body.String()
+	if !strings.Contains(page, "This server (switched off)") {
+		t.Error("the schedule page does not show the server as switched off")
+	}
+	if scans, _ := hs.srv.Core.Scans(ctx); len(scans) != 0 {
+		t.Fatalf("a scan ran from the server: %+v", scans)
+	}
+
+	settings := hs.do(authz.Admin, "GET", "/settings/general", nil, false).Body.String()
+	if !strings.Contains(settings, `name="server_discovery" value="1" disabled`) || !strings.Contains(settings, "TLSWATCH_SERVER_DISCOVERY") {
+		t.Fatal("the setting does not show as set by the environment")
+	}
+}

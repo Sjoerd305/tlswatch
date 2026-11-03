@@ -62,7 +62,7 @@ type apiScanScheduleInput struct {
 	Ranges  *[]string `json:"ranges,omitempty" doc:"Required to add: CIDRs or addresses, private unless Settings › General allows public discovery."`
 	Ports   *[]int    `json:"ports,omitempty" doc:"At most 16; the discovery defaults when left out."`
 	Rate    *int      `json:"rate,omitempty" doc:"1 to 200 connects per second; 50 when left out."`
-	NodeID  *int64    `json:"node_id,omitempty" doc:"null: this server."`
+	NodeID  *int64    `json:"node_id,omitempty" doc:"null: this server, unless Settings › General allows scans from nodes only."`
 	Every   *string   `json:"every,omitempty" doc:"day or week; required to add."`
 	Weekday *int      `json:"weekday,omitempty" doc:"0 Sunday to 6 Saturday; Monday when left out."`
 	Hour    *int      `json:"hour,omitempty" doc:"0 to 23; 3 when left out."`

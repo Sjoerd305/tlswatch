@@ -106,7 +106,10 @@ type General struct {
 	AllowLocal  bool   `json:"allow_local"`
 	// PublicDiscovery lets a discovery scan cover public address ranges;
 	// off, a scan takes private ranges only.
-	PublicDiscovery bool   `json:"public_discovery"`
+	PublicDiscovery bool `json:"public_discovery"`
+	// ServerDiscovery lets a discovery scan run from the server itself; off,
+	// scans run from nodes only, so the server never connects to a range.
+	ServerDiscovery bool   `json:"server_discovery"`
 	TimeZone        string `json:"time_zone"`
 	// Metrics serves /metrics in the Prometheus text format; it names
 	// every target, so a request must carry MetricsToken as a bearer token.
@@ -302,7 +305,7 @@ func (s Settings) OIDCEnabled() bool {
 // DefaultSettings returns the built-in defaults from the specification.
 func DefaultSettings() Settings {
 	return Settings{
-		General: General{},
+		General: General{ServerDiscovery: true},
 		Nodes:   Nodes{AutoUpdate: true},
 		CT:      CT{Source: "certspotter", IntervalS: 3600},
 		Defaults: Defaults{
@@ -741,6 +744,8 @@ var envVars = []envVar{
 	}},
 	{"behind_proxy", "TLSWATCH_BEHIND_PROXY", boolVar(func(st *Settings) *bool { return &st.General.BehindProxy })},
 	{"allow_local", "TLSWATCH_ALLOW_LOCAL", boolVar(func(st *Settings) *bool { return &st.General.AllowLocal })},
+	{"public_discovery", "TLSWATCH_PUBLIC_DISCOVERY", boolVar(func(st *Settings) *bool { return &st.General.PublicDiscovery })},
+	{"server_discovery", "TLSWATCH_SERVER_DISCOVERY", boolVar(func(st *Settings) *bool { return &st.General.ServerDiscovery })},
 	{"metrics", "TLSWATCH_METRICS", boolVar(func(st *Settings) *bool { return &st.General.Metrics })},
 	{"metrics_token", "TLSWATCH_METRICS_TOKEN", func(st *Settings, v string) error {
 		if len(v) < 16 {

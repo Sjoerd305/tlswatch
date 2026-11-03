@@ -4,6 +4,7 @@ Newest first, one line per change.
 
 ## Unreleased
 
+- Discovery from nodes only. Settings › General gets "Allow discovery scans from this server", on by default; off, Targets › Discover offers nodes only and says why, and a scan or scan schedule from the server is refused in the UI, the REST API and an import, while a schedule saved earlier from the server is skipped on its slot with the reason. Meant for a server in a hosting network, where its private ranges are the provider's network and a provider's abuse detection reports a server that walks address ranges. The new `TLSWATCH_SERVER_DISCOVERY` and `TLSWATCH_PUBLIC_DISCOVERY` pin both discovery switches from the environment, read-only in the UI like the other overrides, so whoever runs the server decides and an instance's admins cannot switch them back.
 - Fix: the state chips on the domain page count and filter the issuances again. The rows lacked the attribute the chip script keys on, so every chip read 0, "No issuances in this state" showed under the list, and clicking a chip hid nothing.
 - "Names without a target" on the domain page lists every name in an unexpired issuance, whatever its state, instead of only those in known or acknowledged issuances of the last 90 days. A name in an unexpected issuance is as much without a target as any other, and a one-year certificate issued more than 90 days ago still names a host worth watching.
 

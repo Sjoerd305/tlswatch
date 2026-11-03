@@ -197,3 +197,20 @@ func TestCSVToLines(t *testing.T) {
 		t.Fatal("LooksLikeExport")
 	}
 }
+
+// With scans from the server switched off, an imported schedule must name
+// a node; one without is refused like any other invalid schedule.
+func TestImportScheduleNeedsNodeWhenServerScansOff(t *testing.T) {
+	e := newEnv(t)
+	doc := "version: 1\ndiscovery:\n  - name: Office\n    ranges: [10.0.0.0/29]\n    every: day\n"
+	if _, err := e.svc.PlanImport(e.ctx, []byte(doc)); err != nil {
+		t.Fatalf("allowed: %v", err)
+	}
+	t.Setenv("TLSWATCH_SERVER_DISCOVERY", "false")
+	e.svc.Settings.Invalidate()
+	_, err := e.svc.PlanImport(e.ctx, []byte(doc))
+	var ie *ImportError
+	if !errors.As(err, &ie) || !strings.Contains(err.Error(), "scans from this server are switched off") {
+		t.Fatalf("switched off: %v", err)
+	}
+}

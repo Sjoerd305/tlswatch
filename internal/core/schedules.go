@@ -128,6 +128,9 @@ type ScanScheduleInput struct {
 func (s *Service) validateSchedule(ctx context.Context, in ScanScheduleInput) (ScanSchedule, error) {
 	sc := ScanSchedule{Name: Clip(strings.TrimSpace(in.Name), ShortMax), NodeID: in.NodeID, Every: in.Every, Weekday: in.Weekday, Hour: in.Hour, Enabled: in.Enabled}
 	st := s.CurrentSettings(ctx)
+	if in.NodeID == 0 && !st.General.ServerDiscovery {
+		return sc, usererr.New(ServerDiscoveryOff)
+	}
 	prefixes, _, err := ParseScanRanges(in.Ranges, st.General.PublicDiscovery, st.General.AllowLocal)
 	if err != nil {
 		return sc, err

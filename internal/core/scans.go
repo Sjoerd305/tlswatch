@@ -180,10 +180,17 @@ var ErrScanBusy = usererr.New("A scan is already running from there; wait for it
 // its facts. Nodes from before discovery do not.
 func (n Node) CanScan() bool { return slices.Contains(n.Facts.Kinds, KindScan) }
 
+// ServerDiscoveryOff is the message for a scan from the server while
+// Settings › General (or TLSWATCH_SERVER_DISCOVERY) allows nodes only.
+const ServerDiscoveryOff = "Scans from this server are switched off; choose a node"
+
 // CreateScan validates a scan, records it as running and returns it with
 // the addresses to probe. One scan runs per node, and one from the server.
 func (s *Service) CreateScan(ctx context.Context, in ScanInput, user string) (Scan, []netip.Addr, error) {
 	st := s.CurrentSettings(ctx)
+	if in.NodeID == 0 && !st.General.ServerDiscovery {
+		return Scan{}, nil, usererr.New(ServerDiscoveryOff)
+	}
 	prefixes, addrs, err := ParseScanRanges(in.Ranges, st.General.PublicDiscovery, st.General.AllowLocal)
 	if err != nil {
 		return Scan{}, nil, err

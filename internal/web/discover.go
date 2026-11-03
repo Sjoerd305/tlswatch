@@ -28,6 +28,7 @@ type discoverData struct {
 	Scans  []core.Scan
 	Error  string
 	Public bool // public ranges may be scanned
+	Server bool // scans may run from this server
 	// Repeat is the form's repeat choice: "", day or week; Weekday, Hour
 	// and Name go with it.
 	Repeat    string
@@ -83,6 +84,7 @@ func (s *Server) renderDiscover(w http.ResponseWriter, r *http.Request, status i
 		return
 	}
 	d.Public = info(r).settings.General.PublicDiscovery
+	d.Server = info(r).settings.General.ServerDiscovery
 	running := false
 	for _, sc := range d.Scans {
 		running = running || sc.State == core.ScanRunning
@@ -158,6 +160,7 @@ type scheduleData struct {
 	Nodes    []core.Node
 	Error    string
 	Public   bool
+	Server   bool
 	Findings []core.Finding
 	Scans    []core.Scan // this schedule's runs of the last 7 days
 }
@@ -192,6 +195,7 @@ func (s *Server) renderSchedule(w http.ResponseWriter, r *http.Request, status i
 	}
 	d.Next = d.S.NextRun(s.now().In(info(r).settings.Location()))
 	d.Public = info(r).settings.General.PublicDiscovery
+	d.Server = info(r).settings.General.ServerDiscovery
 	if d.Rate == "" {
 		d.Rate = strconv.Itoa(d.S.Rate)
 	}
