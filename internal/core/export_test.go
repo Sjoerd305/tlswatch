@@ -214,3 +214,27 @@ func TestImportScheduleNeedsNodeWhenServerScansOff(t *testing.T) {
 		t.Fatalf("switched off: %v", err)
 	}
 }
+
+// Nodes may share a name; an import naming one that two confirmed nodes
+// share is refused instead of putting the targets on either of them. A
+// pending node of the same name does not make it ambiguous.
+func TestImportRefusesAmbiguousNodeName(t *testing.T) {
+	e := newEnv(t)
+	add := func(state string) {
+		if _, err := e.svc.DB.W.Exec("INSERT INTO nodes(name, state, created_at, updated_at, created_by) VALUES('dc1', ?, 1, 1, 'test')", state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	doc := []byte("version: 1\ntargets:\n  - host: a.example.nl\n    node: dc1\n")
+	add(NodeConfirmed)
+	add(NodePending)
+	if _, err := e.svc.PlanImport(e.ctx, doc); err != nil {
+		t.Fatalf("one confirmed node: %v", err)
+	}
+	add(NodeConfirmed)
+	_, err := e.svc.PlanImport(e.ctx, doc)
+	var ie *ImportError
+	if !errors.As(err, &ie) || !strings.Contains(err.Error(), `nodes are named "dc1"`) {
+		t.Fatalf("two confirmed nodes: %v", err)
+	}
+}

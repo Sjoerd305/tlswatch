@@ -24,6 +24,52 @@ Enable **Settings › General › Behind a reverse proxy** only when a trusted p
 
 A plausible bearer token requires a database lookup even when its address is blocked, so that valid tokens remain usable. The failed-authentication budget does not cap these lookups. For internet-facing instances, configure request/concurrency limits and timeouts at the proxy for the expected traffic; allow for multiple legitimate integrations sharing an address. Token revocation, account status and role changes are checked on each authenticated request.
 
+### Example proxy configurations
+
+tlswatch listens on `127.0.0.1:8080` by default; the proxy terminates TLS and forwards to it. Three things matter beyond a plain forward: the forwarded headers (and **Behind a reverse proxy** switched on, or `TLSWATCH_BEHIND_PROXY=true`), a read timeout above the 55 seconds nodes hold `GET /agent/v1/jobs` open, and room for a backup upload (1 GB at most) and its download, which may take minutes. Set the public URL to the address the proxy serves.
+
+Caddy, which gets and renews its own certificate:
+
+```caddyfile
+tlswatch.example.nl {
+	reverse_proxy 127.0.0.1:8080 {
+		# Caddy sets X-Forwarded-For and X-Forwarded-Proto itself.
+		transport http {
+			read_timeout 30m
+			write_timeout 30m
+		}
+	}
+	request_body {
+		max_size 1GB
+	}
+}
+```
+
+nginx:
+
+```nginx
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name tlswatch.example.nl;
+    ssl_certificate     /etc/letsencrypt/live/tlswatch.example.nl/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/tlswatch.example.nl/privkey.pem;
+
+    client_max_body_size 1g;          # backup restore
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;   # overwrite, never append the client's value
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 30m;       # node long-polls (55 s) and backup transfers
+        proxy_send_timeout 30m;
+        proxy_request_buffering off;  # stream a restore instead of spooling it
+    }
+}
+```
+
+With Docker, publish the port on loopback only (`127.0.0.1:8080:8080`) so the proxy is the one way in. A Cloudflare Tunnel or another tunnel works the same way: point it at `http://127.0.0.1:8080`, switch on proxy trust only when the tunnel sets `X-Forwarded-For` to the client, and check its own limits on request size and duration for restores.
+
 ## Environment overrides
 
 Only `TLSWATCH_LISTEN`, `TLSWATCH_DB`, `TLSWATCH_SECRET_KEY_FILE`, `TLSWATCH_LOG_JSON`, `TLSWATCH_DEBUG`, `TLSWATCH_ACCEPT_NEW_KEY` (below), `TLSWATCH_DEMO` (see Running a public demo) and, in the image, `TLSWATCH_CONTAINER` are read before the database opens. These override a UI setting and make it read-only there:
@@ -52,8 +98,22 @@ Values are checked against the same ranges as the UI (retention 7 to 3650 days, 
 - To replace the key (for example after it was exposed), stop tlswatch and run `tlswatch rotate-key`. It re-encrypts the stored credentials, the sealed settings and the node install tokens under a new key in one transaction, then swaps the key file and keeps the old one as `secret.key.old-<time>`; keep that file as long as backups made with it, then delete it. The command refuses to run while tlswatch answers on `TLSWATCH_LISTEN`.
 - Settings › Backup downloads the whole instance as one file encrypted with a passphrase: targets, history, findings, channels with their credentials, CA bundles, users, settings and the audit log. The secret key is not in it; the credentials inside are sealed under the passphrase. Keep the passphrase apart from the file.
 - To restore, upload the file under Settings › Backup, or on the setup screen of a fresh installation (before any account exists), so moving to a new host needs no throwaway admin. The restore replaces everything in place while tlswatch runs, re-encrypts the credentials under the instance's own key and signs everyone out; sign in with an account from the backup. A copy written by `tlswatch backup` restores the same way without a passphrase, but its credentials are readable only when the instance has the `secret.key` it was made with. A backup from a newer tlswatch is refused; an older one is migrated.
-- Upgrades are a binary swap. Migrations run at start, are forward only, and a binary refuses a database written by a newer version.
+- Upgrades are a binary swap. Migrations run at start, are forward only, and a binary refuses a database written by a newer version. See Upgrading below.
 - `tlswatch version` (and `tlswatch_build_info` on `/metrics`) names the commit a build came from, also for an image built with `docker compose up --build`: `2026.10.15-5efacf7` while the repository has no tag, `v0.2.0-5-g5efacf7` five commits past one, `v0.2.0` on a release, and `-dirty` when the build had uncommitted changes. So "which version runs there?" is answered by that command on every instance.
+
+## Upgrading
+
+Every release upgrades from every earlier one by replacing the binary or the image; CI tests this from the oldest release on every change. From 1.0 on, a minor or patch release keeps the REST API, the webhook payload, the metric names, `tlswatch check`, exports, backups and environment variables working as they were (see Compatibility from 1.0 in the specification). Fixes go into the latest release only, so stay on it.
+
+1. **Read the changelog** from your version up. A line that starts with **Breaking** changes something a script, dashboard or alert rule may depend on; before 1.0 that can happen in any release, after it only in a major one.
+2. **Make a backup** first: `tlswatch backup /backups/before-upgrade.db`, or Settings › Backup. A downgrade is not possible (an older binary refuses the newer database), so going back means restoring this backup with the old version.
+3. **Replace and restart.**
+   - Docker Compose: change the image tag (`ghcr.io/sjoerd305/tlswatch:v0.1.4`; pinning a version instead of `latest` decides when you upgrade), then `docker compose pull && docker compose up -d`.
+   - Binary: download the release and its `SHA256SUMS`, check it (`sha256sum -c --ignore-missing SHA256SUMS`; `SHA256SUMS.sig` is signed with the release key, see SECURITY.md), stop the service, replace the file, start it.
+4. **Check** that `/healthz` answers 200, `tlswatch version` (or `tlswatch_build_info`) names the new version, and the overview looks as before. The migrations ran at start, each in its own transaction.
+5. **Nodes** follow on their own when Settings › Nodes keeps them on the server's version (the default): one at a time, only to signed releases. A node in a container is updated by pulling its image with the same tag.
+
+If the new version does not start, its log names the reason: most often a migration that failed (the database stays at the last migration that completed, and the old version refuses it, so restore the backup to go back; report the log) or a missing `secret.key` after a volume change (see Backups and upgrades).
 
 ## Monitoring tlswatch
 
@@ -80,6 +140,10 @@ Every check logs one `checked` line with the target, its `check_id` (also stored
 ## Networks
 
 tlswatch probes from where it runs. Internal addresses must be reachable from that host, through a route or from a node (below). Hosts without an IPv6 route skip AAAA records (noted on the target, not reported as unreachable).
+
+IPv6: an address behind a name is probed only when the host has an IPv6 route; otherwise its AAAA records are skipped and the target says so. A server without IPv6 therefore never sees a stale certificate on the IPv6 side of a dual-stack name, which is where half of the visitors may land. In Docker a container has no IPv6 even on a host that does, until it is switched on: `"ipv6": true` (with a `fixed-cidr-v6`) in `/etc/docker/daemon.json`, or `enable_ipv6: true` on the Compose network. A node on a network with IPv6 covers it otherwise.
+
+In a hosting network, switch off discovery scans from the server (`TLSWATCH_SERVER_DISCOVERY=false`, which an instance's admins cannot switch back): the private ranges there are the provider's, and a provider's abuse detection reports a server that walks address ranges. Discovery then runs from nodes inside the networks it is for.
 
 ## Certificate Transparency
 

@@ -111,12 +111,28 @@ type exportRefs struct {
 	bundleID map[string]int64
 	nodes    map[int64]string
 	nodeIDs  map[string][]int64
-	chans    map[int64]string
-	chanID   map[string]int64
+	// confirmed holds the nodes that can take targets.
+	confirmed map[int64]bool
+	chans     map[int64]string
+	chanID    map[string]int64
+}
+
+// node resolves a node name from a document. Nodes, unlike channels and
+// bundles, may share a name; a name two confirmed nodes share is refused
+// rather than guessed, since the import would put targets on the wrong one.
+func (r exportRefs) node(name string) (int64, string) {
+	ids := r.nodeIDs[name]
+	switch {
+	case len(ids) == 0:
+		return 0, fmt.Sprintf("there is no node named %q", name)
+	case len(ids) > 1 && r.confirmed[ids[1]]:
+		return 0, fmt.Sprintf("%d nodes are named %q; give them distinct names under Settings › Nodes", len(ids), name)
+	}
+	return ids[0], ""
 }
 
 func (s *Service) exportRefs(ctx context.Context) (exportRefs, error) {
-	r := exportRefs{bundles: map[int64]string{}, bundleID: map[string]int64{}, nodes: map[int64]string{}, nodeIDs: map[string][]int64{},
+	r := exportRefs{bundles: map[int64]string{}, bundleID: map[string]int64{}, nodes: map[int64]string{}, nodeIDs: map[string][]int64{}, confirmed: map[int64]bool{},
 		chans: map[int64]string{}, chanID: map[string]int64{}}
 	bs, err := s.Bundles(ctx)
 	if err != nil {
@@ -135,6 +151,7 @@ func (s *Service) exportRefs(ctx context.Context) (exportRefs, error) {
 	for _, n := range ns {
 		r.nodes[n.ID] = n.Label()
 		r.nodeIDs[n.Label()] = append(r.nodeIDs[n.Label()], n.ID)
+		r.confirmed[n.ID] = n.Assignable()
 	}
 	cs, err := s.Channels.List(ctx)
 	if err != nil {
@@ -268,11 +285,10 @@ func scheduleFromRecord(rec ScheduleRecord, r exportRefs, st config.Settings) (S
 		errs = append(errs, fmt.Sprintf("the rate must be 1 to %d", probe.MaxScanRate))
 	}
 	if rec.Node != "" {
-		ids := r.nodeIDs[rec.Node]
-		if len(ids) == 0 {
-			errs = append(errs, fmt.Sprintf("there is no node named %q", rec.Node))
+		if id, msg := r.node(rec.Node); msg != "" {
+			errs = append(errs, msg)
 		} else {
-			sc.NodeID, sc.NodeName = ids[0], rec.Node
+			sc.NodeID, sc.NodeName = id, rec.Node
 		}
 	} else if !st.General.ServerDiscovery {
 		errs = append(errs, "scans from this server are switched off; name a node")
@@ -774,11 +790,10 @@ func targetFromRecord(rec TargetRecord, r exportRefs, st config.Settings) (Targe
 		errs = append(errs, "bundle is only for trust bundle")
 	}
 	if rec.Node != "" {
-		ids := r.nodeIDs[rec.Node]
-		if len(ids) == 0 {
-			errs = append(errs, fmt.Sprintf("there is no node named %q", rec.Node))
+		if id, msg := r.node(rec.Node); msg != "" {
+			errs = append(errs, msg)
 		} else {
-			t.NodeID = ids[0]
+			t.NodeID = id
 		}
 	}
 	switch rec.Renewal {
