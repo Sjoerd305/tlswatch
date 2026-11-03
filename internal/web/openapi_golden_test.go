@@ -18,7 +18,7 @@ var updateGolden = flag.Bool("update", false, "rewrite docs/openapi.json from th
 var goldenOpenAPI = filepath.Join("..", "..", "docs", "openapi.json")
 
 // The committed document matches the generated one. After a deliberate API
-// change: go test ./internal/web -run TestOpenAPIGolden -update
+// change: make openapi (go test ./internal/web -run TestOpenAPIGolden -update)
 func TestOpenAPIGolden(t *testing.T) {
 	hs := newHarness(t)
 	doc := hs.srv.openAPIDocument()
@@ -41,6 +41,6 @@ func TestOpenAPIGolden(t *testing.T) {
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatal("docs/openapi.json differs from the generated document: the public API changed. " +
-			"Check the diff is intended, then run: go test ./internal/web -run TestOpenAPIGolden -update")
+			"Check the diff is intended, then run: make openapi")
 	}
 }

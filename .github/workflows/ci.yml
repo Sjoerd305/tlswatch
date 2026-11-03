@@ -1,7 +1,7 @@
 name: ci
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
   workflow_call: # the release workflow runs these jobs before it publishes anything
 permissions:
