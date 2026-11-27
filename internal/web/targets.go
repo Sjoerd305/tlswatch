@@ -553,6 +553,8 @@ type targetForm struct {
 	Result    *testResult
 	Protocols []probe.Protocol
 	Nodes     []core.Node // confirmed nodes, for "Probe from"
+	// CopiedFrom names the target a new one was duplicated from.
+	CopiedFrom string
 }
 
 func (s *Server) formData(ctx context.Context, f *targetForm) error {
@@ -606,6 +608,20 @@ func formFromTarget(t core.Target) targetForm {
 
 func (s *Server) targetNew(w http.ResponseWriter, r *http.Request) {
 	f := formFromTarget(core.Target{Port: 443, Protocol: probe.TLS, Trust: probe.TrustSystem, AllAddresses: true, AllChannels: true, Enabled: true})
+	if from := r.URL.Query().Get("from"); from != "" {
+		id, err := strconv.ParseInt(from, 10, 64)
+		if err != nil {
+			s.fail(w, r, http.StatusNotFound, "No such target.")
+			return
+		}
+		t, err := s.Core.Target(r.Context(), id)
+		if err != nil {
+			s.failErr(w, r, err, "No such target.")
+			return
+		}
+		f = formFromTarget(duplicateTarget(t))
+		f.CopiedFrom = t.Name
+	}
 	f.New = true
 	if h := r.URL.Query().Get("host"); h != "" {
 		f.T.Host = h
@@ -615,6 +631,27 @@ func (s *Server) targetNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.render(w, r, "target-form", &Page{Title: "Add target", Nav: "targets", Data: f})
+}
+
+// duplicateTarget is the configuration of t for a new target: the same port,
+// protocol, node, trust, renewal, thresholds, schedule, channels, tags and
+// notes, without its host, name, state or history. The server name is kept
+// only when it was set apart from the host, so a new host gets its own.
+func duplicateTarget(t core.Target) core.Target {
+	n := core.Target{
+		Port: t.Port, Protocol: t.Protocol, NodeID: t.NodeID, NodeName: t.NodeName,
+		Trust: t.Trust, BundleID: t.BundleID, BundleName: t.BundleName,
+		RenewalManaged: t.RenewalManaged, RenewalSet: t.RenewalSet, ExpectedIssuer: t.ExpectedIssuer,
+		WarnDays: t.WarnDays, CritDays: t.CritDays, WarnPct: t.WarnPct, CritPct: t.CritPct, RenewalPct: t.RenewalPct,
+		IntervalS: t.IntervalS, TimeoutS: t.TimeoutS, Retries: t.Retries, Debounce: t.Debounce,
+		RemindWarnS: t.RemindWarnS, RemindCritS: t.RemindCritS,
+		AllAddresses: t.AllAddresses, SkipLegacy: t.SkipLegacy, AllChannels: t.AllChannels,
+		ChannelIDs: slices.Clone(t.ChannelIDs), Tags: slices.Clone(t.Tags), Notes: t.Notes, Enabled: true,
+	}
+	if t.ServerName != "" && !strings.EqualFold(strings.TrimSuffix(t.ServerName, "."), strings.TrimSuffix(t.Host, ".")) {
+		n.ServerName = t.ServerName
+	}
+	return n
 }
 
 func (s *Server) targetEdit(w http.ResponseWriter, r *http.Request) {

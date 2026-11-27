@@ -42,7 +42,8 @@
 //                                      selects the matching chip of that table
 //   form[data-confirm="question"]      asks before submitting
 //   form[method=post] (not data-api)   submit buttons are disabled while it is
-//                                      sent, so a slow action is not sent twice
+//                                      sent, so a slow action is not sent twice;
+//                                      its [data-busy-note] is shown meanwhile
 //   input[name=next][data-follow-url]  set to the page's URL as it is now when
 //                                      its form is sent, without "sel" unless
 //                                      the value is "all"
@@ -529,6 +530,7 @@ function keepFilter(link: HTMLAnchorElement): void {
 // own name and value from the submission.
 function markSubmitting(form: HTMLFormElement, submitter: HTMLElement | null): void {
   form.setAttribute("aria-busy", "true");
+  for (const note of $$("[data-busy-note]", form)) note.hidden = false;
   const buttons = $$<HTMLButtonElement>('button[type="submit"], button:not([type])', form);
   if (form.id !== "") buttons.push(...$$<HTMLButtonElement>(`button[form="${CSS.escape(form.id)}"]`));
   if (submitter instanceof HTMLButtonElement && !buttons.includes(submitter)) buttons.push(submitter);
@@ -545,6 +547,7 @@ function markSubmitting(form: HTMLFormElement, submitter: HTMLElement | null): v
 // A page restored from the back/forward cache comes back usable.
 function clearSubmitting(): void {
   for (const form of $$("form[aria-busy]")) form.removeAttribute("aria-busy");
+  for (const note of $$("[data-busy-note]")) note.hidden = true;
   for (const btn of $$<HTMLButtonElement>("button[data-busy-disabled]")) {
     btn.disabled = false;
     btn.removeAttribute("aria-busy");

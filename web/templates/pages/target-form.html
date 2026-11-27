@@ -2,12 +2,13 @@
 <div class="crumbs"><a href="/targets">Targets</a><span>/</span>{{if $f.New}}<span>Add target</span>{{else}}<a href="/targets/{{$t.ID}}">{{$t.Name}}</a><span>/</span><span>Edit</span>{{end}}</div>
 <div class="page-head"><div><h1>{{if $f.New}}Add target{{else}}Edit {{$t.Name}}{{end}}</h1></div></div>
 {{- if $e}}<div class="notice crit" role="alert">{{template "notice-icon" "crit"}}<div>Check the highlighted fields.</div></div>{{end}}
+{{- if and $f.CopiedFrom (not $e)}}<div class="notice info" role="status">{{template "notice-icon" "info"}}<div>A copy of the settings of {{$f.CopiedFrom}}. Enter the host; the rest can be changed before saving. Nothing is saved until you do.</div></div>{{end}}
 <div class="grid-form-side">
   <form class="card form" method="post" action="{{if $f.New}}/targets/new{{else}}/targets/{{$t.ID}}/edit{{end}}" novalidate>
     {{template "csrf" $p.CSRF}}
     {{- if not $f.New}}<input type="hidden" name="id" value="{{$t.ID}}">{{end}}
     <div class="fgrid host">
-      <div class="field"><label class="label" for="host">Host</label><input id="host" name="host" class="input mono{{if $e.host}} invalid{{end}}" value="{{$t.Host}}" required autocomplete="off" spellcheck="false" placeholder="portal.example.nl or 10.0.0.5"><span class="help">DNS name or IP address</span>{{template "err" $e.host}}</div>
+      <div class="field"><label class="label" for="host">Host</label><input id="host" name="host" class="input mono{{if $e.host}} invalid{{end}}" value="{{$t.Host}}" required autocomplete="off" spellcheck="false" placeholder="portal.example.nl or 10.0.0.5"{{if and $f.CopiedFrom (not $t.Host)}} autofocus{{end}}><span class="help">DNS name or IP address</span>{{template "err" $e.host}}</div>
       <div class="field"><label class="label" for="port">Port</label><input id="port" name="port" class="input mono{{if $e.port}} invalid{{end}}" value="{{if $t.Port}}{{$t.Port}}{{end}}" inputmode="numeric" placeholder="{{defaultPort $t.Protocol}}">{{template "err" $e.port}}</div>
       <div class="field"><label class="label" for="protocol">Protocol</label>
         <select id="protocol" name="protocol" class="input" data-port-for="#port">

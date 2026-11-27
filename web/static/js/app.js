@@ -42,7 +42,8 @@
 //                                      selects the matching chip of that table
 //   form[data-confirm="question"]      asks before submitting
 //   form[method=post] (not data-api)   submit buttons are disabled while it is
-//                                      sent, so a slow action is not sent twice
+//                                      sent, so a slow action is not sent twice;
+//                                      its [data-busy-note] is shown meanwhile
 //   input[name=next][data-follow-url]  set to the page's URL as it is now when
 //                                      its form is sent, without "sel" unless
 //                                      the value is "all"
@@ -542,6 +543,8 @@ function keepFilter(link) {
 // own name and value from the submission.
 function markSubmitting(form, submitter) {
     form.setAttribute("aria-busy", "true");
+    for (const note of $$("[data-busy-note]", form))
+        note.hidden = false;
     const buttons = $$('button[type="submit"], button:not([type])', form);
     if (form.id !== "")
         buttons.push(...$$(`button[form="${CSS.escape(form.id)}"]`));
@@ -562,6 +565,8 @@ function markSubmitting(form, submitter) {
 function clearSubmitting() {
     for (const form of $$("form[aria-busy]"))
         form.removeAttribute("aria-busy");
+    for (const note of $$("[data-busy-note]"))
+        note.hidden = true;
     for (const btn of $$("button[data-busy-disabled]")) {
         btn.disabled = false;
         btn.removeAttribute("aria-busy");

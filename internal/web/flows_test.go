@@ -24,6 +24,7 @@ import (
 	"github.com/sjoerd305/tlswatch/internal/core"
 	"github.com/sjoerd305/tlswatch/internal/db"
 	"github.com/sjoerd305/tlswatch/internal/node"
+	"github.com/sjoerd305/tlswatch/internal/probe"
 )
 
 // Restores that must not happen: a damaged or foreign file, a database of
@@ -448,5 +449,66 @@ func TestUnknownBundleIsAFormError(t *testing.T) {
 	}
 	if hs.count("SELECT COUNT(*) FROM targets") != 1 {
 		t.Error("a target with an unknown bundle was saved")
+	}
+}
+
+// Duplicate opens Add target filled with another target's settings, without
+// its host, name or a server name that only followed the host; saving makes a
+// new target and leaves the original alone. An unknown source is a 404.
+func TestTargetDuplicate(t *testing.T) {
+	hs := newHarness(t)
+	ctx := context.Background()
+	warn := 21
+	src, err := hs.srv.Core.SaveTarget(ctx, core.Target{Name: "Portal", Host: "portal.example.nl", ServerName: "portal.example.nl", Port: 8443,
+		Protocol: probe.TLS, Trust: probe.TrustSystem, WarnDays: &warn, AllAddresses: true, AllChannels: true,
+		Tags: []string{"customer-a", "web"}, Notes: "Owned by team A", Enabled: true}, "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := hs.do(authz.Operator, "GET", fmt.Sprintf("/targets/new?from=%d", src), nil, false)
+	page := rec.Body.String()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("duplicate form: %d", rec.Code)
+	}
+	for _, want := range []string{"A copy of the settings of Portal", `value="8443"`, `value="21"`, "customer-a, web", "Owned by team A", `action="/targets/new"`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("duplicate form lacks %q", want)
+		}
+	}
+	for _, unwanted := range []string{`value="portal.example.nl"`, `value="Portal"`} {
+		if strings.Contains(page, unwanted) {
+			t.Errorf("duplicate form carries %s over", unwanted)
+		}
+	}
+	f := url.Values{"host": {"shop.example.nl"}, "port": {"8443"}, "protocol": {"tls"}, "trust_mode": {"system"}, "warn_days": {"21"},
+		"all_channels": {"1"}, "tags": {"customer-a, web"}, "action": {"save"}}
+	before := hs.count("SELECT COUNT(*) FROM targets")
+	if rec := hs.do(authz.Operator, "POST", "/targets/new", f, true); rec.Code != http.StatusSeeOther {
+		t.Fatalf("save duplicate: %d %s", rec.Code, rec.Body.String())
+	}
+	if n := hs.count("SELECT COUNT(*) FROM targets"); n != before+1 {
+		t.Errorf("targets = %d, want %d", n, before+1)
+	}
+	if orig, err := hs.srv.Core.Target(ctx, src); err != nil || orig.Host != "portal.example.nl" || orig.Name != "Portal" {
+		t.Errorf("original changed: %+v %v", orig, err)
+	}
+	if rec := hs.do(authz.Operator, "GET", "/targets/new?from=999999", nil, false); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown source = %d, want 404", rec.Code)
+	}
+	if rec := hs.do(authz.Operator, "GET", "/targets/new?from=abc", nil, false); rec.Code != http.StatusNotFound {
+		t.Errorf("malformed source = %d, want 404", rec.Code)
+	}
+}
+
+// A server name set apart from the host is kept on a duplicate: the next IP
+// behind the same name is the usual reason to duplicate such a target.
+func TestDuplicateTargetServerName(t *testing.T) {
+	ip := duplicateTarget(core.Target{Host: "10.0.0.5", ServerName: "portal.example.nl"})
+	if ip.ServerName != "portal.example.nl" || ip.Host != "" {
+		t.Errorf("explicit SNI: %+v", ip)
+	}
+	def := duplicateTarget(core.Target{Host: "Portal.example.nl.", ServerName: "portal.example.nl"})
+	if def.ServerName != "" {
+		t.Errorf("SNI that followed the host was kept: %q", def.ServerName)
 	}
 }

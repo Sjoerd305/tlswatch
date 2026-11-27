@@ -18,5 +18,6 @@
   <div class="field"><label class="label" for="rp">Passphrase</label><input id="rp" name="passphrase" type="password" class="input" autocomplete="off"><span class="help">Not needed for a copy made with <span class="mono">tlswatch backup</span>.</span></div>
   <div class="field"><label class="label" for="rf">Backup file</label><input id="rf" name="file" type="file" class="input" required></div>
   <button type="submit" class="btn">Restore backup</button>
+  <p class="busy-note" data-busy-note role="status" hidden>Uploading and restoring the backup. A large one can take a minute or more; keep this page open.</p>
 </form>
 {{end}}

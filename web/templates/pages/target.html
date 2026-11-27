@@ -11,6 +11,7 @@
     <form method="post" action="/targets/{{$t.ID}}/check" data-api="/api/v1/targets/{{$t.ID}}/check">{{template "csrf" $p.CSRF}}<input type="hidden" name="from" value="detail"><button type="submit" class="btn">Check now</button></form>
     {{- end}}
     <a href="/targets/{{$t.ID}}/edit" class="btn">Edit</a>
+    <a href="/targets/new?from={{$t.ID}}" class="btn">Duplicate</a>
     {{- if $t.Enabled}}
     <form method="post" action="/targets/{{$t.ID}}/disable">{{template "csrf" $p.CSRF}}<button type="submit" class="btn">Disable</button></form>
     {{- else}}
