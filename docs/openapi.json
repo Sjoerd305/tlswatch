@@ -51,6 +51,13 @@
       "Certificate": {
         "additionalProperties": true,
         "properties": {
+          "chain": {
+            "description": "Only when getting one certificate: the chain it was last served with, leaf first, ending in the root that completed verification when tlswatch added it.",
+            "items": {
+              "$ref": "#/components/schemas/ChainLink"
+            },
+            "type": "array"
+          },
           "days_left": {
             "type": "integer"
           },
@@ -164,6 +171,36 @@
           "first_seen",
           "last_seen",
           "served"
+        ],
+        "type": "object"
+      },
+      "ChainLink": {
+        "additionalProperties": true,
+        "properties": {
+          "fingerprint": {
+            "type": "string"
+          },
+          "pem": {
+            "type": "string"
+          },
+          "role": {
+            "description": "leaf, intermediate or root.",
+            "type": "string"
+          },
+          "served": {
+            "description": "False for a root tlswatch added from the trust store or a bundle; the server did not send it.",
+            "type": "boolean"
+          },
+          "subject_cn": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "subject_cn",
+          "role",
+          "served",
+          "pem"
         ],
         "type": "object"
       },
@@ -1622,7 +1659,7 @@
             "description": "Rate limited; see Retry-After."
           }
         },
-        "summary": "Get a certificate by its SHA-256 fingerprint, with its PEM.",
+        "summary": "Get a certificate by its SHA-256 fingerprint, with its PEM and the chain it was last served with.",
         "x-role-action": "view"
       }
     },

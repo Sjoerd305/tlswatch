@@ -528,27 +528,36 @@ func (s *Server) apiTargetCheckNow(w http.ResponseWriter, r *http.Request) {
 // ---------- Certificates ----------
 
 type apiCertificate struct {
-	Fingerprint string      `json:"fingerprint" doc:"SHA-256 of the DER, lower-case hex."`
-	Subject     string      `json:"subject"`
-	SubjectCN   string      `json:"subject_cn"`
-	Issuer      string      `json:"issuer"`
-	IssuerCN    string      `json:"issuer_cn"`
-	IssuerOrg   string      `json:"issuer_org"`
-	Serial      string      `json:"serial"`
-	NotBefore   stamp       `json:"not_before"`
-	NotAfter    stamp       `json:"not_after"`
-	DaysLeft    int         `json:"days_left"`
-	Names       []string    `json:"names" doc:"The subject alternative names."`
-	Key         string      `json:"key" doc:"Such as RSA 2048 or ECDSA P-256."`
-	KeyType     string      `json:"key_type"`
-	KeyBits     int         `json:"key_bits"`
-	SigAlg      string      `json:"signature_algorithm"`
-	SelfSigned  bool        `json:"self_signed"`
-	Distrusted  bool        `json:"distrusted" doc:"An open distrusted_ca finding names it."`
-	FirstSeen   stamp       `json:"first_seen"`
-	LastSeen    stamp       `json:"last_seen"`
-	Served      []apiServed `json:"served" doc:"Where it is served now: the addresses of each target's latest check."`
-	PEM         string      `json:"pem,omitempty" doc:"Only when getting one certificate."`
+	Fingerprint string         `json:"fingerprint" doc:"SHA-256 of the DER, lower-case hex."`
+	Subject     string         `json:"subject"`
+	SubjectCN   string         `json:"subject_cn"`
+	Issuer      string         `json:"issuer"`
+	IssuerCN    string         `json:"issuer_cn"`
+	IssuerOrg   string         `json:"issuer_org"`
+	Serial      string         `json:"serial"`
+	NotBefore   stamp          `json:"not_before"`
+	NotAfter    stamp          `json:"not_after"`
+	DaysLeft    int            `json:"days_left"`
+	Names       []string       `json:"names" doc:"The subject alternative names."`
+	Key         string         `json:"key" doc:"Such as RSA 2048 or ECDSA P-256."`
+	KeyType     string         `json:"key_type"`
+	KeyBits     int            `json:"key_bits"`
+	SigAlg      string         `json:"signature_algorithm"`
+	SelfSigned  bool           `json:"self_signed"`
+	Distrusted  bool           `json:"distrusted" doc:"An open distrusted_ca finding names it."`
+	FirstSeen   stamp          `json:"first_seen"`
+	LastSeen    stamp          `json:"last_seen"`
+	Served      []apiServed    `json:"served" doc:"Where it is served now: the addresses of each target's latest check."`
+	PEM         string         `json:"pem,omitempty" doc:"Only when getting one certificate."`
+	Chain       []apiChainLink `json:"chain,omitempty" doc:"Only when getting one certificate: the chain it was last served with, leaf first, ending in the root that completed verification when tlswatch added it."`
+}
+
+type apiChainLink struct {
+	Fingerprint string `json:"fingerprint"`
+	SubjectCN   string `json:"subject_cn"`
+	Role        string `json:"role" doc:"leaf, intermediate or root."`
+	Served      bool   `json:"served" doc:"False for a root tlswatch added from the trust store or a bundle; the server did not send it."`
+	PEM         string `json:"pem"`
 }
 
 type apiServed struct {
@@ -610,7 +619,11 @@ func (s *Server) apiCertificateGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	it.Distrusted = n > 0
-	writeJSON(w, http.StatusOK, toAPICertificate(it, s.now()))
+	a := toAPICertificate(it, s.now())
+	for _, l := range s.Core.InventoryChain(r.Context(), fp) {
+		a.Chain = append(a.Chain, apiChainLink{Fingerprint: l.Fingerprint, SubjectCN: l.SubjectCN, Role: l.Role, Served: !l.InStore, PEM: l.PEM})
+	}
+	writeJSON(w, http.StatusOK, a)
 }
 
 // ---------- Findings ----------

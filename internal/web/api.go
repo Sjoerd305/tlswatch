@@ -74,7 +74,7 @@ func (s *Server) apiRoutes() []apiRoute {
 			Query: withPage(apiParam{"window", "30 or 90 (days left), or distrusted."}, apiParam{"issuer", "The issuer as listed."}, apiParam{"key", "RSA, ECDSA or Ed25519."},
 				apiParam{"q", "Text in the subject, names, issuer, fingerprint or serial."}, apiParam{"all", "1 includes certificates no longer served."}),
 			Handler: s.apiCertificates},
-		{Method: "GET", Path: "/api/v2/certificates/{fp}", Action: authz.ViewData, Summary: "Get a certificate by its SHA-256 fingerprint, with its PEM.", Resp: apiCertificate{}, Handler: s.apiCertificateGet},
+		{Method: "GET", Path: "/api/v2/certificates/{fp}", Action: authz.ViewData, Summary: "Get a certificate by its SHA-256 fingerprint, with its PEM and the chain it was last served with.", Resp: apiCertificate{}, Handler: s.apiCertificateGet},
 		{Method: "GET", Path: "/api/v2/findings", Action: authz.ViewData, Summary: "List findings: open, or resolved within the retention period.", List: true, Resp: apiFinding{},
 			Query: withPage(apiParam{"state", "open (the default) or resolved."}, apiParam{"severity", "critical, warning or info."}, apiParam{"kind", "A finding kind, such as expiring."},
 				apiParam{"target_id", "Only this target's."}, apiParam{"domain_id", "Only this domain watch's."}),

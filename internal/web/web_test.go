@@ -151,6 +151,8 @@ var protected = []route{
 	{"GET", "/", authz.ViewData},
 	{"GET", "/targets", authz.ViewData},
 	{"GET", "/targets/1", authz.ViewData},
+	{"GET", "/targets/1/chain.pem", authz.ViewData},
+	{"GET", "/certificates/00/chain.pem", authz.ViewData},
 	{"GET", "/certificates", authz.ViewData},
 	{"GET", "/certificates.csv", authz.ViewData},
 	{"GET", "/findings", authz.ViewData},

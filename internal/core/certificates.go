@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -319,6 +320,37 @@ func (s *Service) Inventory(ctx context.Context) ([]InventoryItem, error) {
 		out = append(out, it)
 	}
 	return out, crow.Err()
+}
+
+// TargetChain returns the chain the target's current certificate was served
+// with on its last check; nil when that check saw none.
+func (s *Service) TargetChain(ctx context.Context, t Target) ([]ChainLink, error) {
+	last, err := s.LastCheck(ctx, t.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, o := range last {
+		if o.LeafFP == t.CurrentFP && len(o.Chain) > 0 {
+			return s.Chain(ctx, o), nil
+		}
+	}
+	return nil, nil
+}
+
+// ChainPEM joins a chain's certificates as PEM, leaf first, as the server
+// sent them: the root tlswatch added from the trust store or a bundle to
+// complete verification is left out unless withRoot. A root the server
+// sends itself, stale or not, is part of what it sent and stays.
+func ChainPEM(links []ChainLink, withRoot bool) []byte {
+	var buf bytes.Buffer
+	for _, l := range links {
+		if l.InStore && !withRoot {
+			continue
+		}
+		buf.WriteString(strings.TrimRight(l.PEM, "\n"))
+		buf.WriteByte('\n')
+	}
+	return buf.Bytes()
 }
 
 // InventoryChain returns the chain under which a certificate was last served.

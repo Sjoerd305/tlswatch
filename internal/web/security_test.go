@@ -318,6 +318,7 @@ func TestMalformedInputIsNotAServerError(t *testing.T) {
 		"/targets/abc", "/targets/-1", "/targets/0", "/targets/99999999999999999999", "/targets/1.5/edit",
 		"/domains/abc", "/domains/0/edit", "/domains/-3/delete", "/settings/nodes/abc", "/settings/nodes/0/delete",
 		"/api/v1/findings/abc/panel", "/api/v1/findings/999/panel", "/certificates/zz/pem", "/certificates/" + strings.Repeat("a", 64) + "/pem",
+		"/certificates/zz/chain.pem", "/certificates/" + strings.Repeat("a", 64) + "/chain.pem", "/targets/abc/chain.pem", "/targets/0/chain.pem", "/targets/1/chain.pem",
 	}
 	for _, p := range gets {
 		rec := hs.do(authz.Admin, "GET", p, nil, false)

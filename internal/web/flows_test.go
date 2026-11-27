@@ -319,6 +319,70 @@ func TestCertificatePEMDownloadName(t *testing.T) {
 	}
 }
 
+// The chain downloads give the chain as served, leaf first, without the root
+// tlswatch added from the trust store unless root=1; on the target page the
+// target's own last check, on the inventory the latest serving.
+func TestChainPEMDownload(t *testing.T) {
+	hs := newHarness(t)
+	now := time.Now().Unix()
+	leaf, inter, root := strings.Repeat("a1", 32), strings.Repeat("b2", 32), strings.Repeat("c3", 32)
+	pemOf := func(tag string) string {
+		return "-----BEGIN CERTIFICATE-----\n" + tag + "\n-----END CERTIFICATE-----\n"
+	}
+	for _, c := range []struct{ fp, cn string }{{leaf, "*.example.test"}, {inter, "Issuing CA"}, {root, "Root CA"}} {
+		if _, err := hs.db.W.Exec(`INSERT INTO certificates(fingerprint, subject, subject_cn, issuer, issuer_cn, issuer_org, serial, not_before, not_after,
+			key_type, key_bits, sig_alg, is_ca, self_signed, pem, first_seen, last_seen) VALUES(?, 'CN=x', ?, 'CN=ca', 'ca', 'CA', '1', ?, ?, 'ECDSA', 256, 'ECDSA-SHA256', ?, ?, ?, ?, ?)`,
+			c.fp, c.cn, now-60, now+86400, c.fp != leaf, c.fp == root, pemOf(c.cn), now, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := hs.db.W.Exec(`UPDATE targets SET current_fp = ?, last_check = ?, last_check_id = 'c1' WHERE id = 1`, leaf, now); err != nil {
+		t.Fatal(err)
+	}
+	chain := `["` + leaf + `","` + inter + `","root:` + root + `"]`
+	if _, err := hs.db.W.Exec(`INSERT INTO observations(target_id, check_id, address, checked_at, status, tls_version, leaf_fp, chain, verified) VALUES(1, 'c1', '192.0.2.1', ?, 'ok', 'TLS 1.3', ?, ?, 1)`, now, leaf, chain); err != nil {
+		t.Fatal(err)
+	}
+	served, full := pemOf("*.example.test")+pemOf("Issuing CA"), pemOf("*.example.test")+pemOf("Issuing CA")+pemOf("Root CA")
+	for _, base := range []string{"/targets/1/chain.pem", "/certificates/" + strings.ToUpper(leaf) + "/chain.pem"} {
+		rec := hs.do(authz.Viewer, "GET", base, nil, false)
+		if rec.Code != http.StatusOK || rec.Body.String() != served || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/plain") {
+			t.Errorf("%s: %d %s\n%s", base, rec.Code, rec.Header().Get("Content-Type"), rec.Body.String())
+		}
+		if rec := hs.do(authz.Viewer, "GET", base+"?root=1", nil, false); rec.Body.String() != full {
+			t.Errorf("%s?root=1:\n%s", base, rec.Body.String())
+		}
+		rec = hs.do(authz.Viewer, "GET", base+"?download=1", nil, false)
+		disp, params, err := mime.ParseMediaType(rec.Header().Get("Content-Disposition"))
+		if err != nil || disp != "attachment" || params["filename"] != "wildcard.example.test-a1a1a1a1-chain.pem" || rec.Header().Get("Content-Type") != "application/x-pem-file" {
+			t.Errorf("%s download: %q %v", base, rec.Header().Get("Content-Disposition"), err)
+		}
+		if rec := hs.signedOut("GET", base, nil, nil); rec.Code != http.StatusSeeOther {
+			t.Errorf("%s signed out: %d", base, rec.Code)
+		}
+	}
+	page := hs.do(authz.Viewer, "GET", "/targets/1", nil, false).Body.String()
+	if !strings.Contains(page, `href="/targets/1/chain.pem?download=1"`) || !strings.Contains(page, `chain.pem?download=1&amp;root=1`) {
+		t.Error("the target page offers no chain download")
+	}
+	// The intermediate is no leaf: it has no chain of its own to download.
+	if rec := hs.do(authz.Viewer, "GET", "/certificates/"+inter+"/chain.pem", nil, false); rec.Code != http.StatusNotFound {
+		t.Errorf("chain of an intermediate: %d", rec.Code)
+	}
+	var got struct {
+		Chain []struct {
+			Fingerprint string `json:"fingerprint"`
+			Role        string `json:"role"`
+			Served      bool   `json:"served"`
+		} `json:"chain"`
+	}
+	rec := hs.api(hs.apiToken(authz.Viewer, authz.Viewer), "GET", "/api/v2/certificates/"+leaf, "")
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &got) != nil || len(got.Chain) != 3 ||
+		got.Chain[0].Role != "leaf" || !got.Chain[1].Served || got.Chain[2].Served || got.Chain[2].Role != "root" {
+		t.Errorf("API chain: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 // The finding panel answers JSON with the acknowledge form for those who
 // may acknowledge, and without it for a viewer.
 func TestFindingPanelAPI(t *testing.T) {

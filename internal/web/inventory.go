@@ -257,22 +257,77 @@ func (s *Server) certificatePEM(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/x-pem-file")
+	writePEM(w, r, pemFileName(c, ""), []byte(c.PEM))
+}
+
+// certificateChainPEM serves the chain a certificate was last served with,
+// leaf first; root=1 adds the root from the trust store or bundle.
+func (s *Server) certificateChainPEM(w http.ResponseWriter, r *http.Request) {
+	fp := strings.ToLower(r.PathValue("fp"))
+	chain := s.Core.InventoryChain(r.Context(), fp)
+	if len(chain) == 0 || chain[0].Fingerprint != fp {
+		s.fail(w, r, http.StatusNotFound, "No chain served with this certificate.")
+		return
+	}
+	withRoot := r.URL.Query().Get("root") == "1"
+	writePEM(w, r, pemFileName(chain[0].Certificate, chainSuffix(withRoot)), core.ChainPEM(chain, withRoot))
+}
+
+// targetChainPEM serves the chain the target served on its last check.
+func (s *Server) targetChainPEM(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		s.fail(w, r, http.StatusNotFound, "No such target.")
+		return
+	}
+	t, err := s.Core.Target(r.Context(), id)
+	if err != nil {
+		s.failErr(w, r, err, "No such target.")
+		return
+	}
+	chain, err := s.Core.TargetChain(r.Context(), t)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	if len(chain) == 0 {
+		s.fail(w, r, http.StatusNotFound, "This target has no chain from its last check.")
+		return
+	}
+	withRoot := r.URL.Query().Get("root") == "1"
+	writePEM(w, r, pemFileName(chain[0].Certificate, chainSuffix(withRoot)), core.ChainPEM(chain, withRoot))
+}
+
+func chainSuffix(withRoot bool) string {
+	if withRoot {
+		return "-chain-root"
+	}
+	return "-chain"
+}
+
+// pemFileName names a download after the certificate's CN and fingerprint.
+// The CN comes from a server tlswatch does not control: only safe characters
+// reach the header.
+func pemFileName(c core.Certificate, suffix string) string {
+	name := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-', r == '_':
+			return r
+		}
+		return '_'
+	}, strings.ReplaceAll(c.SubjectCN, "*", "wildcard"))
+	return fmt.Sprintf("%s-%s%s.pem", name, c.Fingerprint[:8], suffix)
+}
+
+// writePEM sends PEM as a download with download=1, else as plain text.
+func writePEM(w http.ResponseWriter, r *http.Request, filename string, body []byte) {
 	if r.URL.Query().Get("download") == "1" {
-		// The CN comes from a server tlswatch does not control: only safe
-		// characters reach the header.
-		name := strings.Map(func(r rune) rune {
-			switch {
-			case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-', r == '_':
-				return r
-			}
-			return '_'
-		}, strings.ReplaceAll(c.SubjectCN, "*", "wildcard"))
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-%s.pem"`, name, fp[:8]))
+		w.Header().Set("Content-Type", "application/x-pem-file")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	} else {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	}
-	_, _ = w.Write([]byte(c.PEM))
+	_, _ = w.Write(body) // #nosec G705 -- stored PEM, sent as text/plain or a download with nosniff, never as HTML
 }
 
 type findingsData struct {

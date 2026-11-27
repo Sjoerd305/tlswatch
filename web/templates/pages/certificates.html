@@ -50,7 +50,7 @@
       </tr>
       <tr class="detail"{{if not .Open}} hidden{{end}}><td colspan="10">
         <div class="detail-grid">
-          <span class="k">SHA-256</span><span class="fp-row"><span class="mono small wrap-any">{{.Fingerprint}}</span><button type="button" class="btn btn-xs" data-copy="{{.Fingerprint}}">copy</button><a class="btn btn-xs" href="/certificates/{{.Fingerprint}}/pem?download=1" data-copy-url="/certificates/{{.Fingerprint}}/pem">pem</a></span>
+          <span class="k">SHA-256</span><span class="fp-row"><span class="mono small wrap-any">{{.Fingerprint}}</span><button type="button" class="btn btn-xs" data-copy="{{.Fingerprint}}">copy</button><a class="btn btn-xs" href="/certificates/{{.Fingerprint}}/pem?download=1" data-copy-url="/certificates/{{.Fingerprint}}/pem">pem</a><a class="btn btn-xs" href="/certificates/{{.Fingerprint}}/chain.pem?download=1" data-copy-url="/certificates/{{.Fingerprint}}/chain.pem" title="Copy the chain it was last served with, leaf first">chain</a></span>
           <span class="k">Subject</span><span class="wrap-any">{{.Subject}}</span>
           <span class="k">SANs</span><span class="mono small">{{if .SANs}}{{join .SANs ", "}}{{else}}—{{end}}</span>
           <span class="k">Serial</span><span class="mono small">{{.Serial}}</span>
