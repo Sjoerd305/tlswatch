@@ -399,7 +399,7 @@ func writeScanReport(rep scanReport, base string, formats []string) ([]string, e
 			return written, err
 		}
 		name := base + "." + f
-		if err := os.WriteFile(name, b, 0o644); err != nil { // #nosec G306 -- a report for the user to open and share
+		if err := os.WriteFile(name, b, 0o644); err != nil { // #nosec G306 G703 -- a report for the user to open and share, at the path they gave with -o
 			return written, err
 		}
 		written = append(written, name)
