@@ -2,7 +2,7 @@
 
 Newest first, one line per change.
 
-## Unreleased
+## 0.1.5 - 2026-11-27
 
 - `tlswatch scan RANGE...`: Discover without a server. It scans CIDRs or addresses for TLS endpoints, checks each one as `tlswatch check` does (trust, expiry, hostname where a name in the certificate resolves to the address, and the configuration test with its grade), prints one line per endpoint worst first, and writes an HTML report in the style of the UI (one file, fonts inlined, light and dark), a CSV and a JSON. Exit code 0, 1 or 2 by the worst status, like `check`. One command to try tlswatch on a network, or an intake report for a customer.
 - Operations guide: an upgrade procedure (changelog, backup, replace, check, nodes, what to do when it does not start), example Caddy and nginx configurations with the timeouts node long-polls and backup transfers need, IPv6 in Docker, and discovery from nodes only on a hosting network.
