@@ -9,7 +9,7 @@ RUN npm ci --no-audit --no-fund && npm run check-deps
 COPY web ./web
 RUN npx tsc -p tsconfig.json
 
-FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280 AS build
 # The release workflow passes the tag; a local `docker compose up --build`
 # passes nothing and gets the version from the checkout (scripts/version.sh),
 # which is why .git is in the build context.
