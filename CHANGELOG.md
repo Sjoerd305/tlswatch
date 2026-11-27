@@ -2,7 +2,7 @@
 
 Newest first, one line per change.
 
-## Unreleased
+## 0.1.5 - 2026-11-27
 
 - Duplicate on the target page opens Add target with that target's settings (port, protocol, node, trust, renewal, thresholds, schedule, channels, tags, notes) and an empty host and name, to add a similar target by changing a few fields. A server name set apart from the host is kept; one that only followed the host is not. Asked for in issue #1.
 - A restore shows a spinner and "Restoring the backup…" while the file is uploaded and applied, on the setup screen and under Settings › Backup, so a large backup that takes half a minute no longer looks stalled. Reported in issue #1.
