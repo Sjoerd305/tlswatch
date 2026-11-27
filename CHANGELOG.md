@@ -2,10 +2,14 @@
 
 Newest first, one line per change.
 
-## 0.1.5 - 2026-11-27
+## Unreleased
 
+- Download the full chain as PEM, not just the leaf. The target page gets a "chain" button next to "pem" and, on "Chain as served", PEM links as served and with root; each certificate on the Certificates page gets a "chain" button too. The file holds the leaf first and the certificates in the order the server sent them, as a `fullchain.pem` does; "with root" (`root=1`) adds the root tlswatch took from the trust store or a bundle, for a file to verify against. The routes are `GET /targets/{id}/chain.pem` (the chain the target served on its last check) and `GET /certificates/{fp}/chain.pem` (the chain the leaf was last served with), and `GET /api/v2/certificates/{fp}` gains `chain`: each link's fingerprint, CN, role, PEM and whether the server sent it. Asked for by a user.
 - Duplicate on the target page opens Add target with that target's settings (port, protocol, node, trust, renewal, thresholds, schedule, channels, tags, notes) and an empty host and name, to add a similar target by changing a few fields. A server name set apart from the host is kept; one that only followed the host is not. Asked for in issue #1.
 - A restore shows a spinner and "Restoring the backup…" while the file is uploaded and applied, on the setup screen and under Settings › Backup, so a large backup that takes half a minute no longer looks stalled. Reported in issue #1.
+
+## 0.1.5 - 2026-11-27
+
 - `tlswatch scan RANGE...`: Discover without a server. It scans CIDRs or addresses for TLS endpoints, checks each one as `tlswatch check` does (trust, expiry, hostname where a name in the certificate resolves to the address, and the configuration test with its grade), prints one line per endpoint worst first, and writes an HTML report in the style of the UI (one file, fonts inlined, light and dark), a CSV and a JSON. Exit code 0, 1 or 2 by the worst status, like `check`. One command to try tlswatch on a network, or an intake report for a customer.
 - Operations guide: an upgrade procedure (changelog, backup, replace, check, nodes, what to do when it does not start), example Caddy and nginx configurations with the timeouts node long-polls and backup transfers need, IPv6 in Docker, and discovery from nodes only on a hosting network.
 - Fix: an import naming a node that two confirmed nodes share put its targets and schedules on whichever came first. It is now refused with the name and the request to give the nodes distinct names; a pending node of the same name does not count.
