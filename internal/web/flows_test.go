@@ -365,6 +365,9 @@ func TestChainPEMDownload(t *testing.T) {
 	if !strings.Contains(page, `href="/targets/1/chain.pem?download=1"`) || !strings.Contains(page, `chain.pem?download=1&amp;root=1`) {
 		t.Error("the target page offers no chain download")
 	}
+	if strings.Contains(page, `data-copy-url="/targets/1/chain.pem"`) {
+		t.Error("the chain button copies instead of downloading")
+	}
 	// The intermediate is no leaf: it has no chain of its own to download.
 	if rec := hs.do(authz.Viewer, "GET", "/certificates/"+inter+"/chain.pem", nil, false); rec.Code != http.StatusNotFound {
 		t.Errorf("chain of an intermediate: %d", rec.Code)
